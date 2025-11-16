@@ -1,0 +1,26 @@
+{
+  "name": "tarasa-historic-extractor",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "scrape": "ts-node src/scraper/scraper.ts",
+    "classify": "ts-node src/ai/classifier.ts",
+    "generate": "ts-node src/ai/generator.ts",
+    "message": "ts-node src/messenger/messenger.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.15.0",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.11",
+    "openai": "^4.52.2",
+    "playwright": "^1.44.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
