@@ -10,11 +10,9 @@ import { logSystemEvent } from '../utils/systemLog';
 const router = Router();
 
 const clampLimit = (value: number) => Math.min(Math.max(value, 1), 200);
+const clampExportLimit = (value: number) => Math.min(Math.max(value, 1), 1000);
 
-router.get('/api/posts', async (req: Request, res: Response) => {
-  const rawLimit = Number(req.query.limit) || 50;
-  const limit = clampLimit(rawLimit);
-  const requestedPage = Math.max(Number(req.query.page) || 1, 1);
+const buildPostsWhere = (req: Request): Prisma.PostRawWhereInput => {
   const historicFilter = (req.query.historic as string | undefined)?.toLowerCase();
   const groupFilter = (req.query.group as string | undefined)?.trim();
 
@@ -29,6 +27,15 @@ router.get('/api/posts', async (req: Request, res: Response) => {
   } else if (historicFilter === 'true' || historicFilter === 'false') {
     where.classified = { is: { isHistoric: historicFilter === 'true' } };
   }
+
+  return where;
+};
+
+router.get('/api/posts', async (req: Request, res: Response) => {
+  const rawLimit = Number(req.query.limit) || 50;
+  const limit = clampLimit(rawLimit);
+  const requestedPage = Math.max(Number(req.query.page) || 1, 1);
+  const where = buildPostsWhere(req);
 
   const total = await prisma.postRaw.count({ where });
   const pages = Math.max(1, Math.ceil(total / limit));
@@ -52,6 +59,58 @@ router.get('/api/posts', async (req: Request, res: Response) => {
       limit,
     },
   });
+});
+
+const csvEscape = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return '""';
+  }
+  const normalized = String(value).replace(/"/g, '""').replace(/\r?\n/g, ' ');
+  return `"${normalized}"`;
+};
+
+router.get('/api/posts/export', async (req: Request, res: Response) => {
+  const where = buildPostsWhere(req);
+  const limit = clampExportLimit(Number(req.query.limit) || 500);
+
+  const posts = await prisma.postRaw.findMany({
+    where,
+    include: { classified: true },
+    orderBy: { scrapedAt: 'desc' },
+    take: limit,
+  });
+
+  const header = [
+    'id',
+    'groupId',
+    'fbPostId',
+    'authorName',
+    'authorLink',
+    'text',
+    'isHistoric',
+    'confidence',
+    'scrapedAt',
+  ];
+
+  const rows = posts.map((post) => [
+    post.id,
+    post.groupId,
+    post.fbPostId,
+    post.authorName ?? '',
+    post.authorLink ?? '',
+    post.text,
+    post.classified?.isHistoric ?? '',
+    post.classified?.confidence ?? '',
+    post.scrapedAt.toISOString(),
+  ]);
+
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => csvEscape(cell)).join(','))
+    .join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="posts-export.csv"');
+  res.send(csv);
 });
 
 router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
