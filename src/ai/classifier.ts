@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
+import { retry } from '../utils/retry';
 
 const prompt = `You are an expert classifier in historical storytelling.
 Your task is to identify whether the given Facebook post describes:
@@ -19,6 +20,18 @@ Return ONLY JSON:
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const parseClassification = (raw: string | null) => {
+  if (!raw) {
+    throw new Error('Classifier returned empty content');
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Unable to parse classifier response: ${(error as Error).message}`);
+  }
+};
+
 export const classifyPosts = async () => {
   const unclassified = await prisma.postRaw.findMany({
     where: { classified: null },
@@ -35,24 +48,23 @@ export const classifyPosts = async () => {
 
   for (const post of unclassified) {
     try {
-      const completion = await openai.responses.create({
-        model: 'gpt-4o-mini',
-        input: [
-          {
-            role: 'system',
-            content: prompt,
-          },
-          {
-            role: 'user',
-            content: post.text,
-          },
-        ],
-        response_format: { type: 'json_schema' },
-      });
+      const completion = await retry(
+        () =>
+          openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+            temperature: 0.2,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: prompt },
+              { role: 'user', content: post.text },
+            ],
+          }),
+        3,
+        2000,
+      );
 
-      const content = completion.output?.[0]?.content?.[0];
-      const text = content && 'text' in content ? content.text : '{}';
-      const parsed = JSON.parse(text);
+      const content = completion.choices[0]?.message?.content?.trim() ?? null;
+      const parsed = parseClassification(content);
 
       await prisma.postClassified.create({
         data: {

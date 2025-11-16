@@ -7,6 +7,9 @@ import statsRouter from './routes/stats';
 import settingsRouter from './routes/settings';
 import logger from './utils/logger';
 import './cron';
+import { validateEnv } from './utils/validateEnv';
+
+validateEnv();
 
 const app = express();
 app.use(express.json());

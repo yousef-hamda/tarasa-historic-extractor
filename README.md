@@ -9,13 +9,23 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - Prisma/PostgreSQL schema and Node.js API with cron jobs.
 - Next.js dashboard scaffold for monitoring posts, messages, logs, settings, and firing manual control actions.
 
-## Getting Started
+## Prerequisites
+- Node.js 20+
+- PostgreSQL 14+
+- OpenAI API key with GPT-4 access
+- Facebook account that can access the configured public groups
+
+## Getting Started (API + Services)
 1. Install dependencies: `npm install`.
-2. Copy `.env.example` to `.env` and fill in credentials.
-3. Run Prisma migration: `npx prisma migrate dev`.
-4. Start the API: `npm run dev`.
-5. Start the API: `npm run dev`. The cron schedulers auto-register when the server boots, so scraping/classification/messaging/login refresh jobs start immediately.
-6. Open the dashboard (served by your chosen frontend host) to monitor stats and trigger manual actions.
+2. Copy `.env.example` to `.env` and fill in credentials (the server will now validate that the required keys are present on boot).
+3. Run Prisma migrations: `npx prisma migrate dev`.
+4. Start the API: `npm run dev`. The cron schedulers auto-register when the server boots, so scraping/classification/messaging/login refresh jobs start immediately.
+
+## Getting Started (Dashboard)
+1. `cd ui/dashboard`
+2. Install dependencies: `npm install`.
+3. Start the dashboard: `npm run dev` (rewrites proxy API calls to `http://localhost:4000`).
+4. Visit `http://localhost:3000` to access the overview, posts, messages, logs, and settings views with full navigation.
 
 ## Manual API Triggers & Dashboard Controls
 - `POST /api/trigger-scrape` – immediately scrape configured groups.
