@@ -13,12 +13,4 @@ router.get('/api/messages', async (_req, res) => {
   res.json(messages);
 });
 
-router.post('/api/trigger-classification', async (_req, res) => {
-  res.json({ status: 'queued' });
-});
-
-router.post('/api/trigger-message', async (_req, res) => {
-  res.json({ status: 'queued' });
-});
-
 export default router;
