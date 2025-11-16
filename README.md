@@ -21,6 +21,8 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - `POST /api/trigger-classification` – classify newly scraped posts.
 - `POST /api/trigger-message` – generate and dispatch queued messages (respects quota).
 - `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput statistics for the dashboard.
+- `GET /api/stats` – aggregates total posts, classifications, queue depth, logs, and last-run timestamps for the dashboard overview.
+- `GET /api/settings` – exposes the configured group IDs, Tarasa submission link, and alert email configuration for the dashboard settings page.
 
 ## Operational Notes
 - Configure `SYSTEM_EMAIL_ALERT`/`SYSTEM_EMAIL_PASSWORD` to receive automatic emails when Facebook requests 2FA or captcha resolution.
