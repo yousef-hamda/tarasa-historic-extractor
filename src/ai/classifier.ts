@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
+import { logSystemEvent } from '../utils/systemLog';
 
 const prompt = `You are an expert classifier in historical storytelling.
 Your task is to identify whether the given Facebook post describes:
@@ -21,8 +22,16 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export const classifyPosts = async () => {
   const unclassified = await prisma.postRaw.findMany({
     where: { classified: null },
+    orderBy: { scrapedAt: 'asc' },
     take: 10,
   });
+
+  if (!unclassified.length) {
+    logger.info('No posts pending classification');
+    return;
+  }
+
+  let processed = 0;
 
   for (const post of unclassified) {
     try {
@@ -48,13 +57,19 @@ export const classifyPosts = async () => {
       await prisma.postClassified.create({
         data: {
           postId: post.id,
-          isHistoric: parsed.is_historic,
-          confidence: parsed.confidence,
-          reason: parsed.reason,
+          isHistoric: Boolean(parsed.is_historic),
+          confidence: Number(parsed.confidence) || 0,
+          reason: parsed.reason || 'N/A',
         },
       });
+      processed += 1;
     } catch (error) {
       logger.error(`Failed to classify post ${post.id}: ${error}`);
+      await logSystemEvent('error', `Failed to classify post ${post.id}: ${(error as Error).message}`);
     }
+  }
+
+  if (processed) {
+    await logSystemEvent('classify', `Classified ${processed} posts`);
   }
 };

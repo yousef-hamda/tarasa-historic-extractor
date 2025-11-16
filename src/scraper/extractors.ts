@@ -9,12 +9,30 @@ export interface ScrapedPost {
   text: string;
 }
 
+const normalizePostId = (rawId: string | null, fallback: string | null): string | null => {
+  if (!rawId && !fallback) {
+    return null;
+  }
+
+  if (rawId) {
+    try {
+      const parsed = JSON.parse(rawId);
+      return parsed?.top_level_post_id || parsed?.mf_story_key || rawId;
+    } catch {
+      return rawId;
+    }
+  }
+
+  return fallback;
+};
+
 export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
   const posts: ScrapedPost[] = [];
   const containers = await page.$$(selectors.postContainer);
+  const limit = Math.floor(Math.random() * 21) + 20; // 20-40 posts
 
   for (const container of containers) {
-    const postId = (await container.getAttribute('data-ft')) || (await container.getAttribute('id'));
+    const postId = normalizePostId(await container.getAttribute('data-ft'), await container.getAttribute('id'));
     if (!postId) continue;
 
     let text = '';
@@ -44,7 +62,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       text,
     });
 
-    if (posts.length >= 40) break;
+    if (posts.length >= limit) break;
   }
 
   await humanDelay();
