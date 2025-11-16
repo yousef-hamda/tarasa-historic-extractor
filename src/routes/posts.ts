@@ -1,4 +1,5 @@
 import { Request, Response, Router } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../database/prisma';
 import { scrapeGroups } from '../scraper/scraper';
 import { classifyPosts } from '../ai/classifier';
@@ -8,13 +9,49 @@ import { logSystemEvent } from '../utils/systemLog';
 
 const router = Router();
 
-router.get('/api/posts', async (_req: Request, res: Response) => {
+const clampLimit = (value: number) => Math.min(Math.max(value, 1), 200);
+
+router.get('/api/posts', async (req: Request, res: Response) => {
+  const rawLimit = Number(req.query.limit) || 50;
+  const limit = clampLimit(rawLimit);
+  const requestedPage = Math.max(Number(req.query.page) || 1, 1);
+  const historicFilter = (req.query.historic as string | undefined)?.toLowerCase();
+  const groupFilter = (req.query.group as string | undefined)?.trim();
+
+  const where: Prisma.PostRawWhereInput = {};
+
+  if (groupFilter) {
+    where.groupId = groupFilter;
+  }
+
+  if (historicFilter === 'pending') {
+    where.classified = { is: null };
+  } else if (historicFilter === 'true' || historicFilter === 'false') {
+    where.classified = { is: { isHistoric: historicFilter === 'true' } };
+  }
+
+  const total = await prisma.postRaw.count({ where });
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const currentPage = Math.min(requestedPage, pages);
+  const skip = (currentPage - 1) * limit;
+
   const posts = await prisma.postRaw.findMany({
+    where,
     include: { classified: true },
     orderBy: { scrapedAt: 'desc' },
-    take: 100,
+    skip,
+    take: limit,
   });
-  res.json(posts);
+
+  res.json({
+    data: posts,
+    pagination: {
+      total,
+      page: currentPage,
+      pages,
+      limit,
+    },
+  });
 });
 
 router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
