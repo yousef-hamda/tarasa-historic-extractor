@@ -4,15 +4,7 @@ import { selectors } from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
-
-const getRemainingMessageQuota = async (): Promise<number> => {
-  const max = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const count = await prisma.messageSent.count({
-    where: { sentAt: { gte: since }, status: 'sent' },
-  });
-  return Math.max(0, max - count);
-};
+import { getRemainingMessageQuota } from '../utils/quota';
 
 export const dispatchMessages = async () => {
   let remaining = await getRemainingMessageQuota();

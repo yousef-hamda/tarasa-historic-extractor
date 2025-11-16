@@ -20,13 +20,14 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - `POST /api/trigger-scrape` – immediately scrape configured groups.
 - `POST /api/trigger-classification` – classify newly scraped posts.
 - `POST /api/trigger-message` – generate and dispatch queued messages (respects quota).
-- `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput statistics for the dashboard.
+- `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput/quota statistics for the dashboard.
 - `GET /api/stats` – aggregates total posts, classifications, queue depth, logs, and last-run timestamps for the dashboard overview.
 - `GET /api/settings` – exposes the configured group IDs, Tarasa submission link, and alert email configuration for the dashboard settings page.
 
 ## Operational Notes
 - Configure `SYSTEM_EMAIL_ALERT`/`SYSTEM_EMAIL_PASSWORD` to receive automatic emails when Facebook requests 2FA or captcha resolution.
 - `MAX_MESSAGES_PER_DAY` enforces a rolling 24-hour send quota.
+- The dashboard and `/api/stats` expose remaining quota (e.g., `12/20` messages left) so operators can see how much capacity is available before Messenger automation pauses.
 - Login refresh cron (`src/cron/login-refresh.ts`) re-validates cookies daily to satisfy the 30-day session policy.
 
 This repository now contains the **FINAL MASTER PROMPT v2** implementation blueprint needed by Codex/Devin/Claude Code.

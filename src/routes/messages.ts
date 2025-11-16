@@ -1,12 +1,13 @@
 import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
+import { getDailyMessageUsage } from '../utils/quota';
 
 const router = Router();
 
 router.get('/api/messages', async (_req: Request, res: Response) => {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  const [queue, sent, sentLast24h] = await Promise.all([
+  const [queue, sent, usage] = await Promise.all([
     prisma.messageGenerated.findMany({
       orderBy: { createdAt: 'desc' },
       take: 50,
@@ -17,9 +18,7 @@ router.get('/api/messages', async (_req: Request, res: Response) => {
       take: 200,
       include: { post: true },
     }),
-    prisma.messageSent.count({
-      where: { sentAt: { gte: since }, status: 'sent' },
-    }),
+    getDailyMessageUsage(),
   ]);
 
   res.json({
@@ -27,7 +26,9 @@ router.get('/api/messages', async (_req: Request, res: Response) => {
     sent,
     stats: {
       queue: queue.length,
-      sentLast24h,
+      sentLast24h: usage.sentLast24h,
+      quotaRemaining: usage.remaining,
+      messageLimit: usage.limit,
     },
   });
 });
