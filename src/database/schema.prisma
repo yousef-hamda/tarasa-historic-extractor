@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+model PostRaw {
+  id          Int             @id @default(autoincrement())
+  groupId     String
+  fbPostId    String          @unique
+  authorName  String?
+  authorLink  String?
+  text        String
+  scrapedAt   DateTime        @default(now())
+  classified  PostClassified?
+}
+
+model PostClassified {
+  id           Int       @id @default(autoincrement())
+  postId       Int       @unique
+  isHistoric   Boolean
+  confidence   Int
+  reason       String
+  classifiedAt DateTime  @default(now())
+  post         PostRaw   @relation(fields: [postId], references: [id])
+}
+
+model MessageGenerated {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  messageText String
+  link        String
+  createdAt   DateTime @default(now())
+}
+
+model MessageSent {
+  id          Int      @id @default(autoincrement())
+  postId      Int
+  authorLink  String
+  status      String
+  sentAt      DateTime @default(now())
+  error       String?
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  type      String
+  message   String
+  createdAt DateTime @default(now())
+}
