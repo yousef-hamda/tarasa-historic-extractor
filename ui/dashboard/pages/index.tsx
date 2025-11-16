@@ -7,6 +7,8 @@ type StatsPayload = {
   historicTotal: number;
   queueCount: number;
   sentLast24h: number;
+  quotaRemaining: number;
+  messageLimit: number;
   logsCount: number;
   lastScrapeAt: string | null;
   lastMessageSentAt: string | null;
@@ -33,6 +35,15 @@ const Dashboard: React.FC = () => {
         <Card title="Queue depth" value={stats?.queueCount ?? '—'} subtitle="Messages awaiting send" />
         <Card title="Classified" value={stats?.classifiedTotal ?? '—'} subtitle="Posts processed by AI" />
         <Card title="Sent (24h)" value={stats?.sentLast24h ?? '—'} subtitle="Messenger quota usage" />
+        <Card
+          title="Quota remaining"
+          value={
+            stats?.quotaRemaining != null && stats?.messageLimit != null
+              ? `${stats.quotaRemaining}/${stats.messageLimit}`
+              : '—'
+          }
+          subtitle="Messages left in rolling window"
+        />
         <Card title="System logs" value={stats?.logsCount ?? '—'} subtitle="Total log entries" />
       </div>
 

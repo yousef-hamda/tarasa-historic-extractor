@@ -1,5 +1,6 @@
 import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
+import { getDailyMessageUsage } from '../utils/quota';
 
 const router = Router();
 
@@ -11,19 +12,19 @@ router.get('/api/stats', async (_req: Request, res: Response) => {
     classifiedTotal,
     historicTotal,
     queueCount,
-    sentLast24h,
     logsCount,
     lastScrape,
     lastMessage,
+    usage,
   ] = await Promise.all([
     prisma.postRaw.count(),
     prisma.postClassified.count(),
     prisma.postClassified.count({ where: { isHistoric: true } }),
     prisma.messageGenerated.count(),
-    prisma.messageSent.count({ where: { sentAt: { gte: since }, status: 'sent' } }),
     prisma.systemLog.count(),
     prisma.systemLog.findFirst({ where: { type: 'scrape' }, orderBy: { createdAt: 'desc' } }),
     prisma.messageSent.findFirst({ orderBy: { sentAt: 'desc' } }),
+    getDailyMessageUsage(),
   ]);
 
   res.json({
@@ -31,7 +32,9 @@ router.get('/api/stats', async (_req: Request, res: Response) => {
     classifiedTotal,
     historicTotal,
     queueCount,
-    sentLast24h,
+    sentLast24h: usage.sentLast24h,
+    quotaRemaining: usage.remaining,
+    messageLimit: usage.limit,
     logsCount,
     lastScrapeAt: lastScrape?.createdAt ?? null,
     lastMessageSentAt: lastMessage?.sentAt ?? null,

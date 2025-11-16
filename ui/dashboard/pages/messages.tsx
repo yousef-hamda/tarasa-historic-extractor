@@ -5,13 +5,13 @@ import Card from '../components/Card';
 type MessageDashboardState = {
   queue: any[];
   sent: any[];
-  stats: { queue: number; sentLast24h: number };
+  stats: { queue: number; sentLast24h: number; quotaRemaining: number; messageLimit: number };
 };
 
 const defaultState: MessageDashboardState = {
   queue: [],
   sent: [],
-  stats: { queue: 0, sentLast24h: 0 },
+  stats: { queue: 0, sentLast24h: 0, quotaRemaining: 0, messageLimit: 0 },
 };
 
 const MessagesPage: React.FC = () => {
@@ -30,6 +30,11 @@ const MessagesPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card title="Queued Messages" value={data.stats.queue} subtitle="Awaiting Messenger dispatch" />
           <Card title="Sent (24h)" value={data.stats.sentLast24h} subtitle="Rolling 24-hour window" />
+          <Card
+            title="Quota Remaining"
+            value={`${data.stats.quotaRemaining} / ${data.stats.messageLimit || '—'}`}
+            subtitle="Messages left in rolling limit"
+          />
         </div>
       </div>
 
