@@ -7,7 +7,7 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - LLM classifier and message generator via OpenAI.
 - Messenger automation with quota tracking, DB persistence, and operator alerts.
 - Prisma/PostgreSQL schema and Node.js API with cron jobs.
-- Next.js dashboard scaffold for monitoring posts, messages, logs, and settings.
+- Next.js dashboard scaffold for monitoring posts, messages, logs, settings, and firing manual control actions.
 
 ## Getting Started
 1. Install dependencies: `npm install`.
@@ -15,11 +15,13 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 3. Run Prisma migration: `npx prisma migrate dev`.
 4. Start the API: `npm run dev`.
 5. Start the API: `npm run dev`. The cron schedulers auto-register when the server boots, so scraping/classification/messaging/login refresh jobs start immediately.
+6. Open the dashboard (served by your chosen frontend host) to monitor stats and trigger manual actions.
 
-## Manual API Triggers
+## Manual API Triggers & Dashboard Controls
 - `POST /api/trigger-scrape` – immediately scrape configured groups.
 - `POST /api/trigger-classification` – classify newly scraped posts.
 - `POST /api/trigger-message` – generate and dispatch queued messages (respects quota).
+- The dashboard overview page now exposes buttons for these three endpoints. Operators can validate the pipeline without touching curl or Postman and see per-action statuses (idle/running/success/error) after each trigger.
 - `GET /api/posts?limit=50&page=1&group=<id>&historic=true|false|pending` – paginated posts feed with optional group and classification filters used by the dashboard.
 - `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput/quota statistics for the dashboard.
 - `GET /api/stats` – aggregates total posts, classifications, queue depth, logs, and last-run timestamps for the dashboard overview.
