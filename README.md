@@ -26,6 +26,7 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput/quota statistics for the dashboard.
 - `GET /api/stats` – aggregates total posts, classifications, queue depth, logs, and last-run timestamps for the dashboard overview.
 - `GET /api/settings` – exposes the configured group IDs, Tarasa submission link, and alert email configuration for the dashboard settings page.
+- `GET /api/logs?type=error&search=captcha&page=2&limit=50` – paginated logs API with optional type and free-text search filters. The dashboard log viewer uses these controls so operators can zero in on scrape/classify/message/auth issues quickly.
 
 ## Operational Notes
 - Configure `SYSTEM_EMAIL_ALERT`/`SYSTEM_EMAIL_PASSWORD` to receive automatic emails when Facebook requests 2FA or captcha resolution.
