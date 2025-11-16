@@ -1,12 +1,13 @@
 import { Request, Response, Router } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../database/prisma';
+import { logsQuerySchema, validateQuery } from '../middleware/validation';
 
 const router = Router();
 
 const clampLimit = (value: number) => Math.min(Math.max(value, 10), 200);
 
-router.get('/api/logs', async (req: Request, res: Response) => {
+router.get('/api/logs', validateQuery(logsQuerySchema), async (req: Request, res: Response) => {
   const limit = clampLimit(Number(req.query.limit) || 50);
   const requestedPage = Math.max(Number(req.query.page) || 1, 1);
   const typeFilter = (req.query.type as string | undefined)?.trim();

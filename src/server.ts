@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import postsRouter from './routes/posts';
 import logsRouter from './routes/logs';

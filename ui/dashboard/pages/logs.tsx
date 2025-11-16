@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Table from '../components/Table';
+import { SystemLogEntry } from '../../../src/types';
+
+type LogRow = Omit<SystemLogEntry, 'createdAt'> & { createdAt: string };
 
 type LogsResponse = {
-  data: any[];
+  data: LogRow[];
   pagination: { total: number; page: number; pages: number; limit: number };
   availableTypes: string[];
 };
@@ -35,7 +38,7 @@ const LogsPage: React.FC = () => {
 
     fetch(`/api/logs?${params.toString()}`)
       .then((res) => res.json())
-      .then((payload) => setResponse(payload))
+      .then((payload: LogsResponse) => setResponse(payload))
       .finally(() => setLoading(false));
   }, [filters]);
 

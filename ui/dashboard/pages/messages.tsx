@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import Table from '../components/Table';
 import Card from '../components/Card';
+import { MessageQueueItem, MessageSentRecord } from '../../../src/types';
+
+type QueueRow = Omit<MessageQueueItem, 'createdAt'> & { createdAt: string };
+type SentRow = Omit<MessageSentRecord, 'sentAt'> & { sentAt: string };
 
 type MessageDashboardState = {
-  queue: any[];
-  sent: any[];
+  queue: QueueRow[];
+  sent: SentRow[];
   stats: { queue: number; sentLast24h: number; quotaRemaining: number; messageLimit: number };
 };
 
@@ -20,7 +24,7 @@ const MessagesPage: React.FC = () => {
   useEffect(() => {
     fetch('/api/messages')
       .then((res) => res.json())
-      .then((payload) => setData(payload));
+      .then((payload: MessageDashboardState) => setData(payload));
   }, []);
 
   return (
