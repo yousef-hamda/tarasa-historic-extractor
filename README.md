@@ -14,12 +14,13 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 2. Copy `.env.example` to `.env` and fill in credentials.
 3. Run Prisma migration: `npx prisma migrate dev`.
 4. Start the API: `npm run dev`.
-5. Use cron entry points under `src/cron` for automation.
+5. Start the API: `npm run dev`. The cron schedulers auto-register when the server boots, so scraping/classification/messaging/login refresh jobs start immediately.
 
 ## Manual API Triggers
 - `POST /api/trigger-scrape` – immediately scrape configured groups.
 - `POST /api/trigger-classification` – classify newly scraped posts.
 - `POST /api/trigger-message` – generate and dispatch queued messages (respects quota).
+- `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput statistics for the dashboard.
 
 ## Operational Notes
 - Configure `SYSTEM_EMAIL_ALERT`/`SYSTEM_EMAIL_PASSWORD` to receive automatic emails when Facebook requests 2FA or captcha resolution.

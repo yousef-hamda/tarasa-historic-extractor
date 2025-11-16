@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
 import { scrapeGroups } from '../scraper/scraper';
 import { classifyPosts } from '../ai/classifier';
@@ -8,7 +8,7 @@ import { logSystemEvent } from '../utils/systemLog';
 
 const router = Router();
 
-router.get('/api/posts', async (_req, res) => {
+router.get('/api/posts', async (_req: Request, res: Response) => {
   const posts = await prisma.postRaw.findMany({
     include: { classified: true },
     orderBy: { scrapedAt: 'desc' },
@@ -17,7 +17,7 @@ router.get('/api/posts', async (_req, res) => {
   res.json(posts);
 });
 
-router.post('/api/trigger-scrape', async (_req, res) => {
+router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
   try {
     await scrapeGroups();
     res.json({ status: 'completed' });
@@ -27,7 +27,7 @@ router.post('/api/trigger-scrape', async (_req, res) => {
   }
 });
 
-router.post('/api/trigger-classification', async (_req, res) => {
+router.post('/api/trigger-classification', async (_req: Request, res: Response) => {
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
@@ -37,7 +37,7 @@ router.post('/api/trigger-classification', async (_req, res) => {
   }
 });
 
-router.post('/api/trigger-message', async (_req, res) => {
+router.post('/api/trigger-message', async (_req: Request, res: Response) => {
   try {
     await generateMessages();
     await dispatchMessages();

@@ -6,8 +6,12 @@ import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 
 const getGroupUrls = (): string[] => {
-  const ids = process.env.GROUP_IDS?.split(',').map((id) => id.trim()).filter(Boolean) || [];
-  return ids.map((id) => `https://www.facebook.com/groups/${id}`);
+  const ids = (process.env.GROUP_IDS ?? '')
+    .split(',')
+    .map((id: string) => id.trim())
+    .filter((id: string): id is string => Boolean(id));
+
+  return ids.map((id: string) => `https://www.facebook.com/groups/${id}`);
 };
 
 export const scrapeGroups = async () => {
