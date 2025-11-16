@@ -1,14 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Table from '../components/Table';
+import { PostRawWithClassification } from '../../../src/types';
 
-type PostRow = {
-  id: number;
-  groupId: string;
-  authorName?: string | null;
-  text: string;
-  scrapedAt: string;
-  classified?: { isHistoric: boolean; confidence: number | null } | null;
-};
+type PostRow = Omit<PostRawWithClassification, 'scrapedAt'> & { scrapedAt: string };
 
 type PostsResponse = {
   data: PostRow[];

@@ -5,8 +5,6 @@ import { getDailyMessageUsage } from '../utils/quota';
 const router = Router();
 
 router.get('/api/messages', async (_req: Request, res: Response) => {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
   const [queue, sent, usage] = await Promise.all([
     prisma.messageGenerated.findMany({
       orderBy: { createdAt: 'desc' },

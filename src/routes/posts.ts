@@ -6,6 +6,8 @@ import { classifyPosts } from '../ai/classifier';
 import { generateMessages } from '../ai/generator';
 import { dispatchMessages } from '../messenger/messenger';
 import { logSystemEvent } from '../utils/systemLog';
+import { requireApiKey } from '../middleware/auth';
+import { postsQuerySchema, validateQuery } from '../middleware/validation';
 
 const router = Router();
 
@@ -31,7 +33,7 @@ const buildPostsWhere = (req: Request): Prisma.PostRawWhereInput => {
   return where;
 };
 
-router.get('/api/posts', async (req: Request, res: Response) => {
+router.get('/api/posts', validateQuery(postsQuerySchema), async (req: Request, res: Response) => {
   const rawLimit = Number(req.query.limit) || 50;
   const limit = clampLimit(rawLimit);
   const requestedPage = Math.max(Number(req.query.page) || 1, 1);
@@ -69,7 +71,7 @@ const csvEscape = (value: unknown): string => {
   return `"${normalized}"`;
 };
 
-router.get('/api/posts/export', async (req: Request, res: Response) => {
+router.get('/api/posts/export', validateQuery(postsQuerySchema), async (req: Request, res: Response) => {
   const where = buildPostsWhere(req);
   const limit = clampExportLimit(Number(req.query.limit) || 500);
 
@@ -113,7 +115,7 @@ router.get('/api/posts/export', async (req: Request, res: Response) => {
   res.send(csv);
 });
 
-router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
+router.post('/api/trigger-scrape', requireApiKey, async (_req: Request, res: Response) => {
   try {
     await scrapeGroups();
     res.json({ status: 'completed' });
@@ -123,7 +125,7 @@ router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/api/trigger-classification', async (_req: Request, res: Response) => {
+router.post('/api/trigger-classification', requireApiKey, async (_req: Request, res: Response) => {
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
@@ -133,7 +135,7 @@ router.post('/api/trigger-classification', async (_req: Request, res: Response) 
   }
 });
 
-router.post('/api/trigger-message', async (_req: Request, res: Response) => {
+router.post('/api/trigger-message', requireApiKey, async (_req: Request, res: Response) => {
   try {
     await generateMessages();
     await dispatchMessages();
