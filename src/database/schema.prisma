@@ -16,6 +16,8 @@ model PostRaw {
   text        String
   scrapedAt   DateTime        @default(now())
   classified  PostClassified?
+  generated   MessageGenerated[]
+  messages    MessageSent[]
 }
 
 model PostClassified {
@@ -34,6 +36,7 @@ model MessageGenerated {
   messageText String
   link        String
   createdAt   DateTime @default(now())
+  post        PostRaw  @relation(fields: [postId], references: [id])
 }
 
 model MessageSent {
@@ -43,6 +46,7 @@ model MessageSent {
   status      String
   sentAt      DateTime @default(now())
   error       String?
+  post        PostRaw  @relation(fields: [postId], references: [id])
 }
 
 model SystemLog {
