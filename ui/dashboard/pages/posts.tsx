@@ -36,8 +36,7 @@ const PostsPage: React.FC = () => {
       .then((payload) => setGroups(payload.groups || []));
   }, []);
 
-  const fetchPosts = useCallback(() => {
-    setLoading(true);
+  const buildQueryParams = () => {
     const params = new URLSearchParams();
     params.set('page', filters.page.toString());
     params.set('limit', '25');
@@ -54,6 +53,13 @@ const PostsPage: React.FC = () => {
       };
       params.set('historic', mapping[filters.historic]);
     }
+
+    return params;
+  };
+
+  const fetchPosts = useCallback(() => {
+    setLoading(true);
+    const params = buildQueryParams();
 
     fetch(`/api/posts?${params.toString()}`)
       .then((res) => res.json())
@@ -88,6 +94,15 @@ const PostsPage: React.FC = () => {
   const disablePrev = pagination.page <= 1;
   const disableNext = pagination.page >= pagination.pages;
 
+  const exportPosts = () => {
+    const params = buildQueryParams();
+    params.set('limit', '500');
+    const url = `/api/posts/export?${params.toString()}`;
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+  };
+
   return (
     <div className="p-8 space-y-6">
       <div className="flex flex-col md:flex-row md:items-end gap-4">
@@ -116,6 +131,10 @@ const PostsPage: React.FC = () => {
         <div className="flex-1 text-sm text-gray-500">
           Showing {pagination.limit} posts per page · {response.pagination.total} total matches
         </div>
+
+        <button onClick={exportPosts} className="px-4 py-2 bg-blue-600 text-white rounded">
+          Export CSV
+        </button>
       </div>
 
       <div className="flex items-center gap-3">

@@ -22,7 +22,9 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 - `POST /api/trigger-classification` – classify newly scraped posts.
 - `POST /api/trigger-message` – generate and dispatch queued messages (respects quota).
 - The dashboard overview page now exposes buttons for these three endpoints. Operators can validate the pipeline without touching curl or Postman and see per-action statuses (idle/running/success/error) after each trigger.
+- The Posts view now includes an **Export CSV** button that downloads the currently filtered slice of posts using the `/api/posts/export` endpoint.
 - `GET /api/posts?limit=50&page=1&group=<id>&historic=true|false|pending` – paginated posts feed with optional group and classification filters used by the dashboard.
+- `GET /api/posts/export?group=<id>&historic=true|false|pending&limit=500` – CSV export of the filtered posts list (max 1,000 rows) for manual analysis or backfilling.
 - `GET /api/messages` – returns the queued message generation backlog, send history, and current throughput/quota statistics for the dashboard.
 - `GET /api/stats` – aggregates total posts, classifications, queue depth, logs, and last-run timestamps for the dashboard overview.
 - `GET /api/settings` – exposes the configured group IDs, Tarasa submission link, and alert email configuration for the dashboard settings page.
