@@ -6,6 +6,7 @@ import { selectors } from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
+import { browserConfig } from '../config/playwright.config';
 
 const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
 
@@ -77,7 +78,7 @@ export const ensureLogin = async (context: BrowserContext) => {
 };
 
 export const createFacebookContext = async (): Promise<{ browser: Browser; context: BrowserContext }> => {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch(browserConfig);
   const context = await browser.newContext();
 
   const cookies = await loadCookies();
