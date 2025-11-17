@@ -1,5 +1,5 @@
 import { Page } from 'playwright';
-import { selectors } from '../utils/selectors';
+import { selectors, queryAllOnPage, findFirstHandle } from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 
 export interface ScrapedPost {
@@ -28,7 +28,7 @@ const normalizePostId = (rawId: string | null, fallback: string | null): string 
 
 export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
   const posts: ScrapedPost[] = [];
-  const containers = await page.$$(selectors.postContainer);
+  const { handles: containers } = await queryAllOnPage(page, selectors.postContainer);
   const limit = Math.floor(Math.random() * 21) + 20; // 20-40 posts
 
   for (const container of containers) {
@@ -50,10 +50,13 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       continue;
     }
 
-    const authorHandle = await container.$(selectors.authorName);
-    const authorName = authorHandle ? (await authorHandle.innerText()).trim() : undefined;
-    const authorLinkHandle = await container.$(selectors.authorLink);
-    const authorLink = authorLinkHandle ? await authorLinkHandle.getAttribute('href') : undefined;
+    const authorHandle = await findFirstHandle(container, selectors.authorName);
+    const authorName = authorHandle.handle ? (await authorHandle.handle.innerText()).trim() : undefined;
+    const authorLinkHandle = await findFirstHandle(container, selectors.authorLink);
+    const authorLinkRaw = authorLinkHandle.handle
+      ? await authorLinkHandle.handle.getAttribute('href')
+      : null;
+    const authorLink = authorLinkRaw ?? undefined;
 
     posts.push({
       fbPostId: postId,

@@ -1,6 +1,11 @@
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
-import { selectors } from '../utils/selectors';
+import {
+  selectors,
+  clickFirstMatchingSelector,
+  waitForFirstMatchingSelector,
+  fillFirstMatchingSelector,
+} from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
@@ -51,22 +56,9 @@ export const dispatchMessages = async () => {
         await page.goto(post.authorLink, { waitUntil: 'domcontentloaded' });
         await humanDelay();
 
-        let clicked = false;
-        for (const selector of selectors.messengerButtons) {
-          const button = await page.$(selector);
-          if (button) {
-            await button.click();
-            clicked = true;
-            break;
-          }
-        }
-
-        if (!clicked) {
-          throw new Error('Unable to locate message button');
-        }
-
-        await page.waitForSelector(selectors.messengerTextarea, { timeout: 15000 });
-        await page.fill(selectors.messengerTextarea, candidate.messageText);
+        await clickFirstMatchingSelector(page, selectors.messengerButtons);
+        await waitForFirstMatchingSelector(page, selectors.messengerTextarea, { timeout: 15000 });
+        await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
         await humanDelay();
         await page.keyboard.press('Enter');
         await humanDelay();
