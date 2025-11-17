@@ -3,85 +3,97 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 
-const prompt = `Generate a friendly and personalized Arabic message.
-Do NOT sound like AI.
-Target: Facebook users who wrote a historical post.
-
-Goals:
-1. Compliment the user.
-2. Explain that Tarasa preserves historical stories.
-3. Encourage them to submit their story.
-4. Include pre-filled link: {dynamic_link}
-5. Keep message short, polite, and natural.
-6. Randomize synonyms so no two messages are identical.`;
+const TEMPLATE_PROMPT = `You write short, warm Arabic outreach messages to Facebook users who just shared a historic memory.
+Your goals:
+1. Genuinely compliment the post in a casual, human tone.
+2. Mention that Tarasa preserves community history.
+3. Invite them to submit their story through the provided link.
+4. Keep it under 3 sentences and avoid sounding like AI.
+5. Randomize wording so consecutive outputs differ.
+Respond with only the final message text.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const model = process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini';
+const MAX_BATCH = Number(process.env.GENERATOR_BATCH_SIZE ?? '10');
 
 const buildLink = (postId: number, text: string) => {
   const base = process.env.BASE_TARASA_URL || 'https://tarasa.com/add-story';
-  const encoded = encodeURIComponent(text);
-  return `${base}?refPost=${postId}&text=${encoded}`;
+  return `${base}?refPost=${postId}&text=${encodeURIComponent(text)}`;
+};
+
+const normalizeMessageContent = (content?: string | Array<{ type: string; text?: string }>) => {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  const textChunk = content.find((chunk) => chunk.type === 'text');
+  return textChunk?.text ?? '';
 };
 
 export const generateMessages = async () => {
-  const candidates = await prisma.postClassified.findMany({
+  const classifiedPosts = await prisma.postClassified.findMany({
     where: { isHistoric: true, confidence: { gte: 75 } },
     include: { post: true },
     orderBy: { classifiedAt: 'asc' },
-    take: 10,
+    take: MAX_BATCH,
   });
 
-  if (!candidates.length) {
+  if (!classifiedPosts.length) {
     logger.info('No qualified posts for message generation');
     return;
   }
 
   let generated = 0;
 
-  for (const item of candidates) {
-    if (!item.post) continue;
+  for (const classification of classifiedPosts) {
+    if (!classification.post) continue;
 
-    const alreadyGenerated = await prisma.messageGenerated.findFirst({
-      where: { postId: item.postId },
+    const { post } = classification;
+
+    const existingGenerated = await prisma.messageGenerated.findFirst({
+      where: { postId: post.id },
     });
-    if (alreadyGenerated) continue;
+    if (existingGenerated) continue;
 
     const alreadySent = await prisma.messageSent.findFirst({
-      where: { postId: item.postId, status: 'sent' },
+      where: { postId: post.id, status: 'sent' },
     });
     if (alreadySent) continue;
 
-    const link = buildLink(item.postId, item.post.text);
+    const link = buildLink(post.id, post.text);
 
     try {
-      const completion = await openai.responses.create({
-        model: 'gpt-4o-mini',
-        input: [
+      const completion = await openai.chat.completions.create({
+        model,
+        temperature: 0.8,
+        messages: [
+          { role: 'system', content: TEMPLATE_PROMPT },
           {
-            role: 'system',
-            content: prompt.replace('{dynamic_link}', link),
+            role: 'user',
+            content: `Original post: ${post.text}\nCTA link: ${link}`,
           },
         ],
       });
 
-      const content = completion.output?.[0]?.content?.[0];
-      const text = content && 'text' in content ? content.text : '';
+      const rawContent = completion.choices[0]?.message?.content;
+      const messageText = normalizeMessageContent(rawContent).trim();
 
-      if (!text) {
+      if (!messageText) {
+        logger.warn(`OpenAI returned empty message for post ${post.id}`);
         continue;
       }
 
       await prisma.messageGenerated.create({
         data: {
-          postId: item.postId,
-          messageText: text.trim(),
+          postId: post.id,
+          messageText,
           link,
         },
       });
+
       generated += 1;
     } catch (error) {
-      logger.error(`Failed to generate message for post ${item.postId}: ${error}`);
-      await logSystemEvent('error', `Message generation failed for post ${item.postId}: ${(error as Error).message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to generate message for post ${post.id}: ${message}`);
+      await logSystemEvent('error', `Message generation failed for post ${post.id}: ${message}`);
     }
   }
 

@@ -3,56 +3,65 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 
-const prompt = `You are an expert classifier in historical storytelling.
-Your task is to identify whether the given Facebook post describes:
-1. A historical event, OR
-2. A personal memory related to past events, OR
-3. Any narrative referencing history or old times.
-
-If yes → mark as is_historic = true.
-Return ONLY JSON:
-{
-  "is_historic": true/false,
-  "confidence": 0-100,
-  "reason": "string"
-}`;
+const CLASSIFICATION_PROMPT = `You are an expert Arabic-speaking community moderator for a historical storytelling project.
+Classify whether the supplied Facebook post clearly references historical events or personal memories from the past.
+Respond with JSON matching the schema.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+const CLASSIFICATION_SCHEMA = {
+  name: 'classification_schema',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      is_historic: { type: 'boolean', description: 'Whether the content is historical in nature.' },
+      confidence: { type: 'integer', minimum: 0, maximum: 100 },
+      reason: { type: 'string' },
+    },
+    required: ['is_historic', 'confidence', 'reason'],
+  },
+} as const;
+
+const model = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
+const BATCH_SIZE = Number(process.env.CLASSIFIER_BATCH_SIZE ?? '10');
+
+const normalizeMessageContent = (content?: string | Array<{ type: string; text?: string }>) => {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  const textChunk = content.find((chunk) => chunk.type === 'text');
+  return textChunk?.text ?? '';
+};
+
 export const classifyPosts = async () => {
-  const unclassified = await prisma.postRaw.findMany({
+  const pendingPosts = await prisma.postRaw.findMany({
     where: { classified: null },
     orderBy: { scrapedAt: 'asc' },
-    take: 10,
+    take: BATCH_SIZE,
   });
 
-  if (!unclassified.length) {
+  if (!pendingPosts.length) {
     logger.info('No posts pending classification');
     return;
   }
 
   let processed = 0;
 
-  for (const post of unclassified) {
+  for (const post of pendingPosts) {
     try {
-      const completion = await openai.responses.create({
-        model: 'gpt-4o-mini',
-        input: [
-          {
-            role: 'system',
-            content: prompt,
-          },
-          {
-            role: 'user',
-            content: post.text,
-          },
+      const completion = await openai.chat.completions.create({
+        model,
+        temperature: 0,
+        response_format: { type: 'json_schema', json_schema: CLASSIFICATION_SCHEMA },
+        messages: [
+          { role: 'system', content: CLASSIFICATION_PROMPT },
+          { role: 'user', content: post.text },
         ],
-        response_format: { type: 'json_schema' },
       });
 
-      const content = completion.output?.[0]?.content?.[0];
-      const text = content && 'text' in content ? content.text : '{}';
-      const parsed = JSON.parse(text);
+      const rawContent = completion.choices[0]?.message?.content;
+      const textContent = normalizeMessageContent(rawContent);
+      const parsed = JSON.parse(textContent || '{}');
 
       await prisma.postClassified.create({
         data: {
@@ -62,10 +71,12 @@ export const classifyPosts = async () => {
           reason: parsed.reason || 'N/A',
         },
       });
+
       processed += 1;
     } catch (error) {
-      logger.error(`Failed to classify post ${post.id}: ${error}`);
-      await logSystemEvent('error', `Failed to classify post ${post.id}: ${(error as Error).message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to classify post ${post.id}: ${message}`);
+      await logSystemEvent('error', `Failed to classify post ${post.id}: ${message}`);
     }
   }
 
