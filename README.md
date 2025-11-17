@@ -16,6 +16,12 @@ Production-ready specification and starter implementation for the Tarasa Faceboo
 4. Start the API: `npm run dev`.
 5. Start the API: `npm run dev`. The cron schedulers auto-register when the server boots, so scraping/classification/messaging/login refresh jobs start immediately.
 
+## Running the Dashboard
+1. Navigate to the dashboard workspace: `cd ui/dashboard`.
+2. Install dependencies: `npm install`.
+3. Start the Next.js dev server: `npm run dev`.
+4. Open http://localhost:3000 and ensure the API (port 4000) is running for data fetching.
+
 ## Manual API Triggers
 - `POST /api/trigger-scrape` – immediately scrape configured groups.
 - `POST /api/trigger-classification` – classify newly scraped posts.

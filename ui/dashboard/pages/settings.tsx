@@ -1,8 +1,12 @@
 import React from 'react';
+import type { GetServerSideProps } from 'next';
 
-const SettingsPage: React.FC = () => {
-  const groups = process.env.GROUP_IDS?.split(',') || [];
-  const messageLimit = process.env.MAX_MESSAGES_PER_DAY || '20';
+interface SettingsPageProps {
+  groups: string[];
+  messageLimit: string;
+}
+
+const SettingsPage: React.FC<SettingsPageProps> = ({ groups, messageLimit }) => {
 
   return (
     <div className="p-8 space-y-4">
@@ -21,6 +25,20 @@ const SettingsPage: React.FC = () => {
       </section>
     </div>
   );
+};
+
+export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async () => {
+  const groups = (process.env.GROUP_IDS || '')
+    .split(',')
+    .map((group) => group.trim())
+    .filter(Boolean);
+
+  return {
+    props: {
+      groups,
+      messageLimit: process.env.MAX_MESSAGES_PER_DAY || '20',
+    },
+  };
 };
 
 export default SettingsPage;

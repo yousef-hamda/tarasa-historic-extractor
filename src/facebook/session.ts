@@ -2,7 +2,12 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import fs from 'fs/promises';
 import path from 'path';
 import logger from '../utils/logger';
-import { selectors } from '../utils/selectors';
+import {
+  selectors,
+  findFirstHandle,
+  fillFirstMatchingSelector,
+  clickFirstMatchingSelector,
+} from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
@@ -25,14 +30,18 @@ export const saveCookies = async (context: BrowserContext) => {
 };
 
 const detectTwoFactor = async (page: Page) => {
-  return Boolean(
-    (await page.$(selectors.twoFactorInput)) ||
-      (selectors.twoFactorText ? await page.$(selectors.twoFactorText) : null)
-  );
+  const hasInput = (await findFirstHandle(page, selectors.twoFactorInput)).handle;
+  const hasText = selectors.twoFactorText
+    ? (await findFirstHandle(page, selectors.twoFactorText)).handle
+    : null;
+  return Boolean(hasInput || hasText);
 };
 
 const detectCaptcha = async (page: Page) => {
-  return Boolean(selectors.captchaText && (await page.$(selectors.captchaText)));
+  const captchaMatch = selectors.captchaText
+    ? (await findFirstHandle(page, selectors.captchaText)).handle
+    : null;
+  return Boolean(captchaMatch);
 };
 
 const handleChallenge = async (type: '2fa' | 'captcha') => {
@@ -50,13 +59,15 @@ export const ensureLogin = async (context: BrowserContext) => {
   await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle');
 
-  const loginNeeded = (await page.$(selectors.loginEmail)) || (await page.$(selectors.loginText));
+  const loginNeeded =
+    (await findFirstHandle(page, selectors.loginEmail)).handle ||
+    (await findFirstHandle(page, selectors.loginText)).handle;
 
   if (loginNeeded) {
     await logSystemEvent('auth', 'Facebook session expired. Logging in.');
-    await page.fill(selectors.loginEmail, process.env.FB_EMAIL || '');
-    await page.fill(selectors.loginPassword, process.env.FB_PASSWORD || '');
-    await page.click(selectors.loginButton);
+    await fillFirstMatchingSelector(page, selectors.loginEmail, process.env.FB_EMAIL || '');
+    await fillFirstMatchingSelector(page, selectors.loginPassword, process.env.FB_PASSWORD || '');
+    await clickFirstMatchingSelector(page, selectors.loginButton);
     await page.waitForLoadState('networkidle');
     await humanDelay();
   }

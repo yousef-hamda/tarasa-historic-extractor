@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
+import { callOpenAIWithRetry } from '../utils/openaiRetry';
 
 const TEMPLATE_PROMPT = `You write short, warm Arabic outreach messages to Facebook users who just shared a historic memory.
 Your goals:
@@ -21,7 +22,9 @@ const buildLink = (postId: number, text: string) => {
   return `${base}?refPost=${postId}&text=${encodeURIComponent(text)}`;
 };
 
-const normalizeMessageContent = (content?: string | Array<{ type: string; text?: string }>) => {
+const normalizeMessageContent = (
+  content?: string | null | Array<{ type: string; text?: string }>,
+) => {
   if (!content) return '';
   if (typeof content === 'string') return content;
   const textChunk = content.find((chunk) => chunk.type === 'text');
@@ -61,17 +64,19 @@ export const generateMessages = async () => {
     const link = buildLink(post.id, post.text);
 
     try {
-      const completion = await openai.chat.completions.create({
-        model,
-        temperature: 0.8,
-        messages: [
-          { role: 'system', content: TEMPLATE_PROMPT },
-          {
-            role: 'user',
-            content: `Original post: ${post.text}\nCTA link: ${link}`,
-          },
-        ],
-      });
+      const completion = await callOpenAIWithRetry(() =>
+        openai.chat.completions.create({
+          model,
+          temperature: 0.8,
+          messages: [
+            { role: 'system', content: TEMPLATE_PROMPT },
+            {
+              role: 'user',
+              content: `Original post: ${post.text}\nCTA link: ${link}`,
+            },
+          ],
+        }),
+      );
 
       const rawContent = completion.choices[0]?.message?.content;
       const messageText = normalizeMessageContent(rawContent).trim();

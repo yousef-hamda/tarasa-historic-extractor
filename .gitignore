@@ -3,3 +3,8 @@ node_modules
 .env
 
 /generated/prisma
+dist
+build
+.next
+*.log
+src/config/cookies.json

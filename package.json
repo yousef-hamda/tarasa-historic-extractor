@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
     "scrape": "ts-node src/scraper/scraper.ts",
     "classify": "ts-node src/ai/classifier.ts",
     "generate": "ts-node src/ai/generator.ts",
-    "message": "ts-node src/messenger/messenger.ts"
+    "message": "ts-node src/messenger/messenger.ts",
+    "prisma:generate": "npx prisma generate --schema=src/database/schema.prisma",
+    "prisma:migrate": "npx prisma migrate deploy --schema=src/database/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",
