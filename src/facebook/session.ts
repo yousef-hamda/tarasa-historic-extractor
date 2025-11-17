@@ -56,8 +56,15 @@ const handleChallenge = async (type: '2fa' | 'captcha') => {
 
 export const ensureLogin = async (context: BrowserContext) => {
   const page = await context.newPage();
-  await page.goto('https://www.facebook.com', { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle');
+  page.setDefaultTimeout(90000);
+  
+  await page.goto('https://www.facebook.com', { 
+    waitUntil: 'domcontentloaded',
+    timeout: 90000 
+  });
+  
+  // Wait for page to be interactive
+  await page.waitForTimeout(3000);
 
   const loginNeeded =
     (await findFirstHandle(page, selectors.loginEmail)).handle ||
@@ -68,7 +75,7 @@ export const ensureLogin = async (context: BrowserContext) => {
     await fillFirstMatchingSelector(page, selectors.loginEmail, process.env.FB_EMAIL || '');
     await fillFirstMatchingSelector(page, selectors.loginPassword, process.env.FB_PASSWORD || '');
     await clickFirstMatchingSelector(page, selectors.loginButton);
-    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(5000); // Wait for login
     await humanDelay();
   }
 

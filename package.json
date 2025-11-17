@@ -20,7 +20,6 @@
     "dashboard:build": "cd ui/dashboard && npm run build"
   },
   "dependencies": {
-    "@prisma/client": "^5.15.0",
     "axios": "^1.13.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -38,11 +37,15 @@
     "winston": "^3.13.0"
   },
   "devDependencies": {
+    "@prisma/client": "^6.19.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/node": "^20.19.25",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^7.0.3",
     "autoprefixer": "^10.4.22",
     "postcss": "^8.5.6",
-    "prisma": "^5.15.0",
+    "prisma": "^6.19.0",
     "tailwindcss": "^4.1.17",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

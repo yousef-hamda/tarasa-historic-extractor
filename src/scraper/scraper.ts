@@ -26,17 +26,25 @@ export const scrapeGroups = async () => {
 
   try {
     const page = await context.newPage();
+    page.setDefaultTimeout(90000); // 90 seconds timeout
 
     for (const groupUrl of groups) {
       try {
-        await page.goto(groupUrl, { waitUntil: 'domcontentloaded' });
-        await humanDelay();
+        await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
         logger.info(`Scraping group ${groupUrl}`);
         await logSystemEvent('scrape', `Scraping started for ${groupUrl}`);
 
+        // Wait a bit for initial content
+        await humanDelay(3000, 5000);
+
+        // Scroll gradually to load more posts
         for (let i = 0; i < 5; i++) {
-          await page.evaluate('window.scrollBy(0, 800)');
-          await humanDelay();
+          try {
+            await page.evaluate('window.scrollBy(0, 800)');
+            await humanDelay(2000, 4000);
+          } catch (scrollError) {
+            logger.warn(`Scroll attempt ${i + 1} failed, continuing...`);
+          }
         }
 
         const posts = await extractPosts(page);
