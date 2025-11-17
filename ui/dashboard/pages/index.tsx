@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Card from '../components/Card';
+import { apiFetch } from '../utils/api';
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState({ posts: 0, messages: 0, logs: 0 });
@@ -7,9 +8,9 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     const loadStats = async () => {
       const [postsRes, messagesRes, logsRes] = await Promise.all([
-        fetch('/api/posts'),
-        fetch('/api/messages'),
-        fetch('/api/logs'),
+        apiFetch('/api/posts'),
+        apiFetch('/api/messages'),
+        apiFetch('/api/logs'),
       ]);
       const posts = await postsRes.json();
       const messages = await messagesRes.json();
