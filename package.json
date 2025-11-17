@@ -1,6 +1,11 @@
 {
   "name": "tarasa-historic-extractor",
   "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    ".",
+    "ui/dashboard"
+  ],
   "scripts": {
     "dev": "ts-node src/server.ts",
     "build": "tsc",
@@ -10,7 +15,9 @@
     "generate": "ts-node src/ai/generator.ts",
     "message": "ts-node src/messenger/messenger.ts",
     "prisma:generate": "npx prisma generate --schema=src/database/schema.prisma",
-    "prisma:migrate": "npx prisma migrate deploy --schema=src/database/schema.prisma"
+    "prisma:migrate": "npx prisma migrate deploy --schema=src/database/schema.prisma",
+    "dashboard:dev": "cd ui/dashboard && npm run dev",
+    "dashboard:build": "cd ui/dashboard && npm run build"
   },
   "dependencies": {
     "@prisma/client": "^5.15.0",
