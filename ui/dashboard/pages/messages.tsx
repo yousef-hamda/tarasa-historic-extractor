@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Table from '../components/Table';
 import Card from '../components/Card';
+import { apiFetch } from '../utils/api';
 
 type MessageDashboardState = {
   queue: any[];
@@ -18,7 +19,7 @@ const MessagesPage: React.FC = () => {
   const [data, setData] = useState<MessageDashboardState>(defaultState);
 
   useEffect(() => {
-    fetch('/api/messages')
+    apiFetch('/api/messages')
       .then((res) => res.json())
       .then((payload) => setData(payload));
   }, []);

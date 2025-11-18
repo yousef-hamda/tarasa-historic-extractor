@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
+import { callOpenAIWithRetry } from '../utils/openaiRetry';
 
 const CLASSIFICATION_PROMPT = `You are an expert Arabic-speaking community moderator for a historical storytelling project.
 Classify whether the supplied Facebook post clearly references historical events or personal memories from the past.
@@ -26,7 +27,9 @@ const CLASSIFICATION_SCHEMA = {
 const model = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
 const BATCH_SIZE = Number(process.env.CLASSIFIER_BATCH_SIZE ?? '10');
 
-const normalizeMessageContent = (content?: string | Array<{ type: string; text?: string }>) => {
+const normalizeMessageContent = (
+  content?: string | null | Array<{ type: string; text?: string }>,
+) => {
   if (!content) return '';
   if (typeof content === 'string') return content;
   const textChunk = content.find((chunk) => chunk.type === 'text');
@@ -49,15 +52,17 @@ export const classifyPosts = async () => {
 
   for (const post of pendingPosts) {
     try {
-      const completion = await openai.chat.completions.create({
-        model,
-        temperature: 0,
-        response_format: { type: 'json_schema', json_schema: CLASSIFICATION_SCHEMA },
-        messages: [
-          { role: 'system', content: CLASSIFICATION_PROMPT },
-          { role: 'user', content: post.text },
-        ],
-      });
+      const completion = await callOpenAIWithRetry(() =>
+        openai.chat.completions.create({
+          model,
+          temperature: 0,
+          response_format: { type: 'json_schema', json_schema: CLASSIFICATION_SCHEMA },
+          messages: [
+            { role: 'system', content: CLASSIFICATION_PROMPT },
+            { role: 'user', content: post.text },
+          ],
+        }),
+      );
 
       const rawContent = completion.choices[0]?.message?.content;
       const textContent = normalizeMessageContent(rawContent);
