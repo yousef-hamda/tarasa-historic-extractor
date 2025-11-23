@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import Table from '../components/Table';
+import { apiFetch } from '../utils/api';
 
 const PostsPage: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/posts')
+    apiFetch('/api/posts')
       .then((res) => res.json())
       .then((posts) => setData(posts));
   }, []);

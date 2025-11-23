@@ -1,17 +1,13 @@
-import { PlaywrightTestConfig } from '@playwright/test';
-
-const config: PlaywrightTestConfig = {
-  timeout: 120000,
-  expect: {
-    timeout: 10000,
-  },
-  use: {
-    headless: false,
-    viewport: { width: 1280, height: 720 },
-    ignoreHTTPSErrors: true,
-    video: 'off',
-    screenshot: 'off',
-  },
+export const playwrightConfig = {
+  timeout: 180000, // Increased to 3 minutes
+  headless: false,
+  viewport: { width: 1280, height: 720 },
+  ignoreHTTPSErrors: true,
+  args: [
+    '--disable-blink-features=AutomationControlled',
+    '--disable-dev-shm-usage',
+    '--no-sandbox',
+  ],
 };
 
-export default config;
+export default playwrightConfig;
