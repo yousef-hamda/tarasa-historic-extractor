@@ -24,7 +24,7 @@
     "value": "1280x720",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1764001210,
+    "expires": 1764513018,
     "httpOnly": false,
     "secure": true,
     "sameSite": "Lax"
@@ -34,7 +34,7 @@
     "value": "1",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1764001210,
+    "expires": 1764513018,
     "httpOnly": false,
     "secure": true,
     "sameSite": "None"
@@ -64,39 +64,39 @@
     "value": "100010396726536",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1794931807.590496,
+    "expires": 1795444216.411382,
     "httpOnly": false,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "xs",
-    "value": "7%3ANLP3RArVHCrnwQ%3A2%3A1763388459%3A-1%3A-1%3A%3AAcx_YUlcvNfAcHbUbxC6APp2ep6KaEa4L-ZDhWyi5A",
+    "value": "7%3ANLP3RArVHCrnwQ%3A2%3A1763388459%3A-1%3A-1%3A%3AAczft87fbgwWrawYlNhxqWKwe0X7CBn4hyHKZYJv0w",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1794931807.590533,
-    "httpOnly": true,
-    "secure": true,
-    "sameSite": "None"
-  },
-  {
-    "name": "fr",
-    "value": "1V1qMikidX5Vpkcjl.AWebf38tqu_rltfbeHfXq8baBnr6_E6gSiBeJ9hwWG7pK9ADLdo.BpG0jf..AAA.0.0.BpG0sx.AWcjHmakjE5sTvaXqr9esnf9Ev4",
-    "domain": ".facebook.com",
-    "path": "/",
-    "expires": 1771172401.833025,
+    "expires": 1795444216.411423,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "presence",
-    "value": "C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1763396410870%2C%22v%22%3A1%7D",
+    "value": "C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1763908221985%2C%22v%22%3A1%7D",
     "domain": ".facebook.com",
     "path": "/",
     "expires": -1,
     "httpOnly": false,
     "secure": true,
     "sameSite": "Lax"
+  },
+  {
+    "name": "fr",
+    "value": "1peZP4FjlVrs8mB0v.AWcpZdSaUFJ55e7K8aByCSK0rARu9gYc7F0xXiaJllTxGM_0e8Q.BpIxp4..AAA.0.0.BpIxuY.AWfeNhHt5FXE1Zcj8blVeiCYAKk",
+    "domain": ".facebook.com",
+    "path": "/",
+    "expires": 1771684504.442616,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
   }
 ]
