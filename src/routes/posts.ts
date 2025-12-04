@@ -8,6 +8,12 @@ import { logSystemEvent } from '../utils/systemLog';
 
 const router = Router();
 
+const requireAdminKey = (req: Request) => {
+  const apiKey = req.headers['x-api-key'];
+  const normalizedKey = Array.isArray(apiKey) ? apiKey[0] : apiKey;
+  return normalizedKey === process.env.ADMIN_API_KEY;
+};
+
 router.get('/api/posts', async (_req: Request, res: Response) => {
   const posts = await prisma.postRaw.findMany({
     include: { classified: true },
@@ -17,7 +23,10 @@ router.get('/api/posts', async (_req: Request, res: Response) => {
   res.json(posts);
 });
 
-router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
+router.post('/api/trigger-scrape', async (req: Request, res: Response) => {
+  if (!requireAdminKey(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     await scrapeGroups();
     res.json({ status: 'completed' });
@@ -27,7 +36,10 @@ router.post('/api/trigger-scrape', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/api/trigger-classification', async (_req: Request, res: Response) => {
+router.post('/api/trigger-classification', async (req: Request, res: Response) => {
+  if (!requireAdminKey(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
@@ -37,7 +49,10 @@ router.post('/api/trigger-classification', async (_req: Request, res: Response) 
   }
 });
 
-router.post('/api/trigger-message', async (_req: Request, res: Response) => {
+router.post('/api/trigger-message', async (req: Request, res: Response) => {
+  if (!requireAdminKey(req)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     await generateMessages();
     await dispatchMessages();

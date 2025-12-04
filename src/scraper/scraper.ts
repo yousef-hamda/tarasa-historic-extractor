@@ -4,6 +4,7 @@ import { extractPosts } from './extractors';
 import prisma from '../database/prisma';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
+import { callPlaywrightWithRetry } from '../utils/playwrightRetry';
 
 const getGroupUrls = (): string[] => {
   const ids = (process.env.GROUP_IDS ?? '')
@@ -22,7 +23,7 @@ export const scrapeGroups = async () => {
     return;
   }
 
-  const { browser, context } = await createFacebookContext();
+  const { context } = await createFacebookContext();
 
   try {
     const page = await context.newPage();
@@ -30,7 +31,9 @@ export const scrapeGroups = async () => {
 
     for (const groupUrl of groups) {
       try {
-        await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        await callPlaywrightWithRetry(() =>
+          page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 90000 })
+        );
         logger.info(`Scraping group ${groupUrl}`);
         await logSystemEvent('scrape', `Scraping started for ${groupUrl}`);
 
@@ -78,6 +81,6 @@ export const scrapeGroups = async () => {
     }
   } finally {
     await saveCookies(context);
-    await browser.close();
+    await context.close();
   }
 };
