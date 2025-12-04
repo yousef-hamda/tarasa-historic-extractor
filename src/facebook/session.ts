@@ -1,9 +1,9 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 import { chromium as playwrightChromium } from 'playwright-extra';
-import StealthPlugin from 'playwright-extra-plugin-stealth';
 import fs from 'fs/promises';
 import path from 'path';
 import playwrightConfig from '../config/playwright.config';
+import stealthPlugin from './stealthPlugin';
 import logger from '../utils/logger';
 import {
   selectors,
@@ -15,7 +15,7 @@ import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
 
-const chromium = playwrightChromium.use(StealthPlugin());
+const chromium = playwrightChromium.use(stealthPlugin);
 const cookiesPath = path.resolve(process.cwd(), 'src/config/cookies.json');
 let sharedBrowser: Browser | null = null;
 
