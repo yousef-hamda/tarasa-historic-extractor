@@ -9,15 +9,8 @@ import {
 import { humanDelay } from '../utils/delays';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
-
-const getRemainingMessageQuota = async (): Promise<number> => {
-  const max = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const count = await prisma.messageSent.count({
-    where: { sentAt: { gte: since }, status: 'sent' },
-  });
-  return Math.max(0, max - count);
-};
+import { getRemainingMessageQuota } from '../utils/quota';
+import { callPlaywrightWithRetry } from '../utils/playwrightRetry';
 
 export const dispatchMessages = async () => {
   let remaining = await getRemainingMessageQuota();
@@ -37,7 +30,7 @@ export const dispatchMessages = async () => {
     return;
   }
 
-  const { browser, context } = await createFacebookContext();
+  const { context } = await createFacebookContext();
   const page = await context.newPage();
 
   try {
@@ -53,14 +46,20 @@ export const dispatchMessages = async () => {
       }
 
       try {
-        await page.goto(post.authorLink, { waitUntil: 'domcontentloaded' });
+        await callPlaywrightWithRetry(() =>
+          page.goto(post.authorLink as string, { waitUntil: 'domcontentloaded' })
+        );
         await humanDelay();
 
-        await clickFirstMatchingSelector(page, selectors.messengerButtons);
-        await waitForFirstMatchingSelector(page, selectors.messengerTextarea, { timeout: 15000 });
-        await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
+        await callPlaywrightWithRetry(() => clickFirstMatchingSelector(page, selectors.messengerButtons));
+        await callPlaywrightWithRetry(() =>
+          waitForFirstMatchingSelector(page, selectors.messengerTextarea, { timeout: 15000 })
+        );
+        await callPlaywrightWithRetry(() =>
+          fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText)
+        );
         await humanDelay();
-        await page.keyboard.press('Enter');
+        await callPlaywrightWithRetry(() => page.keyboard.press('Enter'));
         await humanDelay();
 
         await prisma.messageSent.create({
@@ -95,6 +94,6 @@ export const dispatchMessages = async () => {
     }
   } finally {
     await saveCookies(context);
-    await browser.close();
+    await context.close();
   }
 };

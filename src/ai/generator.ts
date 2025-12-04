@@ -33,7 +33,14 @@ const normalizeMessageContent = (
 
 export const generateMessages = async () => {
   const classifiedPosts = await prisma.postClassified.findMany({
-    where: { isHistoric: true, confidence: { gte: 75 } },
+    where: {
+      isHistoric: true,
+      confidence: { gte: 75 },
+      post: {
+        generated: { none: {} },
+        messages: { none: { status: 'sent' } },
+      },
+    },
     include: { post: true },
     orderBy: { classifiedAt: 'asc' },
     take: MAX_BATCH,

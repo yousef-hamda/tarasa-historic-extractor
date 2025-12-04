@@ -1,6 +1,9 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
+import { chromium as playwrightChromium } from 'playwright-extra';
+import StealthPlugin from 'playwright-extra-plugin-stealth';
 import fs from 'fs/promises';
 import path from 'path';
+import playwrightConfig from '../config/playwright.config';
 import logger from '../utils/logger';
 import {
   selectors,
@@ -12,7 +15,23 @@ import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
 
-const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
+const chromium = playwrightChromium.use(StealthPlugin());
+const cookiesPath = path.resolve(process.cwd(), 'src/config/cookies.json');
+let sharedBrowser: Browser | null = null;
+
+const getBrowser = async (): Promise<Browser> => {
+  if (!sharedBrowser) {
+    sharedBrowser = await chromium.launch(playwrightConfig.launchOptions);
+  }
+  return sharedBrowser;
+};
+
+export const closeFacebookBrowser = async () => {
+  if (sharedBrowser) {
+    await sharedBrowser.close();
+    sharedBrowser = null;
+  }
+};
 
 export const loadCookies = async (): Promise<any[]> => {
   try {
@@ -57,12 +76,12 @@ const handleChallenge = async (type: '2fa' | 'captcha') => {
 export const ensureLogin = async (context: BrowserContext) => {
   const page = await context.newPage();
   page.setDefaultTimeout(90000);
-  
-  await page.goto('https://www.facebook.com', { 
+
+  await page.goto('https://www.facebook.com', {
     waitUntil: 'domcontentloaded',
-    timeout: 90000 
+    timeout: 90000,
   });
-  
+
   // Wait for page to be interactive
   await page.waitForTimeout(3000);
 
@@ -95,8 +114,8 @@ export const ensureLogin = async (context: BrowserContext) => {
 };
 
 export const createFacebookContext = async (): Promise<{ browser: Browser; context: BrowserContext }> => {
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
+  const browser = await getBrowser();
+  const context = await browser.newContext(playwrightConfig.contextOptions);
 
   const cookies = await loadCookies();
   if (cookies.length) {
@@ -106,7 +125,7 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
   try {
     await ensureLogin(context);
   } catch (error) {
-    await browser.close();
+    await context.close();
     throw error;
   }
 
@@ -114,11 +133,11 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
 };
 
 export const refreshFacebookSession = async () => {
-  const { browser, context } = await createFacebookContext();
+  const { context } = await createFacebookContext();
   try {
     await saveCookies(context);
     await logSystemEvent('auth', 'Facebook session refreshed via cron');
   } finally {
-    await browser.close();
+    await context.close();
   }
 };
