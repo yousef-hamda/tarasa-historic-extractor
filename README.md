@@ -7,7 +7,7 @@ An intelligent, fully automated system that discovers historical stories on Face
 This project automates the entire workflow of:
 1. **Scraping** Facebook groups for posts containing historical content
 2. **Classifying** posts using AI (OpenAI GPT) to identify historic stories
-3. **Generating** personalized Arabic messages for post authors
+3. **Generating** personalized messages for post authors
 4. **Sending** messages automatically via Facebook Messenger
 5. **Monitoring** all activities through a real-time dashboard
 
@@ -45,7 +45,7 @@ tarasa-historic-extractor/
 ├── src/
 │   ├── ai/
 │   │   ├── classifier.ts          # AI-powered post classification
-│   │   └── generator.ts           # Arabic message generation
+│   │   └── generator.ts           # English message generation
 │   ├── config/
 │   │   ├── cookies.json           # Facebook session cookies (auto-generated)
 │   │   └── playwright.config.ts   # Browser automation settings
@@ -341,7 +341,7 @@ The classifier:
 ### 3. Message Generation (Every 5 Minutes)
 
 For valid historic posts:
-1. Generates personalized Arabic message using OpenAI
+1. Generates personalized English message using OpenAI
 2. Creates pre-filled Tarasa submission link with post data
 3. Stores message in queue (`MessageGenerated` table)
 4. Ensures message is unique and natural (not AI-sounding)
@@ -418,7 +418,7 @@ Queued messages ready to send:
 model MessageGenerated {
   id          Int      @id @default(autoincrement())
   postId      Int
-  messageText String   // Arabic message content
+  messageText String   // English message content
   link        String   // Pre-filled Tarasa submission URL
   createdAt   DateTime @default(now())
 }
@@ -500,7 +500,7 @@ View message queue and send history.
     {
       "id": 1,
       "postId": 1,
-      "messageText": "Arabic message content...",
+      "messageText": "English message content...",
       "link": "https://tarasa.com/add-story?refPost=1&text=...",
       "createdAt": "2025-11-17T15:20:00.000Z"
     }
@@ -862,7 +862,7 @@ For issues or questions:
 ### v1.0.0 (Current)
 - ✅ Facebook scraping with auto-login
 - ✅ AI classification (OpenAI GPT-4o-mini)
-- ✅ Arabic message generation
+- ✅ English message generation
 - ✅ Messenger automation
 - ✅ Real-time dashboard
 - ✅ Cron job scheduling
