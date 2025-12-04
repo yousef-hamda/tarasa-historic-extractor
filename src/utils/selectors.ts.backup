@@ -1,14 +1,20 @@
 import type { Page, ElementHandle } from 'playwright';
+
 export type SelectorList = string | readonly string[];
+
 type QueryRoot = Page | ElementHandle<unknown>;
+
 type WaitOptions = Parameters<Page['waitForSelector']>[1];
+
 const toArray = (input: SelectorList): string[] => {
   if (Array.isArray(input)) {
     return [...input];
   }
   return [input as string];
 };
+
 const querySingle = (root: QueryRoot, selector: string) => root.$(selector);
+
 export const selectors = {
   loginEmail: ['input[name="email"]', '#email'],
   loginPassword: ['input[name="pass"]', '#pass'],
@@ -25,9 +31,6 @@ export const selectors = {
     'div[role="main"] span[dir="auto"]',
   ],
   authorLink: [
-    'a[aria-label]:not([aria-label=""])',
-    'h2 a[href]',
-    'h3 a[href]',
     'strong a[href*="facebook.com"]',
     'a[href*="/people/"]',
     'a[role="link"][href*="facebook.com/profile.php"]',
@@ -36,9 +39,6 @@ export const selectors = {
     'a[href*="/?id="]',
   ],
   authorName: [
-    'a[aria-label]:not([aria-label=""])',
-    'h2 a',
-    'h3 a',
     'strong a',
     'h4 a',
     'span a[role="link"]',
@@ -53,6 +53,7 @@ export const selectors = {
   messengerButtons: ['[aria-label="Message"]', 'button:has-text("Message")', 'a[href*="messages"]'],
   messengerTextarea: ['textarea', '[role="textbox"]'],
 } as const;
+
 export const findFirstHandle = async (root: QueryRoot, selectorList: SelectorList) => {
   for (const selector of toArray(selectorList)) {
     const handle = await querySingle(root, selector);
@@ -62,6 +63,7 @@ export const findFirstHandle = async (root: QueryRoot, selectorList: SelectorLis
   }
   return { selector: null, handle: null };
 };
+
 export const queryAllOnPage = async (page: Page, selectorList: SelectorList) => {
   for (const selector of toArray(selectorList)) {
     const handles = await page.$$(selector);
@@ -71,6 +73,7 @@ export const queryAllOnPage = async (page: Page, selectorList: SelectorList) => 
   }
   return { selector: null, handles: [] };
 };
+
 export const waitForFirstMatchingSelector = async (
   page: Page,
   selectorList: SelectorList,
@@ -91,6 +94,7 @@ export const waitForFirstMatchingSelector = async (
   }
   throw new Error(`Unable to find selectors: ${toArray(selectorList).join(', ')}`);
 };
+
 export const clickFirstMatchingSelector = async (page: Page, selectorList: SelectorList) => {
   for (const selector of toArray(selectorList)) {
     try {
@@ -102,6 +106,7 @@ export const clickFirstMatchingSelector = async (page: Page, selectorList: Selec
   }
   throw new Error(`Unable to click selectors: ${toArray(selectorList).join(', ')}`);
 };
+
 export const fillFirstMatchingSelector = async (page: Page, selectorList: SelectorList, value: string) => {
   for (const selector of toArray(selectorList)) {
     try {
