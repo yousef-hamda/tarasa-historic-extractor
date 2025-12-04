@@ -1,4 +1,4 @@
-import { Page } from 'playwright';
+import { ElementHandle, Page } from 'playwright';
 import { selectors, queryAllOnPage, findFirstHandle } from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
 import logger from '../utils/logger';
@@ -10,7 +10,63 @@ export interface ScrapedPost {
   text: string;
 }
 
-const normalizePostId = (rawId: string | null, fallback: string | null, text: string): string => {
+const normalizeFacebookUrl = (href: string | null | undefined): string | undefined => {
+  if (!href) return undefined;
+
+  const trimmed = href.trim();
+  if (!trimmed) return undefined;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/')) {
+    return `https://www.facebook.com${trimmed}`;
+  }
+
+  return `https://www.facebook.com/${trimmed}`;
+};
+
+const extractPostIdFromAnchors = async (
+  container: ElementHandle<HTMLElement | SVGElement | Element>,
+): Promise<string | null> => {
+  try {
+    const hrefs = await container.$$eval('a[href]', (links) =>
+      links
+        .map((link) => (link as HTMLAnchorElement).getAttribute('href') || '')
+        .filter(Boolean),
+    );
+
+    const absoluteHrefs = hrefs.map((href) => normalizeFacebookUrl(href) || href);
+
+    const patterns = [
+      /\/posts\/(\d+)/i,
+      /\/permalink\/(\d+)/i,
+      /story_fbid=(\d+)/i,
+      /fbid=(\d+)/i,
+    ];
+
+    for (const href of absoluteHrefs) {
+      for (const pattern of patterns) {
+        const match = href.match(pattern);
+        if (match?.[1]) {
+          return match[1];
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn(`Failed to extract post ID from anchors: ${(error as Error).message}`);
+  }
+
+  return null;
+};
+
+const normalizePostId = (
+  rawId: string | null,
+  fallback: string | null,
+  linkDerivedId: string | null,
+  text: string,
+): string => {
   if (rawId) {
     try {
       const parsed = JSON.parse(rawId);
@@ -18,6 +74,10 @@ const normalizePostId = (rawId: string | null, fallback: string | null, text: st
     } catch {
       return rawId;
     }
+  }
+
+  if (linkDerivedId) {
+    return linkDerivedId;
   }
 
   if (fallback) {
@@ -67,9 +127,24 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
 
   for (let i = 0; i < containers.length; i++) {
     const container = containers[i];
-    
+
     logger.info(`Processing container ${i + 1}/${containers.length}`);
-    
+
+    // Try to expand truncated text
+    for (const seeMoreSelector of selectors.seeMoreButtons) {
+      const seeMoreHandle = await container.$(seeMoreSelector);
+      if (seeMoreHandle) {
+        try {
+          await seeMoreHandle.click({ force: true });
+          await humanDelay(200, 400);
+          logger.info(`Container ${i + 1}: Expanded post text via ${seeMoreSelector}`);
+          break;
+        } catch (error) {
+          logger.warn(`Container ${i + 1}: Failed to click see more: ${(error as Error).message}`);
+        }
+      }
+    }
+
     // Extract text first (we need it for ID generation)
     let text = '';
     for (const textSelector of selectors.postTextCandidates) {
@@ -91,21 +166,25 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     
     // Now get post ID (using text as fallback)
     const postId = normalizePostId(
-      await container.getAttribute('data-ft'), 
+      await container.getAttribute('data-ft'),
       await container.getAttribute('id'),
-      text
+      await extractPostIdFromAnchors(container),
+      text,
     );
     
     logger.info(`Container ${i + 1}: Generated post ID: ${postId}`);
 
     const authorHandle = await findFirstHandle(container, selectors.authorName);
-    const authorName = authorHandle.handle ? (await authorHandle.handle.innerText()).trim() : undefined;
-    
+    let authorName = authorHandle.handle ? (await authorHandle.handle.innerText()).trim() : undefined;
+    if (!authorName && authorHandle.handle) {
+      authorName = (await authorHandle.handle.getAttribute('aria-label')) ?? undefined;
+    }
+
     const authorLinkHandle = await findFirstHandle(container, selectors.authorLink);
     const authorLinkRaw = authorLinkHandle.handle
-      ? await authorLinkHandle.handle.getAttribute('href')
+      ? (await authorLinkHandle.handle.getAttribute('href')) || (await authorLinkHandle.handle.getAttribute('data-lynx-uri'))
       : null;
-    const authorLink = authorLinkRaw ?? undefined;
+    const authorLink = normalizeFacebookUrl(authorLinkRaw);
 
     logger.info(`Container ${i + 1}: Author: ${authorName || 'Unknown'}`);
 
