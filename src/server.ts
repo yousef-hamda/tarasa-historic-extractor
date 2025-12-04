@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import createRateLimiter from './middleware/rateLimiter';
 import postsRouter from './routes/posts';
 import logsRouter from './routes/logs';
 import messagesRouter from './routes/messages';
@@ -36,7 +36,7 @@ app.use(
 );
 app.use(express.json());
 
-const limiter = rateLimit({
+const limiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 100,
 });
