@@ -84,13 +84,11 @@ const normalizePostId = (
     return fallback;
   }
 
-  // Generate a unique ID from text hash if no ID found
-  // Simple hash function
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
     const char = text.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return `generated_${Math.abs(hash)}_${text.length}`;
 };
@@ -100,44 +98,29 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
   
   logger.info('Starting post extraction...');
   
-  // Try to find containers
   const { handles: containers, selector: usedSelector } = await queryAllOnPage(page, selectors.postContainer);
   
   logger.info(`Found ${containers.length} post containers using selector: ${usedSelector}`);
   
   if (containers.length === 0) {
-    logger.warn('No post containers found! Trying alternative selectors...');
-    
-    // Debug: Log page content structure
-    const pageContent = await page.content();
-    logger.info(`Page has ${pageContent.length} characters of HTML`);
-    
-    // Try to find any divs with role="article"
-    const articleDivs = await page.$$('div[role="article"]');
-    logger.info(`Found ${articleDivs.length} divs with role="article"`);
-    
-    // Try to find feed units
-    const feedUnits = await page.$$('div[data-pagelet^="FeedUnit"]');
-    logger.info(`Found ${feedUnits.length} feed unit divs`);
-    
+    logger.warn('No post containers found!');
     return posts;
   }
   
-  const limit = Math.floor(Math.random() * 21) + 20; // 20-40 posts
+  const limit = Math.floor(Math.random() * 21) + 20;
 
   for (let i = 0; i < containers.length; i++) {
     const container = containers[i];
 
     logger.info(`Processing container ${i + 1}/${containers.length}`);
 
-    // Try to expand truncated text
     for (const seeMoreSelector of selectors.seeMoreButtons) {
       const seeMoreHandle = await container.$(seeMoreSelector);
       if (seeMoreHandle) {
         try {
           await seeMoreHandle.click({ force: true });
           await humanDelay(200, 400);
-          logger.info(`Container ${i + 1}: Expanded post text via ${seeMoreSelector}`);
+          logger.info(`Container ${i + 1}: Expanded post text`);
           break;
         } catch (error) {
           logger.warn(`Container ${i + 1}: Failed to click see more: ${(error as Error).message}`);
@@ -145,7 +128,6 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       }
     }
 
-    // Extract text first (we need it for ID generation)
     let text = '';
     for (const textSelector of selectors.postTextCandidates) {
       const textHandle = await container.$(textSelector);
@@ -164,7 +146,6 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     
     logger.info(`Container ${i + 1}: Found text with ${text.length} characters`);
     
-    // Now get post ID (using text as fallback)
     const postId = normalizePostId(
       await container.getAttribute('data-ft'),
       await container.getAttribute('id'),
@@ -175,18 +156,37 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     logger.info(`Container ${i + 1}: Generated post ID: ${postId}`);
 
     const authorHandle = await findFirstHandle(container, selectors.authorName);
-    let authorName = authorHandle.handle ? (await authorHandle.handle.innerText()).trim() : undefined;
-    if (!authorName && authorHandle.handle) {
-      authorName = (await authorHandle.handle.getAttribute('aria-label')) ?? undefined;
+    let authorName: string | undefined = undefined;
+    
+    if (authorHandle.handle) {
+      const ariaLabel = await authorHandle.handle.getAttribute('aria-label');
+      if (ariaLabel && ariaLabel.trim()) {
+        authorName = ariaLabel.trim();
+      } else {
+        const innerText = await authorHandle.handle.innerText();
+        if (innerText && innerText.trim()) {
+          authorName = innerText.trim();
+        }
+      }
     }
 
     const authorLinkHandle = await findFirstHandle(container, selectors.authorLink);
-    const authorLinkRaw = authorLinkHandle.handle
-      ? (await authorLinkHandle.handle.getAttribute('href')) || (await authorLinkHandle.handle.getAttribute('data-lynx-uri'))
-      : null;
-    const authorLink = normalizeFacebookUrl(authorLinkRaw);
+    let authorLink: string | undefined = undefined;
+    
+    if (authorLinkHandle.handle) {
+      const ariaLabel = await authorLinkHandle.handle.getAttribute('aria-label');
+      const href = await authorLinkHandle.handle.getAttribute('href');
+      const dataLynx = await authorLinkHandle.handle.getAttribute('data-lynx-uri');
+      
+      const rawLink = href || dataLynx;
+      authorLink = normalizeFacebookUrl(rawLink);
+      
+      if (!authorName && ariaLabel && ariaLabel.trim()) {
+        authorName = ariaLabel.trim();
+      }
+    }
 
-    logger.info(`Container ${i + 1}: Author: ${authorName || 'Unknown'}`);
+    logger.info(`Container ${i + 1}: Author: ${authorName || 'Unknown'}, Link: ${authorLink ? 'Found' : 'Missing'}`);
 
     posts.push({
       fbPostId: postId,
