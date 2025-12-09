@@ -1,9 +1,11 @@
 import nodemailer from 'nodemailer';
 import logger from './logger';
 
-let transporter: any = null;
+type MailTransporter = ReturnType<typeof nodemailer.createTransport>;
 
-const getTransporter = () => {
+let transporter: MailTransporter | null = null;
+
+const getTransporter = (): MailTransporter => {
   if (!transporter) {
     transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -16,7 +18,7 @@ const getTransporter = () => {
   return transporter;
 };
 
-export const sendAlertEmail = async (subject: string, text: string) => {
+export const sendAlertEmail = async (subject: string, text: string): Promise<void> => {
   if (!process.env.SYSTEM_EMAIL_ALERT || !process.env.SYSTEM_EMAIL_PASSWORD) {
     logger.warn('SYSTEM_EMAIL_ALERT or SYSTEM_EMAIL_PASSWORD is not configured; skipping alert email');
     return;
@@ -32,6 +34,6 @@ export const sendAlertEmail = async (subject: string, text: string) => {
     });
     logger.info(`Alert email sent: ${subject}`);
   } catch (error) {
-    logger.error(`Failed to send alert email: ${error}`);
+    logger.error(`Failed to send alert email: ${(error as Error).message}`);
   }
 };

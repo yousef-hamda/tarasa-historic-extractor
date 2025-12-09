@@ -12,4 +12,25 @@ if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
+/**
+ * Check database connectivity
+ * @returns true if connected, false otherwise
+ */
+export const checkDatabaseConnection = async (): Promise<boolean> => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch (error) {
+    console.error('Database connection check failed:', (error as Error).message);
+    return false;
+  }
+};
+
+/**
+ * Gracefully disconnect from database
+ */
+export const disconnectDatabase = async (): Promise<void> => {
+  await prisma.$disconnect();
+};
+
 export default prisma;

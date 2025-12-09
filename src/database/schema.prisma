@@ -8,6 +8,20 @@ datasource db {
   directUrl = env("DATABASE_URL")
 }
 
+enum MessageStatus {
+  pending
+  sent
+  error
+}
+
+enum LogType {
+  scrape
+  classify
+  message
+  auth
+  error
+}
+
 model PostRaw {
   id          Int               @id @default(autoincrement())
   groupId     String
@@ -19,6 +33,9 @@ model PostRaw {
   classified  PostClassified?
   generated   MessageGenerated[]
   messages    MessageSent[]
+
+  @@index([groupId])
+  @@index([scrapedAt])
 }
 
 model PostClassified {
@@ -38,21 +55,30 @@ model MessageGenerated {
   link        String
   createdAt   DateTime @default(now())
   post        PostRaw  @relation(fields: [postId], references: [id])
+
+  @@index([postId])
+  @@index([createdAt])
 }
 
 model MessageSent {
-  id          Int      @id @default(autoincrement())
+  id          Int           @id @default(autoincrement())
   postId      Int
   authorLink  String
-  status      String
-  sentAt      DateTime @default(now())
+  status      MessageStatus @default(pending)
+  sentAt      DateTime      @default(now())
   error       String?
-  post        PostRaw  @relation(fields: [postId], references: [id])
+  post        PostRaw       @relation(fields: [postId], references: [id])
+
+  @@index([status])
+  @@index([sentAt])
 }
 
 model SystemLog {
   id        Int      @id @default(autoincrement())
-  type      String
+  type      LogType
   message   String
   createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
 }
