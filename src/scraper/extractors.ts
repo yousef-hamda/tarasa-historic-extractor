@@ -11,6 +11,8 @@ export interface ScrapedPost {
   text: string;
 }
 
+const MIN_TEXT_LENGTH = 30;
+
 const generateContentHash = (text: string, authorLink?: string): string => {
   const content = `${text}|${authorLink || ''}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 32);
@@ -112,21 +114,32 @@ const extractAuthorLink = async (container: ElementHandle<Element>): Promise<str
     }
   }
 
-  // Strategy 4: Look for first link that's likely a profile link in the post header
-  const allLinks = await container.$$('a[href*="facebook.com"]');
-  for (const link of allLinks) {
-    const href = await link.getAttribute('href');
-    if (!href) continue;
+  // Strategy 4: Evaluate in page to find the most "profile-like" link
+  try {
+    const guessedLink = await container.evaluate((el) => {
+      const anchors = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href]'));
 
-    // Skip group links, comment links, etc
-    if (href.includes('/groups/') && !href.includes('/user/')) continue;
-    if (href.includes('/posts/')) continue;
-    if (href.includes('/comments/')) continue;
-    if (href.includes('/photos/')) continue;
+      const cleanHref = (href: string) => href.replace(/^https?:\/\/(www\.)?facebook\.com/i, '');
 
-    if (href.includes('/user/') || href.includes('/profile.php')) {
-      return normalizeAuthorLink(href);
+      const isProfileLike = (href: string) => {
+        if (!href) return false;
+        if (href.includes('/groups/') && !href.includes('/user/')) return false;
+        if (href.includes('/posts/')) return false;
+        if (href.includes('/comments/')) return false;
+        if (href.includes('/photos/')) return false;
+        if (href.includes('/events/')) return false;
+        return /\/(user|profile\.php|people)\//.test(href) || /^[\/][A-Za-z0-9.]+\/?$/.test(cleanHref(href));
+      };
+
+      const candidate = anchors.find((a) => isProfileLike(a.getAttribute('href') || ''));
+      return candidate?.getAttribute('href') || undefined;
+    });
+
+    if (guessedLink) {
+      return normalizeAuthorLink(guessedLink);
     }
+  } catch (linkError) {
+    logger.debug(`Author link evaluate fallback failed: ${(linkError as Error).message}`);
   }
 
   return undefined;
@@ -138,7 +151,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
   logger.info('Starting post extraction...');
   
   // Try to find containers
-  const { handles: containers, selector: usedSelector } = await queryAllOnPage(page, selectors.postContainer);
+  let { handles: containers, selector: usedSelector } = await queryAllOnPage(page, selectors.postContainer);
   
   logger.info(`Found ${containers.length} post containers using selector: ${usedSelector}`);
   
@@ -153,11 +166,21 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     const articleDivs = await page.$$('div[role="article"]');
     logger.info(`Found ${articleDivs.length} divs with role="article"`);
 
-    // Try to find feed units
-    const feedUnits = await page.$$('div[data-pagelet^="FeedUnit"]');
-    logger.info(`Found ${feedUnits.length} feed unit divs`);
+    if (articleDivs.length) {
+      containers = articleDivs;
+      usedSelector = 'div[role="article"] (fallback)';
+    } else {
+      // Try to find feed units
+      const feedUnits = await page.$$('div[data-pagelet^="FeedUnit"] div[role="article"]');
+      logger.info(`Found ${feedUnits.length} feed unit divs with articles`);
+      containers = feedUnits;
+      usedSelector = 'div[data-pagelet^="FeedUnit"] div[role="article"] (fallback)';
+    }
 
-    return posts;
+    if (!containers.length) {
+      logger.warn('Still no containers after fallback selectors.');
+      return posts;
+    }
   }
 
   // Debug: If we only found a few containers, try to get more from the feed
@@ -186,7 +209,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
         if (el.querySelector('[data-visualcompletion="loading-state"]')) return true;
         // Check if it has very little text content
         const textContent = el.textContent || '';
-        if (textContent.length < 50) return true;
+        if (textContent.length < MIN_TEXT_LENGTH) return true;
         return false;
       });
 
@@ -228,7 +251,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     }
 
     // Strategy 2: If no text found, try to find the main content div with See more
-    if (!text || text.length < 30) {
+    if (!text || text.length < MIN_TEXT_LENGTH) {
       const seeMoreParent = await container.$('div:has(div[role="button"]:text-matches("See more|See More|...more"))');
       if (seeMoreParent) {
         const candidate = (await seeMoreParent.innerText())?.trim();
@@ -239,17 +262,17 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     }
 
     // Strategy 3: Try to get text from all divs with dir="auto" and longer content
-    if (!text || text.length < 30) {
+    if (!text || text.length < MIN_TEXT_LENGTH) {
       const autoDirs = await container.$$('div[dir="auto"]');
       for (const div of autoDirs) {
         try {
           const candidate = (await div.innerText())?.trim();
           // Only use text longer than current and appears to be actual content
-          if (candidate && candidate.length > text.length && candidate.length >= 30) {
+          if (candidate && candidate.length > text.length && candidate.length >= MIN_TEXT_LENGTH) {
             // Skip if it looks like a button or UI element
-            if (candidate.includes('Like') && candidate.length < 50) continue;
-            if (candidate.includes('Comment') && candidate.length < 50) continue;
-            if (candidate.includes('Share') && candidate.length < 50) continue;
+            if (candidate.includes('Like') && candidate.length < MIN_TEXT_LENGTH) continue;
+            if (candidate.includes('Comment') && candidate.length < MIN_TEXT_LENGTH) continue;
+            if (candidate.includes('Share') && candidate.length < MIN_TEXT_LENGTH) continue;
             text = candidate;
           }
         } catch (elementError) {
@@ -260,7 +283,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     }
 
     // Strategy 4: As last resort, get innerText of the whole container (excluding navigation elements)
-    if (!text || text.length < 30) {
+    if (!text || text.length < MIN_TEXT_LENGTH) {
       try {
         const fullText = await container.innerText();
         // Clean up the text - remove common UI elements
@@ -268,7 +291,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
           ?.replace(/Like|Comment|Share|Reply|See more|See More|\d+ comments?|\d+ shares?/gi, '')
           .replace(/\n+/g, '\n')
           .trim();
-        if (cleaned && cleaned.length > text.length && cleaned.length >= 30) {
+        if (cleaned && cleaned.length > text.length && cleaned.length >= MIN_TEXT_LENGTH) {
           text = cleaned;
         }
       } catch (containerError) {
@@ -277,7 +300,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       }
     }
 
-    if (!text || text.length < 30) {
+    if (!text || text.length < MIN_TEXT_LENGTH) {
       logger.warn(`Container ${i + 1}: Text too short or missing (${text.length} chars)`);
       continue;
     }

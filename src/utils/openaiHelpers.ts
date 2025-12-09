@@ -53,5 +53,5 @@ export const validateGeneratedMessage = (
 ): boolean => {
   if (!message || message.length < 50) return false;
   // Message should contain the tarasa link
-  return message.includes(expectedLinkBase) || message.includes('tarasa.com');
+  return message.includes(expectedLinkBase) || message.includes('tarasa.com') || message.includes('tarasa.me');
 };

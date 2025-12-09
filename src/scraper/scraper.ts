@@ -6,6 +6,7 @@ import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS } from '../config/constants';
 import path from 'path';
+import { withRetries } from '../utils/retry';
 
 const getGroupUrls = (): string[] => {
   const ids = (process.env.GROUP_IDS ?? '')
@@ -32,8 +33,13 @@ export const scrapeGroups = async (): Promise<void> => {
 
     for (const groupUrl of groups) {
       try {
-        await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
-        logger.info(`Scraping group ${groupUrl}`);
+        await withRetries(
+          async (attempt) => {
+            await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
+            logger.info(`Scraping group ${groupUrl} (attempt ${attempt})`);
+          },
+          { attempts: 3, delayMs: 5000, operationName: `Navigate to group ${groupUrl}` }
+        );
         await logSystemEvent('scrape', `Scraping started for ${groupUrl}`);
 
         // Check if we need to join the group first
@@ -126,7 +132,19 @@ export const scrapeGroups = async (): Promise<void> => {
         // One more wait after scrolling for content to render
         await humanDelay(2000, 3000);
 
-        const posts = await extractPosts(page);
+        let posts = await extractPosts(page);
+
+        // Retry extraction if nothing was found (DOM is highly dynamic)
+        if (!posts.length) {
+          logger.warn('No posts extracted on first pass. Retrying after extra scroll...');
+          for (let i = 0; i < 2; i++) {
+            await page.evaluate('window.scrollBy(0, 1200)');
+            await humanDelay(2000, 3000);
+          }
+          await humanDelay(2000, 3000);
+          posts = await extractPosts(page);
+        }
+
         let stored = 0;
 
         for (const post of posts) {

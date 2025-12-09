@@ -1,31 +1,30 @@
 [
   {
     "name": "datr",
-    "value": "DywbaTbOnq2kBgzbBnOo3n6t",
+    "value": "zRk4ad3hS8_WSmScH3byI8a3",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1797948431.178387,
+    "expires": 1799844301.728421,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "sb",
-    "value": "DywbaclSgy_Rc0UpK188-EG7",
+    "value": "zRk4aTcTsfsGoJuuLmcwBaWA",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1797948462.514968,
+    "expires": 1799852409.502352,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
   },
   {
-<<<<<<< Updated upstream
     "name": "wd",
     "value": "1280x720",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1764001210,
+    "expires": 1765905605,
     "httpOnly": false,
     "secure": true,
     "sameSite": "Lax"
@@ -35,19 +34,17 @@
     "value": "1",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1764001210,
+    "expires": 1765905605,
     "httpOnly": false,
     "secure": true,
     "sameSite": "None"
   },
   {
-=======
->>>>>>> Stashed changes
     "name": "ps_l",
     "value": "1",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1797948434.955707,
+    "expires": 1799844307.216202,
     "httpOnly": true,
     "secure": true,
     "sameSite": "Lax"
@@ -57,7 +54,7 @@
     "value": "1",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1797948434.955728,
+    "expires": 1799844307.216294,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
@@ -67,87 +64,39 @@
     "value": "100010396726536",
     "domain": ".facebook.com",
     "path": "/",
-<<<<<<< Updated upstream
-    "expires": 1794931807.590496,
-=======
-    "expires": 1796814635.682986,
-    "httpOnly": false,
-    "secure": true,
-    "sameSite": "None"
-  },
-  {
-    "name": "wd",
-    "value": "1280x720",
-    "domain": ".facebook.com",
-    "path": "/",
-    "expires": 1765884683,
-    "httpOnly": false,
-    "secure": true,
-    "sameSite": "Lax"
-  },
-  {
-    "name": "dpr",
-    "value": "1",
-    "domain": ".facebook.com",
-    "path": "/",
-    "expires": 1765884683,
->>>>>>> Stashed changes
+    "expires": 1796835608.60315,
     "httpOnly": false,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "xs",
-<<<<<<< Updated upstream
-    "value": "7%3ANLP3RArVHCrnwQ%3A2%3A1763388459%3A-1%3A-1%3A%3AAcx_YUlcvNfAcHbUbxC6APp2ep6KaEa4L-ZDhWyi5A",
+    "value": "19%3AhNLWYZggpShHcQ%3A2%3A1765292407%3A-1%3A-1%3A%3AAcyVR5elKXJEWZ6NYdPK-SX8ZeSGcwf9XIVO8tuRCA",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1794931807.590533,
+    "expires": 1796835608.603258,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "fr",
-    "value": "1V1qMikidX5Vpkcjl.AWebf38tqu_rltfbeHfXq8baBnr6_E6gSiBeJ9hwWG7pK9ADLdo.BpG0jf..AAA.0.0.BpG0sx.AWcjHmakjE5sTvaXqr9esnf9Ev4",
+    "value": "1NGeP9YYb2nENTJsq.AWdGBW6u7EWvwU18FeHaQ6UgJAj2EoxCFZX8_IqdPPbnctPhMKg.BpOFWY..AAA.0.0.BpOFpB.AWd2P72Dou5aFTIogMNLcBb-Nlc",
     "domain": ".facebook.com",
     "path": "/",
-    "expires": 1771172401.833025,
-=======
-    "value": "7%3ANLP3RArVHCrnwQ%3A2%3A1763388459%3A-1%3A-1%3A%3AAcw011-KTA9jSyr-5c5W3EgabHkEvbI6HCTdEGuDHFg",
-    "domain": ".facebook.com",
-    "path": "/",
-    "expires": 1796814635.683241,
->>>>>>> Stashed changes
+    "expires": 1773076801.790162,
     "httpOnly": true,
     "secure": true,
     "sameSite": "None"
   },
   {
     "name": "presence",
-<<<<<<< Updated upstream
-    "value": "C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1763396410870%2C%22v%22%3A1%7D",
-=======
-    "value": "C%7B%22lm3%22%3A%22sc.899349023261292%22%2C%22t3%22%3A%5B%7B%22o%22%3A0%2C%22i%22%3A%22sc.1489868382762393%22%7D%5D%2C%22utc3%22%3A1765279890748%2C%22v%22%3A1%7D",
->>>>>>> Stashed changes
+    "value": "C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1765300806018%2C%22v%22%3A1%7D",
     "domain": ".facebook.com",
     "path": "/",
     "expires": -1,
     "httpOnly": false,
     "secure": true,
     "sameSite": "Lax"
-<<<<<<< Updated upstream
-=======
-  },
-  {
-    "name": "fr",
-    "value": "1EIzy0dliJ3RBsD6x.AWcrrb7s8hhKVcS97T8B9YWsfGgXVCcr4Je7EnyZPgOHRHsVVXw.BpOAOq..AAA.0.0.BpOAlm.AWdJqch5FZhPmdcjJoGdYlOFcgs",
-    "domain": ".facebook.com",
-    "path": "/",
-    "expires": 1773056102.504428,
-    "httpOnly": true,
-    "secure": true,
-    "sameSite": "None"
->>>>>>> Stashed changes
   }
 ]

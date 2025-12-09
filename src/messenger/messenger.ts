@@ -7,6 +7,7 @@ import {
   fillFirstMatchingSelector,
 } from '../utils/selectors';
 import { humanDelay } from '../utils/delays';
+import { withRetries } from '../utils/retry';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS, QUOTA } from '../config/constants';
@@ -28,6 +29,14 @@ export const dispatchMessages = async (): Promise<void> => {
     return;
   }
 
+  // Clean up any generated messages that cannot be sent due to missing author link
+  const cleaned = await prisma.messageGenerated.deleteMany({
+    where: { post: { authorLink: null } },
+  });
+  if (cleaned.count > 0) {
+    await logSystemEvent('message', `Removed ${cleaned.count} generated messages without author links`);
+  }
+
   const pending = await prisma.messageGenerated.findMany({
     orderBy: { createdAt: 'asc' },
     take: remaining,
@@ -46,7 +55,26 @@ export const dispatchMessages = async (): Promise<void> => {
     for (const candidate of pending) {
       const post = candidate.post;
       if (!post?.authorLink) {
-        await logSystemEvent('message', `Skipped message for post ${candidate.postId}; missing author link.`);
+        // Remove from queue to avoid repeated retries with no target
+        await logSystemEvent('message', `Removed queued message for post ${candidate.postId}; missing author link.`);
+        try {
+          await prisma.messageGenerated.delete({ where: { id: candidate.id } });
+        } catch (queueError) {
+          logger.error(`Failed to delete orphaned generated message ${candidate.id}: ${(queueError as Error).message}`);
+        }
+        continue;
+      }
+      // Skip if this post already has a sent message
+      const alreadySent = await prisma.messageSent.findFirst({
+        where: { postId: candidate.postId, status: 'sent' },
+      });
+      if (alreadySent) {
+        await logSystemEvent('message', `Skipped dispatch for post ${candidate.postId}; already sent.`);
+        try {
+          await prisma.messageGenerated.delete({ where: { id: candidate.id } });
+        } catch (queueError) {
+          logger.error(`Failed to delete duplicate generated message ${candidate.id}: ${(queueError as Error).message}`);
+        }
         continue;
       }
 
@@ -58,15 +86,47 @@ export const dispatchMessages = async (): Promise<void> => {
       let sendError: Error | null = null;
 
       try {
-        await page.goto(post.authorLink, { waitUntil: 'domcontentloaded' });
-        await humanDelay();
+        await withRetries(
+          async (attempt) => {
+            await page.goto(post.authorLink!, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
+            await humanDelay();
 
-        await clickFirstMatchingSelector(page, selectors.messengerButtons);
-        await waitForFirstMatchingSelector(page, selectors.messengerTextarea, { timeout: TIMEOUTS.SHORT_WAIT });
-        await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
-        await humanDelay();
-        await page.keyboard.press('Enter');
-        await humanDelay();
+            // Open message composer
+            await clickFirstMatchingSelector(page, selectors.messengerButtons);
+            const { handle: textAreaHandle } = await waitForFirstMatchingSelector(
+              page,
+              selectors.messengerTextarea,
+              { timeout: TIMEOUTS.SHORT_WAIT }
+            );
+
+            if (!textAreaHandle) {
+              throw new Error('Messenger text area not found');
+            }
+
+            await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
+            await humanDelay();
+
+            // Try sending via Enter, then fallback to explicit send button
+            await page.keyboard.press('Enter');
+            await humanDelay();
+
+            const sendButton = await page.$('div[role="button"]:has-text("Send"), button:has-text("Send")');
+            if (sendButton) {
+              await sendButton.click();
+            }
+
+            await humanDelay();
+            logger.info(`Message attempt ${attempt} sent for post ${candidate.postId}`);
+          },
+          {
+            attempts: 3,
+            delayMs: 3000,
+            operationName: `Send message to ${post.authorLink}`,
+            onRetry: (error, attempt) => {
+              logger.warn(`Retrying message for ${candidate.postId} after error on attempt ${attempt}: ${error.message}`);
+            },
+          }
+        );
 
         messageSentSuccessfully = true;
       } catch (error) {

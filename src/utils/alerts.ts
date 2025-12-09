@@ -1,7 +1,8 @@
 import nodemailer from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import logger from './logger';
 
-type MailTransporter = ReturnType<typeof nodemailer.createTransport>;
+type MailTransporter = nodemailer.Transporter<SMTPTransport.SentMessageInfo>;
 
 let transporter: MailTransporter | null = null;
 

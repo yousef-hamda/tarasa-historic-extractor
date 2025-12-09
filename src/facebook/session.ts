@@ -29,7 +29,14 @@ interface Cookie {
 export const loadCookies = async (): Promise<Cookie[]> => {
   try {
     const raw = await fs.readFile(cookiesPath, 'utf-8');
-    return JSON.parse(raw);
+    const cookies: Cookie[] = JSON.parse(raw);
+    const now = Date.now() / 1000;
+
+    const validCookies = cookies.filter((cookie) => !cookie.expires || cookie.expires > now);
+    if (cookies.length !== validCookies.length) {
+      logger.warn(`Pruned ${cookies.length - validCookies.length} expired cookies from saved session`);
+    }
+    return validCookies;
   } catch (error) {
     // File doesn't exist or is invalid - start with fresh session
     logger.debug(`No existing cookies found: ${(error as Error).message}`);
@@ -41,6 +48,18 @@ export const saveCookies = async (context: BrowserContext): Promise<void> => {
   const cookies = await context.cookies();
   await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
   logger.info('Cookies saved');
+};
+
+export const getCookieHealth = async () => {
+  const cookies = await loadCookies();
+  const now = Date.now() / 1000;
+  const valid = cookies.filter((cookie) => !cookie.expires || cookie.expires > now + 300);
+
+  return {
+    ok: valid.length > 0,
+    total: cookies.length,
+    valid: valid.length,
+  };
 };
 
 const detectTwoFactor = async (page: Page) => {
