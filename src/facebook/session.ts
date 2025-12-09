@@ -11,19 +11,33 @@ import {
 import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
+import { TIMEOUTS } from '../config/constants';
 
 const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
 
-export const loadCookies = async (): Promise<any[]> => {
+interface Cookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: 'Strict' | 'Lax' | 'None';
+}
+
+export const loadCookies = async (): Promise<Cookie[]> => {
   try {
     const raw = await fs.readFile(cookiesPath, 'utf-8');
     return JSON.parse(raw);
-  } catch {
+  } catch (error) {
+    // File doesn't exist or is invalid - start with fresh session
+    logger.debug(`No existing cookies found: ${(error as Error).message}`);
     return [];
   }
 };
 
-export const saveCookies = async (context: BrowserContext) => {
+export const saveCookies = async (context: BrowserContext): Promise<void> => {
   const cookies = await context.cookies();
   await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
   logger.info('Cookies saved');
@@ -54,13 +68,13 @@ const handleChallenge = async (type: '2fa' | 'captcha') => {
   await sendAlertEmail('Tarasa Facebook session requires attention', message);
 };
 
-export const ensureLogin = async (context: BrowserContext) => {
+export const ensureLogin = async (context: BrowserContext): Promise<void> => {
   const page = await context.newPage();
-  page.setDefaultTimeout(90000);
-  
-  await page.goto('https://www.facebook.com', { 
+  page.setDefaultTimeout(TIMEOUTS.PAGE_DEFAULT);
+
+  await page.goto('https://www.facebook.com', {
     waitUntil: 'domcontentloaded',
-    timeout: 90000 
+    timeout: TIMEOUTS.NAVIGATION,
   });
   
   // Wait for page to be interactive
@@ -95,7 +109,9 @@ export const ensureLogin = async (context: BrowserContext) => {
 };
 
 export const createFacebookContext = async (): Promise<{ browser: Browser; context: BrowserContext }> => {
-  const browser = await chromium.launch({ headless: false });
+  // Allow headless mode via environment variable (default: false for Facebook detection avoidance)
+  const headless = process.env.HEADLESS === 'true';
+  const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
 
   const cookies = await loadCookies();
@@ -113,7 +129,7 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
   return { browser, context };
 };
 
-export const refreshFacebookSession = async () => {
+export const refreshFacebookSession = async (): Promise<void> => {
   const { browser, context } = await createFacebookContext();
   try {
     await saveCookies(context);

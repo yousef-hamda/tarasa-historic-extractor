@@ -3,9 +3,11 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
+import { normalizeMessageContent, validateClassificationResult } from '../utils/openaiHelpers';
 
-const CLASSIFICATION_PROMPT = `You are an expert Arabic-speaking community moderator for a historical storytelling project.
-Classify whether the supplied Facebook post clearly references historical events or personal memories from the past.
+const CLASSIFICATION_PROMPT = `You are an expert community moderator for Tarasa, a historical storytelling preservation project.
+Classify whether the supplied Facebook post clearly references historical events, personal memories from the past, or stories about community history.
+Look for posts about: old photographs, family memories, local history, historical buildings/places, past events, cultural traditions, or nostalgic recollections.
 Respond with JSON matching the schema.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -27,16 +29,8 @@ const CLASSIFICATION_SCHEMA = {
 const model = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
 const BATCH_SIZE = Number(process.env.CLASSIFIER_BATCH_SIZE ?? '10');
 
-const normalizeMessageContent = (
-  content?: string | null | Array<{ type: string; text?: string }>,
-) => {
-  if (!content) return '';
-  if (typeof content === 'string') return content;
-  const textChunk = content.find((chunk) => chunk.type === 'text');
-  return textChunk?.text ?? '';
-};
 
-export const classifyPosts = async () => {
+export const classifyPosts = async (): Promise<void> => {
   const pendingPosts = await prisma.postRaw.findMany({
     where: { classified: null },
     orderBy: { scrapedAt: 'asc' },
@@ -66,14 +60,30 @@ export const classifyPosts = async () => {
 
       const rawContent = completion.choices[0]?.message?.content;
       const textContent = normalizeMessageContent(rawContent);
-      const parsed = JSON.parse(textContent || '{}');
+
+      let rawParsed: unknown;
+      try {
+        rawParsed = JSON.parse(textContent || '{}');
+      } catch (parseError) {
+        logger.error(`Failed to parse classification JSON for post ${post.id}: ${textContent}`);
+        await logSystemEvent('error', `JSON parse error for post ${post.id}`);
+        continue;
+      }
+
+      // Validate the parsed result has the expected structure
+      const validated = validateClassificationResult(rawParsed);
+      if (!validated) {
+        logger.error(`Invalid classification structure for post ${post.id}: ${JSON.stringify(rawParsed)}`);
+        await logSystemEvent('error', `Invalid classification structure for post ${post.id}`);
+        continue;
+      }
 
       await prisma.postClassified.create({
         data: {
           postId: post.id,
-          isHistoric: Boolean(parsed.is_historic),
-          confidence: Number(parsed.confidence) || 0,
-          reason: parsed.reason || 'N/A',
+          isHistoric: validated.is_historic,
+          confidence: validated.confidence,
+          reason: validated.reason,
         },
       });
 
