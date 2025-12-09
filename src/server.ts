@@ -18,7 +18,9 @@ import { disconnectDatabase } from './database/prisma';
 validateEnv();
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',').map((o) => o.trim());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(apiRateLimiter);
 app.use(postsRouter);

@@ -55,9 +55,11 @@ export const createRateLimiter = (options: RateLimitOptions) => {
 };
 
 // Pre-configured rate limiters
+const triggerMax = Number(process.env.TRIGGER_RATE_LIMIT_PER_MINUTE) || 30;
+
 export const triggerRateLimiter = createRateLimiter({
   windowMs: 60000, // 1 minute
-  maxRequests: 5,
+  maxRequests: triggerMax,
   message: 'Too many trigger requests. Please wait before trying again.',
 });
 

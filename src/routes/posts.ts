@@ -41,7 +41,7 @@ router.get('/api/posts', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/api/trigger-scrape', triggerRateLimiter, apiKeyAuth, async (_req: Request, res: Response) => {
+router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await scrapeGroups();
     res.json({ status: 'completed' });
@@ -51,7 +51,7 @@ router.post('/api/trigger-scrape', triggerRateLimiter, apiKeyAuth, async (_req: 
   }
 });
 
-router.post('/api/trigger-classification', triggerRateLimiter, apiKeyAuth, async (_req: Request, res: Response) => {
+router.post('/api/trigger-classification', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
@@ -61,7 +61,7 @@ router.post('/api/trigger-classification', triggerRateLimiter, apiKeyAuth, async
   }
 });
 
-router.post('/api/trigger-message', triggerRateLimiter, apiKeyAuth, async (_req: Request, res: Response) => {
+router.post('/api/trigger-message', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await generateMessages();
     await dispatchMessages();

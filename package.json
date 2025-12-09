@@ -16,6 +16,8 @@
     "message": "ts-node src/messenger/messenger.ts",
     "prisma:generate": "npx prisma generate --schema=src/database/schema.prisma",
     "prisma:migrate": "npx prisma migrate deploy --schema=src/database/schema.prisma",
+    "cleanup:orphans": "ts-node src/scripts/cleanup-orphans.ts",
+    "smoke": "ts-node src/scripts/smoke-tests.ts",
     "dashboard:dev": "npm run --workspace=tarasa-dashboard dev",
     "dashboard:build": "npm run --workspace=tarasa-dashboard build"
   },

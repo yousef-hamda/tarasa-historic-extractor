@@ -2,7 +2,7 @@ import winston from 'winston';
 import path from 'path';
 import fs from 'fs';
 
-const LOG_DIR = process.env.LOG_DIR || 'logs';
+const LOG_DIR = process.env.LOG_DIR || path.resolve(process.cwd(), 'logs');
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Ensure log directory exists
@@ -19,14 +19,17 @@ const ensureLogDir = (): void => {
 // Console format for development
 const consoleFormat = winston.format.combine(
   winston.format.timestamp(),
-  winston.format.printf(
-    (info: winston.Logform.TransformableInfo) => `${info.timestamp} [${info.level}] ${info.message}`
-  )
+  winston.format.errors({ stack: true }),
+  winston.format.printf((info: winston.Logform.TransformableInfo) => {
+    const stack = info.stack ? `\n${info.stack}` : '';
+    return `${info.timestamp} [${info.level}] ${info.message}${stack}`;
+  })
 );
 
 // JSON format for production file logs
 const fileFormat = winston.format.combine(
   winston.format.timestamp(),
+  winston.format.errors({ stack: true }),
   winston.format.json()
 );
 

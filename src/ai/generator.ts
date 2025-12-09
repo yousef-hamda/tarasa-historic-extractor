@@ -5,25 +5,24 @@ import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
 import { normalizeMessageContent, validateGeneratedMessage } from '../utils/openaiHelpers';
 
-const TEMPLATE_PROMPT = `You write short, warm, friendly English outreach messages to Facebook users who just shared a historic memory or story.
+const TEMPLATE_PROMPT = `أنت تكتب رسائل قصيرة ودودة بالعربية إلى أشخاص على فيسبوك شاركوا قصة أو ذكرى تاريخية.
 
-Your goals:
-1. Address the person by their first name (provided in the author name field) in a friendly way.
-2. Genuinely compliment their post in a casual, human tone - mention something specific about what they shared.
-3. Briefly explain what Tarasa does: "Tarasa is a platform dedicated to preserving community history and personal stories for future generations."
-4. Warmly invite them to share their full story on our website using the provided link.
-5. Keep it friendly, personal, and under 4-5 sentences. Do NOT sound like a bot or AI.
-6. End with the link naturally integrated into the message.
-7. Vary your wording so consecutive messages sound different.
+القواعد:
+1) خاطِب الشخص باسمه الأول بلطف وبلهجة طبيعية.
+2) امدح ما شاركه بشكل محدد (إشارة إلى القصة أو ذكرياته).
+3) عرّف باختصار بمنصة تراسا: "منصة تراسا مخصصة لحفظ التاريخ المجتمعي والذكريات الشخصية للأجيال القادمة".
+4) ادعُه لمشاركة قصته كاملة عبر الرابط المرفق، واجعل الرابط جزءاً طبيعياً من النص.
+5) اجعل الرسالة إنسانية وغير روبوتية، متنوعة الصياغة، وبطول 3-5 جمل قصيرة.
+6) لا تستخدم رموزاً تعبيرية مكررة أو صيغ رسمية مفرطة.
 
-Respond with only the final message text in English.`;
+أرسل فقط نص الرسالة النهائي باللغة العربية متضمناً الرابط المقدم.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const model = process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini';
 const MAX_BATCH = Number(process.env.GENERATOR_BATCH_SIZE ?? '10');
 
 const buildLink = (postId: number, text: string) => {
-  const base = process.env.BASE_TARASA_URL || 'https://tarasa.com/add-story';
+  const base = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
   return `${base}?refPost=${postId}&text=${encodeURIComponent(text)}`;
 };
 
@@ -54,6 +53,10 @@ export const generateMessages = async (): Promise<void> => {
     if (!classification.post) continue;
 
     const { post } = classification;
+    if (!post.authorLink) {
+      await logSystemEvent('message', `Skipping generation for post ${post.id}; missing author link.`);
+      continue;
+    }
     const link = buildLink(post.id, post.text);
 
     try {
@@ -86,7 +89,7 @@ export const generateMessages = async (): Promise<void> => {
       }
 
       // Validate the generated message contains the link
-      const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.com';
+      const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
       if (!validateGeneratedMessage(messageText, baseTarasaUrl)) {
         logger.warn(`Generated message for post ${post.id} is too short or missing link`);
         await logSystemEvent('error', `Invalid message generated for post ${post.id} - skipped`);

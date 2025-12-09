@@ -56,6 +56,14 @@ const validateEnv = (): void => {
     logger.warn('API_KEY is not set. Trigger endpoints will be unprotected.');
   }
 
+  if (!process.env.DATABASE_URL && process.env.POSTGRES_URL) {
+    // Prisma expects DATABASE_URL for directUrl in schema; reuse POSTGRES_URL when absent
+    process.env.DATABASE_URL = process.env.POSTGRES_URL;
+    logger.warn('DATABASE_URL is not set. Falling back to POSTGRES_URL for Prisma compatibility.');
+  } else if (process.env.DATABASE_URL && process.env.POSTGRES_URL && process.env.DATABASE_URL !== process.env.POSTGRES_URL) {
+    logger.warn('DATABASE_URL differs from POSTGRES_URL. Ensure both point to the same database to avoid drift.');
+  }
+
   logger.info('Environment validation passed');
 };
 
@@ -76,7 +84,7 @@ const getEnvConfig = (): EnvConfig => {
       .map((id) => id.trim())
       .filter(Boolean),
     MAX_MESSAGES_PER_DAY: Number(process.env.MAX_MESSAGES_PER_DAY) || 20,
-    BASE_TARASA_URL: process.env.BASE_TARASA_URL || 'https://tarasa.com/add-story',
+    BASE_TARASA_URL: process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833',
     HEADLESS: process.env.HEADLESS === 'true',
     OPENAI_CLASSIFIER_MODEL: process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini',
     OPENAI_GENERATOR_MODEL: process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini',

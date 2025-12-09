@@ -23,33 +23,50 @@ export const selectors = {
   twoFactorInput: ['input[name="approvals_code"]', 'input[autocomplete="one-time-code"]'],
   twoFactorText: ['text="Two-factor authentication"', 'text="Enter security code"', 'text="Enter the code"'],
   captchaText: ['text="security check"', 'text="captcha"', 'text="Confirm your identity"'],
-  // Facebook Group Feed selectors (updated for 2024-2025 DOM structure)
+  // Facebook Group Feed selectors (broadened for 2025 DOM changes)
   postContainer: [
-    'div[role="feed"] > div',
-    'div[role="article"]',
-    'div[data-pagelet^="FeedUnit"]',
-    'div[data-pagelet*="GroupFeed"] > div > div',
-    'div.x1yztbdb.x1n2onr6.xh8yej3.x1ja2u2z',
+    // Primary: explicit article roles within feed
+    'div[role="feed"] div[role="article"]',
+    // Alternate: pagelet feed units often wrap posts
+    '[data-pagelet^="FeedUnit"] div[role="article"]',
+    '[data-pagelet^="FeedUnit"] article',
+    '[data-pagelet*="GroupFeed"] div[role="article"]',
+    // Fallback: any article-like container that holds message preview content
+    'div[role="feed"] div:has([data-ad-preview="message"])',
+    'div[role="feed"] div:has([data-ad-comet-preview="message"])',
+    // Last resort: generic article role anywhere in the page
+    'article[role="article"]',
   ],
   postTextCandidates: [
     'div[data-ad-comet-preview="message"]',
     'div[data-ad-preview="message"]',
+    'div[data-lexical-text="true"]',
     'div[dir="auto"][style*="text-align"]',
     'div.xdj266r.x11i5rnm.xat24cr.x1mh8g0r.x1vvkbs',
     'div[dir="auto"]',
     'span[dir="auto"]',
+    'div[role="article"] div[dir="auto"]',
   ],
   // Author link selectors for Facebook profiles
   authorLink: [
     'h2 a[href*="/user/"]',
     'h2 a[href*="/profile.php"]',
+    'h2 a[href^="https://www.facebook.com/profile.php?id="]',
+    'h2 a[href^="/profile.php?id="]',
     'h3 a[href*="/user/"]',
     'h3 a[href*="/profile.php"]',
+    'a[role="link"][href*="/people/"]',
+    'a[role="link"][href*="/profile.php?id="]',
+    'a[href*="facebook.com/people/"][href*="?id="]',
+    'a[href*="facebook.com/people/"]',
     'a[role="link"][href*="/user/"]',
     'a[role="link"][href*="/profile.php"]',
+    'a[role="link"][href*="/profile/"]',
+    'a[href*="facebook.com/profile/"]',
     'span a[href*="facebook.com"][role="link"]',
     'strong a[href*="facebook.com"]',
     'a[href*="/groups/"][href*="/user/"]',
+    'a[aria-label][href*="facebook.com"][href*="profile"]',
   ],
   // Author name selectors
   authorName: [
@@ -65,13 +82,20 @@ export const selectors = {
     '[aria-label="Message"]',
     '[aria-label="Send message"]',
     'div[role="button"]:has-text("Message")',
+    'button:has-text("Message")',
+    'button:has-text("Send message")',
+    '[role="button"][aria-label*="message"]',
     'a[href*="/messages/"]',
     'a[href*="messenger.com"]',
   ],
   messengerTextarea: [
     'div[role="textbox"][contenteditable="true"]',
     'div[aria-label*="Message"]',
+    'div[aria-label="Type a message"]',
+    'div[aria-label="Type your message"]',
+    'div[aria-label="Send a message"]',
     '[role="textbox"]',
+    'div[role="textbox"][data-lexical-editor]',
     'textarea',
   ],
 } as const;
