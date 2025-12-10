@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import logger from '../utils/logger';
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -21,7 +22,7 @@ export const checkDatabaseConnection = async (): Promise<boolean> => {
     await prisma.$queryRaw`SELECT 1`;
     return true;
   } catch (error) {
-    console.error('Database connection check failed:', (error as Error).message);
+    logger.error(`Database connection check failed: ${(error as Error).message}`);
     return false;
   }
 };

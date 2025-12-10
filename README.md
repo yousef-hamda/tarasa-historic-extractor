@@ -29,8 +29,8 @@ The system runs completely autonomously with scheduled cron jobs and includes ro
 - Node-cron for scheduled tasks
 
 **Frontend:**
-- Next.js 16 (React 19)
-- Tailwind CSS 3
+- Next.js 14.2.15 (React 18.3.1)
+- Tailwind CSS 3.4.3
 - Server-side rendering with API integration
 
 **Database:**
