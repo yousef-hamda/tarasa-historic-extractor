@@ -9,31 +9,62 @@ interface HealthStatus {
   timestamp: string;
   checks: {
     database: boolean;
-    facebookCookies: boolean;
+    facebookSession: boolean;
     openaiKey: boolean;
+    apifyToken: boolean;
+  };
+  facebook?: {
+    hasSession: boolean;
+    userId: string | null;
   };
   uptime: number;
 }
 
-router.get('/api/health', async (_req: Request, res: Response) => {
+// Main health check handler
+const healthCheckHandler = async (_req: Request, res: Response) => {
   const dbConnected = await checkDatabaseConnection();
   const cookies = await getCookieHealth();
   const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
+  const hasApifyToken = Boolean(process.env.APIFY_TOKEN);
+
+  // Determine overall status
+  // - ok: everything works
+  // - degraded: can work but with limitations (e.g., no Facebook session but Apify available)
+  // - unhealthy: critical services down
+  let status: 'ok' | 'degraded' | 'unhealthy' = 'ok';
+
+  if (!dbConnected) {
+    status = 'unhealthy';
+  } else if (!cookies.ok && !hasApifyToken) {
+    // No Facebook session AND no Apify = can't scrape at all
+    status = 'unhealthy';
+  } else if (!cookies.ok || !hasOpenAiKey) {
+    status = 'degraded';
+  }
 
   const health: HealthStatus = {
-    status: dbConnected && cookies.ok && hasOpenAiKey ? 'ok' : 'degraded',
+    status,
     timestamp: new Date().toISOString(),
     checks: {
       database: dbConnected,
-      facebookCookies: cookies.ok,
+      facebookSession: cookies.ok,
       openaiKey: hasOpenAiKey,
+      apifyToken: hasApifyToken,
+    },
+    facebook: {
+      hasSession: cookies.hasSession,
+      userId: cookies.userId,
     },
     uptime: process.uptime(),
   };
 
-  const statusCode = health.status === 'ok' ? 200 : 503;
+  const statusCode = status === 'ok' ? 200 : status === 'degraded' ? 200 : 503;
   res.status(statusCode).json(health);
-});
+};
+
+// Support both /health and /api/health for convenience
+router.get('/health', healthCheckHandler);
+router.get('/api/health', healthCheckHandler);
 
 // Simple liveness probe (just checks if server is running)
 router.get('/api/health/live', (_req: Request, res: Response) => {

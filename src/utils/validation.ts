@@ -4,7 +4,8 @@
 
 export const parsePositiveInt = (value: unknown, defaultValue: number, max?: number): number => {
   const parsed = Number(value);
-  if (isNaN(parsed) || parsed < 0) {
+  // Return default for NaN, negative, or zero (positive integers must be > 0)
+  if (isNaN(parsed) || parsed <= 0) {
     return defaultValue;
   }
   const result = Math.floor(parsed);

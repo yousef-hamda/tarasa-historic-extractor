@@ -39,7 +39,7 @@ const normalizePostId = (rawId: string | null, fallback: string | null, text: st
 };
 
 /**
- * Normalize a Facebook profile URL to a clean format
+ * Normalize a Facebook profile/page URL to a clean, consistent format
  */
 const normalizeAuthorLink = (href: string | null): string | undefined => {
   if (!href) return undefined;
@@ -47,13 +47,15 @@ const normalizeAuthorLink = (href: string | null): string | undefined => {
   try {
     const url = new URL(href, 'https://www.facebook.com');
 
-    // Remove tracking parameters
-    url.searchParams.delete('__cft__');
-    url.searchParams.delete('__tn__');
-    url.searchParams.delete('comment_id');
-    url.searchParams.delete('reply_comment_id');
+    // Remove tracking and unnecessary parameters
+    const paramsToRemove = [
+      '__cft__', '__tn__', 'comment_id', 'reply_comment_id',
+      'ref', 'fref', 'hc_ref', '__xts__', 'eid', 'rc', 'notif_id',
+      'notif_t', 'ref_notif_type', 'acontext', 'aref'
+    ];
+    paramsToRemove.forEach(param => url.searchParams.delete(param));
 
-    // Handle /user/ID format
+    // Handle /user/ID format (converts to profile.php?id=)
     if (url.pathname.includes('/user/')) {
       const match = url.pathname.match(/\/user\/(\d+)/);
       if (match) {
@@ -69,79 +71,274 @@ const normalizeAuthorLink = (href: string | null): string | undefined => {
       }
     }
 
-    // Handle /username format
-    const pathMatch = url.pathname.match(/^\/([a-zA-Z0-9.]+)\/?$/);
-    if (pathMatch && !['groups', 'pages', 'events', 'watch', 'marketplace'].includes(pathMatch[1])) {
-      return `https://www.facebook.com/${pathMatch[1]}`;
+    // Handle /people/Name/ID format
+    if (url.pathname.includes('/people/')) {
+      const match = url.pathname.match(/\/people\/[^\/]+\/(\d+)/);
+      if (match) {
+        return `https://www.facebook.com/profile.php?id=${match[1]}`;
+      }
     }
 
-    return href;
+    // Handle groups/groupid/user/userid format
+    if (url.pathname.includes('/groups/') && url.pathname.includes('/user/')) {
+      const match = url.pathname.match(/\/user\/(\d+)/);
+      if (match) {
+        return `https://www.facebook.com/profile.php?id=${match[1]}`;
+      }
+    }
+
+    // Handle /username or /pagename format (no subpath)
+    const pathMatch = url.pathname.match(/^\/([a-zA-Z0-9._-]+)\/?$/);
+    if (pathMatch) {
+      const username = pathMatch[1];
+      // Exclude known non-profile paths
+      const excludedPaths = [
+        'groups', 'pages', 'events', 'watch', 'marketplace',
+        'gaming', 'stories', 'reels', 'hashtag', 'search',
+        'settings', 'notifications', 'messages', 'friends',
+        'bookmarks', 'memories', 'saved', 'help', 'policies'
+      ];
+      if (!excludedPaths.includes(username.toLowerCase())) {
+        return `https://www.facebook.com/${username}`;
+      }
+    }
+
+    // If we got here with a clean facebook.com URL, return it
+    if (url.hostname.includes('facebook.com') && url.pathname.length > 1) {
+      // Clean up the URL
+      url.search = ''; // Remove all query params for cleaner URL
+      const cleanPath = url.pathname.replace(/\/+$/, ''); // Remove trailing slashes
+      if (cleanPath && cleanPath !== '/') {
+        return `https://www.facebook.com${cleanPath}`;
+      }
+    }
+
+    return undefined;
   } catch (urlError) {
-    // URL parsing failed, return original href
-    logger.debug(`URL normalization fallback for ${href}: ${(urlError as Error).message}`);
-    return href;
+    // URL parsing failed
+    logger.debug(`URL normalization failed for ${href}: ${(urlError as Error).message}`);
+    return undefined;
   }
 };
 
 /**
+ * Check if a URL is a valid Facebook profile/page link (not a group, post, photo, etc.)
+ */
+const isValidProfileLink = (href: string | null): boolean => {
+  if (!href) return false;
+
+  // Exclude non-profile links
+  const excludePatterns = [
+    '/groups/',
+    '/posts/',
+    '/comments/',
+    '/photos/',
+    '/photo/',
+    '/events/',
+    '/watch/',
+    '/marketplace/',
+    '/gaming/',
+    '/stories/',
+    '/reels/',
+    '/hashtag/',
+    '/share',
+    '/sharer',
+    '?__cft__', // tracking links without path
+    '/permalink/',
+  ];
+
+  for (const pattern of excludePatterns) {
+    if (href.includes(pattern) && !href.includes('/user/')) return false;
+  }
+
+  // Must be a Facebook URL
+  if (!href.includes('facebook.com')) return false;
+
+  // Valid profile patterns
+  const validPatterns = [
+    /\/user\/\d+/,                    // /user/123456
+    /\/profile\.php\?id=\d+/,         // /profile.php?id=123456
+    /\/people\/[^\/]+\/\d+/,          // /people/Name/123456
+    /facebook\.com\/[a-zA-Z0-9.]+\/?$/, // /username (no subpath)
+    /facebook\.com\/[a-zA-Z0-9.]+\?/, // /username?params
+  ];
+
+  return validPatterns.some(pattern => pattern.test(href));
+};
+
+/**
  * Try multiple strategies to extract author link from a post container
+ * Uses 7 strategies in order of reliability
  */
 const extractAuthorLink = async (container: ElementHandle<Element>): Promise<string | undefined> => {
-  // Strategy 1: Use defined selectors
-  const authorLinkHandle = await findFirstHandle(container, selectors.authorLink);
-  if (authorLinkHandle.handle) {
-    const href = await authorLinkHandle.handle.getAttribute('href');
-    const normalized = normalizeAuthorLink(href);
-    if (normalized) return normalized;
-  }
 
-  // Strategy 2: Find any link in the header area (h2, h3, h4) that points to a profile
-  const headerLinks = await container.$$('h2 a[href], h3 a[href], h4 a[href]');
-  for (const link of headerLinks) {
-    const href = await link.getAttribute('href');
-    if (href && (href.includes('/user/') || href.includes('/profile.php') || href.includes('facebook.com/'))) {
-      const normalized = normalizeAuthorLink(href);
-      if (normalized && !normalized.includes('/groups/')) return normalized;
-    }
-  }
-
-  // Strategy 3: Find links with aria-label containing author info
-  const ariaLinks = await container.$$('a[aria-label][href*="facebook.com"]');
-  for (const link of ariaLinks) {
-    const href = await link.getAttribute('href');
-    if (href && (href.includes('/user/') || href.includes('/profile.php'))) {
-      return normalizeAuthorLink(href);
-    }
-  }
-
-  // Strategy 4: Evaluate in page to find the most "profile-like" link
+  // Strategy 1: Profile photo link (MOST RELIABLE)
+  // The circular profile photo is always linked to the author's profile
   try {
-    const guessedLink = await container.evaluate((el) => {
-      const anchors = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href]'));
+    const photoLinks = await container.$$('a[href*="facebook.com"]:has(svg[role="img"]), a[href*="facebook.com"]:has(image), a[aria-label][href*="facebook.com"]:has(img)');
+    for (const link of photoLinks) {
+      const href = await link.getAttribute('href');
+      if (isValidProfileLink(href)) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 1 (profile photo): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 1 failed: ${(e as Error).message}`);
+  }
 
-      const cleanHref = (href: string) => href.replace(/^https?:\/\/(www\.)?facebook\.com/i, '');
+  // Strategy 2: Header links (h2/h3/h4) - Facebook uses h2 for author names now
+  try {
+    const headerLinks = await container.$$('h2 a[href], h3 a[href], h4 a[href]');
+    for (const link of headerLinks) {
+      const href = await link.getAttribute('href');
+      if (isValidProfileLink(href)) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 2 (header link): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 2 failed: ${(e as Error).message}`);
+  }
 
-      const isProfileLike = (href: string) => {
-        if (!href) return false;
-        if (href.includes('/groups/') && !href.includes('/user/')) return false;
-        if (href.includes('/posts/')) return false;
-        if (href.includes('/comments/')) return false;
-        if (href.includes('/photos/')) return false;
-        if (href.includes('/events/')) return false;
-        return /\/(user|profile\.php|people)\//.test(href) || /^[\/][A-Za-z0-9.]+\/?$/.test(cleanHref(href));
+  // Strategy 3: Links with aria-label (profile photos often have aria-label with name)
+  try {
+    const ariaLinks = await container.$$('a[aria-label][href*="facebook.com"]');
+    for (const link of ariaLinks) {
+      const href = await link.getAttribute('href');
+      if (isValidProfileLink(href)) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 3 (aria-label link): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 3 failed: ${(e as Error).message}`);
+  }
+
+  // Strategy 4: Use defined selectors from selectors.ts
+  try {
+    const authorLinkHandle = await findFirstHandle(container, selectors.authorLink);
+    if (authorLinkHandle.handle) {
+      const href = await authorLinkHandle.handle.getAttribute('href');
+      if (isValidProfileLink(href)) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 4 (selectors): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 4 failed: ${(e as Error).message}`);
+  }
+
+  // Strategy 5: Strong/bold links (author names are often in <strong> tags)
+  try {
+    const strongLinks = await container.$$('strong a[href*="facebook.com"], b a[href*="facebook.com"]');
+    for (const link of strongLinks) {
+      const href = await link.getAttribute('href');
+      if (isValidProfileLink(href)) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 5 (strong/bold link): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 5 failed: ${(e as Error).message}`);
+  }
+
+  // Strategy 6: First valid profile link in the post header area (top portion)
+  try {
+    const result = await container.evaluate((el) => {
+      // Get all links in the container
+      const allLinks = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href*="facebook.com"]'));
+
+      // Helper to check if link is in the header area (first ~200px or first few elements)
+      const isInHeaderArea = (link: HTMLAnchorElement): boolean => {
+        const rect = link.getBoundingClientRect();
+        const containerRect = el.getBoundingClientRect();
+        // Link should be near the top of the container
+        return (rect.top - containerRect.top) < 150;
       };
 
-      const candidate = anchors.find((a) => isProfileLike(a.getAttribute('href') || ''));
-      return candidate?.getAttribute('href') || undefined;
+      // Helper to validate profile link
+      const isProfile = (href: string): boolean => {
+        if (!href) return false;
+        const excludes = ['/groups/', '/posts/', '/comments/', '/photos/', '/photo/', '/events/', '/watch/', '/marketplace/', '/permalink/', '/share'];
+        for (const ex of excludes) {
+          if (href.includes(ex) && !href.includes('/user/')) return false;
+        }
+        // Valid patterns
+        if (/\/user\/\d+/.test(href)) return true;
+        if (/\/profile\.php\?id=\d+/.test(href)) return true;
+        if (/\/people\/[^\/]+\/\d+/.test(href)) return true;
+        // Username pattern: facebook.com/username (no subpath after username)
+        const match = href.match(/facebook\.com\/([a-zA-Z0-9.]+)\/?(\?|$)/);
+        if (match && !['groups', 'pages', 'events', 'watch', 'marketplace', 'gaming', 'stories'].includes(match[1])) {
+          return true;
+        }
+        return false;
+      };
+
+      // Find first valid profile link in header area
+      for (const link of allLinks) {
+        const href = link.getAttribute('href');
+        if (href && isProfile(href) && isInHeaderArea(link)) {
+          return href;
+        }
+      }
+
+      // Fallback: any valid profile link
+      for (const link of allLinks) {
+        const href = link.getAttribute('href');
+        if (href && isProfile(href)) {
+          return href;
+        }
+      }
+
+      return null;
     });
 
-    if (guessedLink) {
-      return normalizeAuthorLink(guessedLink);
+    if (result) {
+      const normalized = normalizeAuthorLink(result);
+      if (normalized) {
+        logger.debug(`Strategy 6 (header area scan): Found ${normalized}`);
+        return normalized;
+      }
     }
-  } catch (linkError) {
-    logger.debug(`Author link evaluate fallback failed: ${(linkError as Error).message}`);
+  } catch (e) {
+    logger.debug(`Strategy 6 failed: ${(e as Error).message}`);
   }
 
+  // Strategy 7: Extract from any link with user ID pattern
+  try {
+    const allLinks = await container.$$('a[href*="/user/"], a[href*="profile.php?id="], a[href*="/people/"]');
+    for (const link of allLinks) {
+      const href = await link.getAttribute('href');
+      if (href) {
+        const normalized = normalizeAuthorLink(href);
+        if (normalized) {
+          logger.debug(`Strategy 7 (user ID pattern): Found ${normalized}`);
+          return normalized;
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug(`Strategy 7 failed: ${(e as Error).message}`);
+  }
+
+  logger.debug('All author link extraction strategies failed');
   return undefined;
 };
 
@@ -203,18 +400,29 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
 
     // Check if container is a loading placeholder
     try {
-      const isLoading = await container.evaluate((el) => {
-        // Check if it's a loading placeholder
-        if (el.querySelector('[aria-label="Loading..."]')) return true;
-        if (el.querySelector('[data-visualcompletion="loading-state"]')) return true;
-        // Check if it has very little text content
+      const loadingInfo = await container.evaluate((el: Element) => {
+        const hasLoadingLabel = !!el.querySelector('[aria-label="Loading..."]');
+        const hasLoadingState = !!el.querySelector('[data-visualcompletion="loading-state"]');
         const textContent = el.textContent || '';
-        if (textContent.length < MIN_TEXT_LENGTH) return true;
-        return false;
+        const textLength = textContent.length;
+        const isTooShort = textLength < 30; // MIN_TEXT_LENGTH
+        const preview = textContent.substring(0, 200).replace(/\s+/g, ' ').trim();
+
+        return {
+          isLoading: hasLoadingLabel || hasLoadingState || isTooShort,
+          hasLoadingLabel,
+          hasLoadingState,
+          textLength,
+          isTooShort,
+          preview
+        };
       });
 
-      if (isLoading) {
-        logger.info(`Container ${i + 1}: Skipping (loading placeholder or empty)`);
+      logger.debug(`Container ${i + 1} check: textLength=${loadingInfo.textLength}, isTooShort=${loadingInfo.isTooShort}, hasLoadingLabel=${loadingInfo.hasLoadingLabel}`);
+      logger.debug(`Container ${i + 1} preview: "${loadingInfo.preview.substring(0, 100)}..."`);
+
+      if (loadingInfo.isLoading) {
+        logger.debug(`Container ${i + 1}: Skipping (loading placeholder or empty)`);
         continue;
       }
     } catch (loadingCheckError) {
@@ -230,10 +438,10 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
         tagName: el.tagName,
         preview: (el.textContent || '').substring(0, 150).replace(/\s+/g, ' '),
       }));
-      logger.info(`Container ${i + 1} info: ${containerInfo.childCount} children, ${containerInfo.textLength} chars`);
-      logger.info(`Container ${i + 1} text preview: ${containerInfo.preview}...`);
+      logger.debug(`Container ${i + 1} info: ${containerInfo.childCount} children, ${containerInfo.textLength} chars`);
+      logger.debug(`Container ${i + 1} text preview: ${containerInfo.preview}...`);
     } catch (debugErr) {
-      logger.warn(`Could not debug container ${i + 1}: ${debugErr}`);
+      logger.debug(`Could not debug container ${i + 1}: ${debugErr}`);
     }
 
     // Extract text first (we need it for ID generation)
@@ -305,7 +513,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       continue;
     }
     
-    logger.info(`Container ${i + 1}: Found text with ${text.length} characters`);
+    logger.debug(`Container ${i + 1}: Found text with ${text.length} characters`);
     
     // Extract author link with enhanced extraction
     const authorLink = await extractAuthorLink(container);
@@ -318,21 +526,67 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       authorLink
     );
     
-    logger.info(`Container ${i + 1}: Generated post ID: ${postId}`);
+    logger.debug(`Container ${i + 1}: Generated post ID: ${postId}`);
 
-    // Extract author name
-    const authorHandle = await findFirstHandle(container, selectors.authorName);
+    // Extract author name with multiple strategies
     let authorName: string | undefined;
+
+    // Strategy 1: Use defined selectors
+    const authorHandle = await findFirstHandle(container, selectors.authorName);
     if (authorHandle.handle) {
       try {
-        authorName = (await authorHandle.handle.innerText())?.trim() || undefined;
+        // Check if it's an element with aria-label (profile photo)
+        const ariaLabel = await authorHandle.handle.getAttribute('aria-label');
+        if (ariaLabel && ariaLabel.length > 0 && ariaLabel.length < 100) {
+          authorName = ariaLabel.trim();
+        } else {
+          authorName = (await authorHandle.handle.innerText())?.trim() || undefined;
+        }
       } catch (authorError) {
-        // Element might have been removed from DOM
         logger.debug(`Container ${i + 1}: Author element detached`);
       }
     }
 
-    logger.info(`Container ${i + 1}: Author: ${authorName || 'Unknown'}, Link: ${authorLink || 'None'}`);
+    // Strategy 2: Try h2/h3 header text directly
+    if (!authorName) {
+      try {
+        const headerLink = await container.$('h2 a[href*="facebook.com"], h3 a[href*="facebook.com"]');
+        if (headerLink) {
+          authorName = (await headerLink.innerText())?.trim() || undefined;
+        }
+      } catch (e) {
+        logger.debug(`Container ${i + 1}: Header author extraction failed`);
+      }
+    }
+
+    // Strategy 3: Get aria-label from profile photo link
+    if (!authorName) {
+      try {
+        const photoLink = await container.$('a[aria-label][href*="facebook.com"]:has(img), a[aria-label][href*="facebook.com"]:has(svg)');
+        if (photoLink) {
+          const ariaLabel = await photoLink.getAttribute('aria-label');
+          if (ariaLabel && ariaLabel.length > 0 && ariaLabel.length < 100) {
+            authorName = ariaLabel.trim();
+          }
+        }
+      } catch (e) {
+        logger.debug(`Container ${i + 1}: Photo aria-label extraction failed`);
+      }
+    }
+
+    // Strategy 4: Extract from strong/bold elements
+    if (!authorName) {
+      try {
+        const strongLink = await container.$('strong a[href*="facebook.com"]');
+        if (strongLink) {
+          authorName = (await strongLink.innerText())?.trim() || undefined;
+        }
+      } catch (e) {
+        logger.debug(`Container ${i + 1}: Strong author extraction failed`);
+      }
+    }
+
+    logger.debug(`Container ${i + 1}: Author: ${authorName || 'Unknown'}, Link: ${authorLink || 'None'}`);
 
     posts.push({
       fbPostId: postId,

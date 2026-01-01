@@ -11,14 +11,16 @@ const getGroups = (): string[] =>
 router.get('/api/settings', (_req: Request, res: Response) => {
   const groups = getGroups();
   const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
-  const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.com/add-story';
+  const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
   const emailConfigured = Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);
+  const apifyConfigured = Boolean(process.env.APIFY_TOKEN);
 
   res.json({
     groups,
     messageLimit,
     baseTarasaUrl,
     emailConfigured,
+    apifyConfigured,
   });
 });
 
