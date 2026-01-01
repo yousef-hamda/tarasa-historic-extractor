@@ -23,6 +23,10 @@ interface EnvConfig {
   API_KEY?: string;
   SYSTEM_EMAIL_ALERT?: string;
   SYSTEM_EMAIL_PASSWORD?: string;
+
+  // Apify scraper (replaces Playwright for Facebook scraping)
+  APIFY_TOKEN?: string;
+  APIFY_RESULTS_LIMIT: number;
 }
 
 const requiredEnvVars = [
@@ -54,6 +58,11 @@ const validateEnv = (): void => {
 
   if (!process.env.API_KEY) {
     logger.warn('API_KEY is not set. Trigger endpoints will be unprotected.');
+  }
+
+  // Warn about Apify configuration
+  if (!process.env.APIFY_TOKEN) {
+    logger.warn('APIFY_TOKEN is not set. Facebook scraping will use Playwright fallback (requires FB_EMAIL/FB_PASSWORD).');
   }
 
   if (!process.env.DATABASE_URL && process.env.POSTGRES_URL) {
@@ -93,6 +102,10 @@ const getEnvConfig = (): EnvConfig => {
     API_KEY: process.env.API_KEY,
     SYSTEM_EMAIL_ALERT: process.env.SYSTEM_EMAIL_ALERT,
     SYSTEM_EMAIL_PASSWORD: process.env.SYSTEM_EMAIL_PASSWORD,
+
+    // Apify configuration
+    APIFY_TOKEN: process.env.APIFY_TOKEN,
+    APIFY_RESULTS_LIMIT: Number(process.env.APIFY_RESULTS_LIMIT) || 20,
   };
 };
 

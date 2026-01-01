@@ -1,6 +1,7 @@
 import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
-import { scrapeGroups, debugScrape } from '../scraper/scraper';
+// Using hybrid scraper (Apify for public groups, Playwright for private groups)
+import { scrapeAllGroups } from '../scraper/scrapeApifyToDb';
 import { classifyPosts } from '../ai/classifier';
 import { generateMessages } from '../ai/generator';
 import { dispatchMessages } from '../messenger/messenger';
@@ -43,7 +44,8 @@ router.get('/api/posts', async (req: Request, res: Response) => {
 
 router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
-    await scrapeGroups();
+    // Using hybrid scraper: Apify for public groups, Playwright fallback for private groups
+    await scrapeAllGroups();
     res.json({ status: 'completed' });
   } catch (error) {
     await logSystemEvent('error', `Manual scrape trigger failed: ${(error as Error).message}`);
@@ -72,13 +74,7 @@ router.post('/api/trigger-message', apiKeyAuth, triggerRateLimiter, async (_req:
   }
 });
 
-router.get('/api/debug-scrape', apiKeyAuth, async (_req: Request, res: Response) => {
-  try {
-    const result = await debugScrape();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: (error as Error).message });
-  }
-});
+// REMOVED: debug-scrape endpoint (was Playwright-specific)
+// The Apify scraper provides better logging and doesn't need a debug endpoint
 
 export default router;

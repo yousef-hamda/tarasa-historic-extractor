@@ -66,8 +66,9 @@ const run = async () => {
     try {
       expect(typeof (health as any)?.checks === 'object', 'health checks missing');
       expect(typeof (health as any)?.checks?.database === 'boolean', 'database check missing');
-      expect(typeof (health as any)?.checks?.facebookCookies === 'boolean', 'facebookCookies check missing');
+      expect(typeof (health as any)?.checks?.facebookSession === 'boolean', 'facebookSession check missing');
       expect(typeof (health as any)?.checks?.openaiKey === 'boolean', 'openaiKey check missing');
+      expect(typeof (health as any)?.checks?.apifyToken === 'boolean', 'apifyToken check missing');
     } catch (e) {
       record('Health shape', false, (e as Error).message);
     }

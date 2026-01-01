@@ -47,36 +47,58 @@ export const selectors = {
     'span[dir="auto"]',
     'div[role="article"] div[dir="auto"]',
   ],
-  // Author link selectors for Facebook profiles
+  // Author link selectors for Facebook profiles and pages
+  // Ordered by reliability - most reliable first
   authorLink: [
+    // Profile photo links (most reliable - always link to profile)
+    'a[aria-label][href*="facebook.com"]:has(img)',
+    'a[href*="facebook.com"]:has(svg[role="img"])',
+    'a[href*="facebook.com"]:has(image)',
+    // Header links (h2 is now primary in Facebook groups)
     'h2 a[href*="/user/"]',
     'h2 a[href*="/profile.php"]',
-    'h2 a[href^="https://www.facebook.com/profile.php?id="]',
-    'h2 a[href^="/profile.php?id="]',
+    'h2 a[href*="facebook.com/"]',
     'h3 a[href*="/user/"]',
     'h3 a[href*="/profile.php"]',
-    'a[role="link"][href*="/people/"]',
-    'a[role="link"][href*="/profile.php?id="]',
-    'a[href*="facebook.com/people/"][href*="?id="]',
-    'a[href*="facebook.com/people/"]',
+    'h3 a[href*="facebook.com/"]',
+    // Strong/bold author names
+    'strong a[href*="facebook.com"]',
+    'b a[href*="facebook.com"]',
+    // Role-based links
     'a[role="link"][href*="/user/"]',
     'a[role="link"][href*="/profile.php"]',
-    'a[role="link"][href*="/profile/"]',
+    'a[role="link"][href*="/people/"]',
+    // People/profile patterns
+    'a[href*="facebook.com/people/"]',
     'a[href*="facebook.com/profile/"]',
+    'a[href*="facebook.com/profile.php?id="]',
+    // Generic span-wrapped links
     'span a[href*="facebook.com"][role="link"]',
-    'strong a[href*="facebook.com"]',
+    // Group user links
     'a[href*="/groups/"][href*="/user/"]',
-    'a[aria-label][href*="facebook.com"][href*="profile"]',
+    // Aria-labeled profile links
+    'a[aria-label][href*="facebook.com"]',
   ],
-  // Author name selectors
+  // Author name selectors (ordered by reliability)
   authorName: [
+    // Header-based (most common in Facebook groups)
     'h2 a[role="link"] span',
     'h2 a span',
+    'h2 span a',
     'h3 a[role="link"] span',
     'h3 a span',
+    'h3 span a',
+    'h4 a span',
+    // Strong/bold names
+    'strong a[href*="facebook.com"]',
     'strong a',
-    'span a[role="link"]',
+    'b a[href*="facebook.com"]',
+    // Aria-label (profile photos have author name in aria-label)
+    'a[aria-label][href*="facebook.com"]',
+    // Role-based
     'a[role="link"] strong',
+    'a[role="link"] span',
+    'span a[role="link"]',
   ],
   messengerButtons: [
     '[aria-label="Message"]',

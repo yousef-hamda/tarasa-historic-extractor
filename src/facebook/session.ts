@@ -50,15 +50,35 @@ export const saveCookies = async (context: BrowserContext): Promise<void> => {
   logger.info('Cookies saved');
 };
 
+/**
+ * Check if we have a valid Facebook session
+ * The c_user cookie is the key indicator of a logged-in session
+ */
 export const getCookieHealth = async () => {
   const cookies = await loadCookies();
   const now = Date.now() / 1000;
+
+  // Filter valid (non-expired) cookies
   const valid = cookies.filter((cookie) => !cookie.expires || cookie.expires > now + 300);
 
+  // Check for the critical session cookie (c_user indicates logged-in user)
+  const sessionCookie = cookies.find(
+    (c) => c.name === 'c_user' && c.domain.includes('facebook.com') && (!c.expires || c.expires > now)
+  );
+
+  // Also check for xs cookie (session token)
+  const xsCookie = cookies.find(
+    (c) => c.name === 'xs' && c.domain.includes('facebook.com') && (!c.expires || c.expires > now)
+  );
+
+  const hasValidSession = Boolean(sessionCookie && xsCookie);
+
   return {
-    ok: valid.length > 0,
+    ok: hasValidSession,
     total: cookies.length,
     valid: valid.length,
+    hasSession: hasValidSession,
+    userId: sessionCookie?.value || null,
   };
 };
 

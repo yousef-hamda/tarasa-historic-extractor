@@ -1,5 +1,7 @@
 import cron from 'node-cron';
-import { scrapeGroups } from '../scraper/scraper';
+// CHANGED: Now using Apify-based scraper instead of Playwright
+// This eliminates browser session issues and bot detection problems
+import { scrapeAllGroups } from '../scraper/scrapeApifyToDb';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { withLock } from '../utils/cronLock';
@@ -13,7 +15,8 @@ cron.schedule(SCRAPE_SCHEDULE, () => {
       await withLock('scrape', async () => {
         logger.info('Running scrape cron');
         try {
-          await scrapeGroups();
+          // CHANGED: Using Apify-based scraper
+          await scrapeAllGroups();
         } catch (error) {
           logger.error(`Scrape cron failed: ${(error as Error).message}`);
           await logSystemEvent('error', `Scrape cron failed: ${(error as Error).message}`);
