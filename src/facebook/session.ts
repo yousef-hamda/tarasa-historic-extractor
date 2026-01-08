@@ -12,8 +12,19 @@ import { humanDelay } from '../utils/delays';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS } from '../config/constants';
+import {
+  createPersistentBrowser,
+  checkAndUpdateSession,
+  getSessionStatus,
+  isSessionValid,
+} from '../session/sessionManager';
+import { loadSessionHealth, markSessionValid, markSessionBlocked } from '../session/sessionHealth';
 
 const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
+const BROWSER_DATA_DIR = path.resolve(process.cwd(), 'browser-data');
+
+// Re-export session manager functions for backward compatibility
+export { checkAndUpdateSession, getSessionStatus, isSessionValid };
 
 interface Cookie {
   name: string;
@@ -148,7 +159,54 @@ export const ensureLogin = async (context: BrowserContext): Promise<void> => {
 };
 
 export const createFacebookContext = async (): Promise<{ browser: Browser; context: BrowserContext }> => {
-  // Allow headless mode via environment variable (default: false for Facebook detection avoidance)
+  // Try to use persistent browser first (preferred method)
+  try {
+    const { browser, context } = await createPersistentBrowser();
+
+    // Verify session is valid
+    const page = await context.newPage();
+    page.setDefaultTimeout(TIMEOUTS.PAGE_DEFAULT);
+
+    await page.goto('https://www.facebook.com', {
+      waitUntil: 'domcontentloaded',
+      timeout: TIMEOUTS.NAVIGATION,
+    });
+
+    await page.waitForTimeout(3000);
+
+    const loginNeeded =
+      (await findFirstHandle(page, selectors.loginEmail)).handle ||
+      (await findFirstHandle(page, selectors.loginText)).handle;
+
+    if (loginNeeded) {
+      logger.warn('Persistent browser session not logged in. Attempting login...');
+      await fillFirstMatchingSelector(page, selectors.loginEmail, process.env.FB_EMAIL || '');
+      await fillFirstMatchingSelector(page, selectors.loginPassword, process.env.FB_PASSWORD || '');
+      await clickFirstMatchingSelector(page, selectors.loginButton);
+      await page.waitForTimeout(5000);
+      await humanDelay();
+    }
+
+    if (await detectTwoFactor(page)) {
+      await handleChallenge('2fa');
+      await markSessionBlocked('Two-factor authentication required');
+      throw new Error('Two-factor authentication required');
+    }
+
+    if (await detectCaptcha(page)) {
+      await handleChallenge('captcha');
+      await markSessionBlocked('Security captcha required');
+      throw new Error('Captcha encountered');
+    }
+
+    await page.close();
+    await logSystemEvent('auth', 'Facebook session verified with persistent browser.');
+    return { browser, context };
+  } catch (persistentError) {
+    logger.warn(`Persistent browser failed: ${(persistentError as Error).message}. Falling back to cookie-based approach.`);
+  }
+
+  // Fallback to cookie-based approach (legacy method)
   const headless = process.env.HEADLESS === 'true';
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();

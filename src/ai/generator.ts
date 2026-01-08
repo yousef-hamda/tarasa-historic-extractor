@@ -33,6 +33,7 @@ export const generateMessages = async (): Promise<void> => {
       isHistoric: true,
       confidence: { gte: 75 },
       post: {
+        authorLink: { not: null }, // Only fetch posts with author links
         generated: { none: {} },
         messages: { none: { status: 'sent' } },
       },
@@ -54,7 +55,8 @@ export const generateMessages = async (): Promise<void> => {
 
     const { post } = classification;
     if (!post.authorLink) {
-      await logSystemEvent('message', `Skipping generation for post ${post.id}; missing author link.`);
+      // Safety net - should not happen since we filter in query
+      logger.debug(`Skipping generation for post ${post.id}; missing author link.`);
       continue;
     }
     const link = buildLink(post.id, post.text);

@@ -10,8 +10,13 @@ export const normalizeMessageContent = (
 ): string => {
   if (!content) return '';
   if (typeof content === 'string') return content;
-  const textChunk = content.find((chunk) => chunk.type === 'text');
-  return textChunk?.text ?? '';
+  // Handle array of content parts (OpenAI format)
+  if (Array.isArray(content)) {
+    const textChunk = content.find((chunk) => chunk.type === 'text');
+    return textChunk?.text ?? '';
+  }
+  // Handle unexpected object types gracefully
+  return '';
 };
 
 /**

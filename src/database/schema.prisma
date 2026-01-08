@@ -3,36 +3,22 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("POSTGRES_URL")
+  provider  = "postgresql"
+  url       = env("POSTGRES_URL")
   directUrl = env("DATABASE_URL")
 }
 
-enum MessageStatus {
-  pending
-  sent
-  error
-}
-
-enum LogType {
-  scrape
-  classify
-  message
-  auth
-  error
-}
-
 model PostRaw {
-  id          Int               @id @default(autoincrement())
-  groupId     String
-  fbPostId    String            @unique
-  authorName  String?
-  authorLink  String?
-  text        String
-  scrapedAt   DateTime          @default(now())
-  classified  PostClassified?
-  generated   MessageGenerated[]
-  messages    MessageSent[]
+  id         Int                @id @default(autoincrement())
+  groupId    String
+  fbPostId   String             @unique
+  authorName String?
+  authorLink String?
+  text       String
+  scrapedAt  DateTime           @default(now())
+  generated  MessageGenerated[]
+  messages   MessageSent[]
+  classified PostClassified?
 
   @@index([groupId])
   @@index([scrapedAt])
@@ -61,13 +47,13 @@ model MessageGenerated {
 }
 
 model MessageSent {
-  id          Int           @id @default(autoincrement())
-  postId      Int
-  authorLink  String
-  status      MessageStatus @default(pending)
-  sentAt      DateTime      @default(now())
-  error       String?
-  post        PostRaw       @relation(fields: [postId], references: [id])
+  id         Int           @id @default(autoincrement())
+  postId     Int
+  authorLink String
+  status     MessageStatus @default(pending)
+  sentAt     DateTime      @default(now())
+  error      String?
+  post       PostRaw       @relation(fields: [postId], references: [id])
 
   @@index([status])
   @@index([sentAt])
@@ -81,4 +67,75 @@ model SystemLog {
 
   @@index([type])
   @@index([createdAt])
+}
+
+// Session state tracking for Facebook login
+model SessionState {
+  id           Int           @id @default(autoincrement())
+  status       SessionStatus @default(unknown)
+  lastChecked  DateTime      @default(now())
+  lastValid    DateTime?
+  errorMessage String?
+  userId       String?
+  userName     String?
+  expiresAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([status])
+  @@index([lastChecked])
+}
+
+// Group information cache (public/private detection)
+model GroupInfo {
+  id           Int          @id @default(autoincrement())
+  groupId      String       @unique
+  groupType    GroupType    @default(unknown)
+  groupName    String?
+  memberCount  Int?
+  lastChecked  DateTime     @default(now())
+  lastScraped  DateTime?
+  accessMethod AccessMethod @default(none)
+  isAccessible Boolean      @default(true)
+  errorMessage String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([groupType])
+  @@index([accessMethod])
+}
+
+enum MessageStatus {
+  pending
+  sent
+  error
+}
+
+enum LogType {
+  scrape
+  classify
+  message
+  auth
+  error
+}
+
+enum SessionStatus {
+  valid
+  expired
+  invalid
+  refreshing
+  blocked
+  unknown
+}
+
+enum GroupType {
+  public
+  private
+  unknown
+}
+
+enum AccessMethod {
+  apify
+  playwright
+  none
 }

@@ -18,11 +18,15 @@
     "prisma:migrate": "npx prisma migrate deploy --schema=src/database/schema.prisma",
     "cleanup:orphans": "ts-node src/scripts/cleanup-orphans.ts",
     "smoke": "ts-node src/scripts/smoke-tests.ts",
+    "test": "bash src/scripts/run-tests.sh",
+    "test:full": "API_KEY=$API_KEY bash src/scripts/run-tests.sh",
     "fb:login": "ts-node src/scripts/facebook-login.ts",
+    "session:check": "ts-node src/scripts/check-session.ts",
     "dashboard:dev": "npm run --workspace=tarasa-dashboard dev",
     "dashboard:build": "npm run --workspace=tarasa-dashboard build"
   },
   "dependencies": {
+    "@playwright/mcp": "^0.0.54",
     "@prisma/client": "^6.19.0",
     "apify-client": "^2.20.0",
     "async": "^3.2.6",
