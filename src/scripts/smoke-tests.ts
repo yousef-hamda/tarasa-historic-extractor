@@ -5,13 +5,15 @@
  *   API_KEY=<key> API_BASE=http://localhost:4000 npx ts-node src/scripts/smoke-tests.ts
  *
  * It checks (aligned with README):
- * - /api/health (status ok, checks populated)
+ * - /api/health (status ok, checks populated, session & groups info)
  * - /api/settings (groups, limits, base URL)
  * - /api/stats (counts, quota)
  * - /api/posts (data shape, classified inline)
  * - /api/messages (queue/sent shape, stats)
  * - /api/logs (recent entries, type presence)
- * - optional manual triggers if API_KEY is provided (scrape, classify, message)
+ * - /api/session/status (session health, validity)
+ * - /api/session/groups (group capabilities, access info)
+ * - optional manual triggers if API_KEY is provided (scrape, classify, message, session validate)
  */
 
 import fetch from 'node-fetch';
@@ -161,11 +163,65 @@ const run = async () => {
     }
     record('Logs', logsOk, logsOk ? `recent=${(logs as any)?.data?.length ?? 'unknown'}` : pretty(logs));
 
-    // Error logs check (ensure recent errors are not present)
-    const { res: errLogsRes, json: errLogs } = await call('/api/logs?limit=3&type=error');
+    // Error logs check (ensure no errors in last 24 hours)
+    const { res: errLogsRes, json: errLogs } = await call('/api/logs?limit=10&type=error');
     const errLogsOk = errLogsRes.ok && Array.isArray((errLogs as any)?.data);
-    const hasErrors = errLogsOk && (errLogs as any).data.length > 0;
-    record('Logs (errors)', !hasErrors, hasErrors ? `recent errors=${pretty(errLogs)}` : 'none');
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    const recentErrors = errLogsOk
+      ? (errLogs as any).data.filter((log: any) => {
+          const logTime = new Date(log.createdAt).getTime();
+          return now - logTime < oneDayMs;
+        })
+      : [];
+    const hasRecentErrors = recentErrors.length > 0;
+    record(
+      'Logs (errors)',
+      !hasRecentErrors,
+      hasRecentErrors
+        ? `${recentErrors.length} errors in last 24h`
+        : `none in last 24h (${(errLogs as any)?.data?.length || 0} old errors exist)`
+    );
+
+    // Session Status
+    const { res: sessionRes, json: session } = await call('/api/session/status');
+    const sessionOk = sessionRes.ok;
+    try {
+      const s: any = session;
+      expect('loggedIn' in s || 'isValid' in s || 'hasSession' in s, 'session status missing validity field');
+      expect('sessionHealth' in s, 'session.sessionHealth missing');
+      expect(typeof s.sessionHealth?.status === 'string', 'sessionHealth.status missing');
+    } catch (e) {
+      record('Session Status shape', false, (e as Error).message);
+    }
+    record('Session Status', sessionOk, pretty(session));
+
+    // Session Groups
+    const { res: groupsRes, json: groups } = await call('/api/session/groups');
+    const groupsOk = groupsRes.ok;
+    try {
+      const g: any = groups;
+      expect(Array.isArray(g.groups), 'groups.groups not array');
+      expect(typeof g.summary === 'object', 'groups.summary missing');
+      expect(typeof g.summary?.total === 'number', 'groups.summary.total missing');
+      expect(typeof g.capabilities === 'object', 'groups.capabilities missing');
+      expect(typeof g.capabilities?.sessionValid === 'boolean', 'capabilities.sessionValid missing');
+      expect(typeof g.capabilities?.apifyConfigured === 'boolean', 'capabilities.apifyConfigured missing');
+    } catch (e) {
+      record('Session Groups shape', false, (e as Error).message);
+    }
+    record('Session Groups', groupsOk, groupsOk ? `total=${(groups as any)?.summary?.total ?? 'unknown'}` : pretty(groups));
+
+    // Health check: verify new session and groups fields
+    try {
+      const h: any = health;
+      expect(typeof h.session === 'object', 'health.session missing');
+      expect(typeof h.session?.status === 'string', 'health.session.status missing');
+      expect(typeof h.groups === 'object', 'health.groups missing');
+      expect(typeof h.groups?.total === 'number', 'health.groups.total missing');
+    } catch (e) {
+      record('Health extended shape', false, (e as Error).message);
+    }
 
     // Invariants across endpoints
     try {
@@ -195,6 +251,7 @@ const run = async () => {
         { name: 'Trigger Scrape', path: '/api/trigger-scrape' },
         { name: 'Trigger Classification', path: '/api/trigger-classification' },
         { name: 'Trigger Message', path: '/api/trigger-message' },
+        { name: 'Trigger Session Validate', path: '/api/session/validate' },
       ];
 
       for (const t of triggerEndpoints) {

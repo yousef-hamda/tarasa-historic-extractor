@@ -1,0 +1,4 @@
+# Ignore all browser profile data (contains sensitive session info)
+*
+!.gitignore
+!README.md

@@ -1,16 +1,24 @@
 /**
- * Facebook Login Script - Robust Session Creator
+ * Facebook Login Script - Robust Session Creator with Persistent Profile
  *
- * This script opens a browser and waits for you to complete the Facebook login.
- * It automatically detects when you're logged in and saves the cookies.
+ * This script opens a browser with a persistent profile and waits for you
+ * to complete the Facebook login. The session persists across restarts.
  *
- * Usage: npx ts-node src/scripts/facebook-login.ts
+ * Usage: npm run fb:login
  */
 
 import { chromium, BrowserContext, Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  markSessionValid,
+  markSessionInvalid,
+  saveSessionHealth,
+  loadSessionHealth,
+} from '../session/sessionHealth';
+import prisma from '../database/prisma';
 
+const BROWSER_DATA_DIR = path.resolve(process.cwd(), 'browser-data');
 const COOKIES_PATH = path.join(__dirname, '../config/cookies.json');
 const GROUP_ID = process.env.GROUP_IDS?.split(',')[0] || '136596023614231';
 const GROUP_URL = `https://www.facebook.com/groups/${GROUP_ID}`;
@@ -18,6 +26,7 @@ const GROUP_URL = `https://www.facebook.com/groups/${GROUP_ID}`;
 interface SessionStatus {
   hasSession: boolean;
   userId: string | null;
+  userName: string | null;
   cookieCount: number;
 }
 
@@ -32,14 +41,46 @@ async function checkSessionStatus(context: BrowserContext): Promise<SessionStatu
   return {
     hasSession: Boolean(cUser && xs),
     userId: cUser?.value || null,
+    userName: null, // Will be extracted from page
     cookieCount: cookies.length,
   };
 }
 
 /**
- * Save cookies to file
+ * Extract user name from page if logged in
  */
-async function saveCookies(context: BrowserContext): Promise<number> {
+async function extractUserName(page: Page): Promise<string | null> {
+  try {
+    // Try to find the profile link or account menu
+    const name = await page.evaluate(() => {
+      // Try aria-label on profile links
+      const profileLink = document.querySelector('[aria-label="Your profile"]');
+      if (profileLink) {
+        const label = profileLink.getAttribute('aria-label');
+        if (label && label !== 'Your profile') return label;
+      }
+
+      // Try to find name in account area
+      const accountElements = document.querySelectorAll('[data-pagelet="ProfileActions"] span');
+      for (const el of accountElements) {
+        const text = el.textContent?.trim();
+        if (text && text.length > 2 && text.length < 50 && !text.includes('Log')) {
+          return text;
+        }
+      }
+
+      return null;
+    });
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save cookies to legacy file (for backward compatibility)
+ */
+async function saveLegacyCookies(context: BrowserContext): Promise<number> {
   const cookies = await context.cookies();
   fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2));
   return cookies.length;
@@ -50,7 +91,7 @@ async function saveCookies(context: BrowserContext): Promise<number> {
  */
 async function waitForLogin(page: Page, context: BrowserContext, timeoutMs = 300000): Promise<SessionStatus> {
   const startTime = Date.now();
-  let lastStatus: SessionStatus = { hasSession: false, userId: null, cookieCount: 0 };
+  let lastStatus: SessionStatus = { hasSession: false, userId: null, userName: null, cookieCount: 0 };
 
   console.log('\n⏳ Waiting for login (auto-detects when you complete login)...\n');
 
@@ -59,6 +100,8 @@ async function waitForLogin(page: Page, context: BrowserContext, timeoutMs = 300
     lastStatus = await checkSessionStatus(context);
 
     if (lastStatus.hasSession) {
+      // Try to extract username
+      lastStatus.userName = await extractUserName(page);
       return lastStatus;
     }
 
@@ -69,6 +112,7 @@ async function waitForLogin(page: Page, context: BrowserContext, timeoutMs = 300
       await page.waitForTimeout(2000);
       lastStatus = await checkSessionStatus(context);
       if (lastStatus.hasSession) {
+        lastStatus.userName = await extractUserName(page);
         return lastStatus;
       }
     }
@@ -97,46 +141,94 @@ async function verifyGroupAccess(page: Page): Promise<boolean> {
   }
 }
 
+/**
+ * Update session state in database
+ */
+async function updateSessionInDb(userId: string, userName: string | null): Promise<void> {
+  try {
+    const existing = await prisma.sessionState.findFirst({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      await prisma.sessionState.update({
+        where: { id: existing.id },
+        data: {
+          status: 'valid',
+          lastChecked: new Date(),
+          lastValid: new Date(),
+          userId,
+          userName,
+          errorMessage: null,
+        },
+      });
+    } else {
+      await prisma.sessionState.create({
+        data: {
+          status: 'valid',
+          lastChecked: new Date(),
+          lastValid: new Date(),
+          userId,
+          userName,
+          errorMessage: null,
+        },
+      });
+    }
+  } catch (error) {
+    console.log(`⚠️  Could not update database: ${(error as Error).message}`);
+  }
+}
+
 async function main() {
   console.log('╔══════════════════════════════════════════════════════════════╗');
-  console.log('║         Facebook Session Creator - Tarasa Extractor          ║');
+  console.log('║    Facebook Session Creator - Persistent Profile Edition     ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
   console.log('📋 This script will:');
-  console.log('   1. Open a browser at the Facebook group');
+  console.log('   1. Open a browser with PERSISTENT profile (session saves automatically)');
   console.log('   2. Wait for you to login (if needed)');
   console.log('   3. Automatically detect when login is complete');
-  console.log('   4. Save cookies for the scraper to use\n');
+  console.log('   4. Update session health status');
+  console.log('   5. Save cookies for backward compatibility\n');
 
-  const browser = await chromium.launch({
+  console.log(`📁 Browser profile: ${BROWSER_DATA_DIR}\n`);
+
+  // Ensure browser data directory exists
+  if (!fs.existsSync(BROWSER_DATA_DIR)) {
+    fs.mkdirSync(BROWSER_DATA_DIR, { recursive: true });
+  }
+
+  // Launch with persistent context
+  const context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless: false,
-    args: ['--start-maximized'],
-  });
-
-  const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+    ],
   });
 
   const page = await context.newPage();
 
-  // Check if we already have valid cookies
-  const existingCookies = fs.existsSync(COOKIES_PATH) ? JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf-8')) : [];
-  if (existingCookies.length > 0) {
-    await context.addCookies(existingCookies);
-    console.log(`📦 Loaded ${existingCookies.length} existing cookies`);
-  }
-
   // Navigate to the group
-  console.log(`\n🌐 Opening: ${GROUP_URL}`);
+  console.log(`🌐 Opening: ${GROUP_URL}`);
   await page.goto(GROUP_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+  // Wait a moment for page to settle
+  await page.waitForTimeout(3000);
 
   // Check initial session status
   let status = await checkSessionStatus(context);
+  status.userName = await extractUserName(page);
 
   if (status.hasSession) {
-    console.log(`\n✅ Already logged in! User ID: ${status.userId}`);
+    console.log(`\n✅ Already logged in!`);
+    console.log(`   User ID: ${status.userId}`);
+    if (status.userName) {
+      console.log(`   Name: ${status.userName}`);
+    }
   } else {
     console.log('\n🔐 Please login to Facebook in the browser window...');
     console.log('   (This script will automatically detect when you complete login)\n');
@@ -146,11 +238,16 @@ async function main() {
 
     if (!status.hasSession) {
       console.log('\n❌ Login timeout. Please try again.');
-      await browser.close();
+      await markSessionInvalid('Login timeout');
+      await context.close();
       process.exit(1);
     }
 
-    console.log(`\n✅ Login detected! User ID: ${status.userId}`);
+    console.log(`\n✅ Login detected!`);
+    console.log(`   User ID: ${status.userId}`);
+    if (status.userName) {
+      console.log(`   Name: ${status.userName}`);
+    }
   }
 
   // Navigate to group to verify access
@@ -169,28 +266,39 @@ async function main() {
     console.log('✅ Group feed detected - you have access!');
   } else {
     console.log('⚠️  Could not detect group feed (may need to scroll or wait)');
-    console.log('   Cookies will still be saved - scraper may work.');
+    console.log('   Session will still be saved - scraper may work.');
   }
 
-  // Save cookies
-  const savedCount = await saveCookies(context);
-  console.log(`\n💾 Saved ${savedCount} cookies to: ${COOKIES_PATH}`);
+  // Update session health
+  console.log('\n💾 Updating session health...');
+  await markSessionValid(status.userId!, status.userName || undefined);
+  await updateSessionInDb(status.userId!, status.userName);
+
+  // Save legacy cookies for backward compatibility
+  const savedCount = await saveLegacyCookies(context);
+  console.log(`💾 Saved ${savedCount} cookies to: ${COOKIES_PATH}`);
 
   // Final status
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║                      SESSION CREATED                         ║');
+  console.log('║                 SESSION CREATED SUCCESSFULLY                 ║');
   console.log('╠══════════════════════════════════════════════════════════════╣');
-  console.log(`║  User ID:     ${status.userId?.padEnd(45) || 'Unknown'.padEnd(45)} ║`);
+  console.log(`║  User ID:     ${(status.userId || 'Unknown').padEnd(45)} ║`);
+  console.log(`║  User Name:   ${(status.userName || 'Unknown').padEnd(45)} ║`);
   console.log(`║  Cookies:     ${String(savedCount).padEnd(45)} ║`);
   console.log(`║  Group:       ${GROUP_ID.padEnd(45)} ║`);
+  console.log(`║  Profile:     Persistent (browser-data/)${' '.repeat(19)} ║`);
   console.log('╚══════════════════════════════════════════════════════════════╝');
-  console.log('\n🎉 You can now run the scraper! The session will be used automatically.\n');
+  console.log('\n🎉 Session will persist across restarts!');
+  console.log('   You can now run the scraper - it will use this session automatically.\n');
 
-  await browser.close();
+  await context.close();
+  await prisma.$disconnect();
   process.exit(0);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error('\n❌ Error:', error.message);
+  await markSessionInvalid(error.message);
+  await prisma.$disconnect();
   process.exit(1);
 });
