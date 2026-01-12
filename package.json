@@ -26,6 +26,8 @@
     "dashboard:build": "npm run --workspace=tarasa-dashboard build"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
+    "@heroicons/react": "^2.2.0",
     "@playwright/mcp": "^0.0.54",
     "@prisma/client": "^6.19.0",
     "apify-client": "^2.20.0",
@@ -35,9 +37,10 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.10.1",
+    "nodemailer": "^7.0.12",
     "openai": "^4.104.0",
     "playwright": "^1.56.1",
+    "recharts": "^3.6.0",
     "stack-trace": "^1.0.0-pre2",
     "winston": "^3.13.0"
   },
