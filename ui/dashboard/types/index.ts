@@ -15,6 +15,7 @@ export interface Post {
   fbPostId: string;
   authorName?: string;
   authorLink?: string;
+  authorPhoto?: string;
   text: string;
   scrapedAt: string;
   classified?: PostClassification;

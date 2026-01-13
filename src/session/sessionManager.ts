@@ -53,16 +53,23 @@ interface SessionValidationResult {
 
 /**
  * Create a browser instance with persistent profile
+ *
+ * IMPORTANT: Headless mode is enabled by default for stability.
+ * The browser runs in background without opening visible windows.
  */
 export const createPersistentBrowser = async (headless?: boolean): Promise<{
   browser: Browser;
   context: BrowserContext;
 }> => {
-  const isHeadless = headless ?? process.env.HEADLESS === 'true';
+  // Default to headless unless explicitly set to false
+  const isHeadless = headless ?? process.env.HEADLESS !== 'false';
 
   logger.info(`Launching browser with persistent profile (headless: ${isHeadless})`);
 
-  // Launch browser with persistent context
+  // Clean up any stale lock files that might cause crashes
+  await cleanupStaleLocks();
+
+  // Launch browser with persistent context - with improved stability settings
   const browser = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless: isHeadless,
     viewport: { width: 1280, height: 720 },
@@ -73,11 +80,39 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
     args: [
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-software-rasterizer',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
     ],
+    timeout: 60000, // 60 second timeout for launch
   });
 
   // The persistent context is both browser and context
   return { browser: browser as unknown as Browser, context: browser };
+};
+
+/**
+ * Clean up stale Chrome lock files that can cause crashes
+ */
+const cleanupStaleLocks = async (): Promise<void> => {
+  const fs = await import('fs/promises');
+  const lockFile = path.join(BROWSER_DATA_DIR, 'SingletonLock');
+  const socketFile = path.join(BROWSER_DATA_DIR, 'SingletonSocket');
+  const cookieLock = path.join(BROWSER_DATA_DIR, 'SingletonCookie');
+
+  for (const file of [lockFile, socketFile, cookieLock]) {
+    try {
+      await fs.unlink(file);
+      logger.debug(`Removed stale lock file: ${file}`);
+    } catch {
+      // File doesn't exist or can't be removed - that's fine
+    }
+  }
 };
 
 /**

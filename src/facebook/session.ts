@@ -56,9 +56,18 @@ export const loadCookies = async (): Promise<Cookie[]> => {
 };
 
 export const saveCookies = async (context: BrowserContext): Promise<void> => {
-  const cookies = await context.cookies();
-  await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
-  logger.info('Cookies saved');
+  try {
+    const cookies = await context.cookies();
+    if (cookies && cookies.length > 0) {
+      await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
+      logger.info(`Cookies saved (${cookies.length} cookies)`);
+    } else {
+      logger.warn('No cookies to save');
+    }
+  } catch (error) {
+    // Don't throw - cookie saving is not critical
+    logger.warn(`Failed to save cookies: ${(error as Error).message}`);
+  }
 };
 
 /**
@@ -207,8 +216,20 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
   }
 
   // Fallback to cookie-based approach (legacy method)
-  const headless = process.env.HEADLESS === 'true';
-  const browser = await chromium.launch({ headless });
+  // Default to headless unless explicitly set to false
+  const headless = process.env.HEADLESS !== 'false';
+  logger.info(`Fallback browser launching (headless: ${headless})`);
+  const browser = await chromium.launch({
+    headless,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-software-rasterizer',
+    ],
+  });
   const context = await browser.newContext();
 
   const cookies = await loadCookies();

@@ -16,7 +16,6 @@ import { isSessionValid } from '../session/sessionManager';
 import { loadSessionHealth } from '../session/sessionHealth';
 import {
   detectGroupType,
-  getRecommendedAccessMethod,
   markGroupScraped,
   markGroupError,
   updateGroupCache,
@@ -54,6 +53,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
       update: {
         authorName: post.authorName,
         authorLink: post.authorLink,
+        authorPhoto: post.authorPhoto,
         text: post.text,
         scrapedAt: new Date(),
       },
@@ -62,6 +62,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         groupId: post.groupId,
         authorName: post.authorName,
         authorLink: post.authorLink,
+        authorPhoto: post.authorPhoto,
         text: post.text,
         scrapedAt: new Date(),
       },
@@ -90,62 +91,60 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
   };
 
   logger.info(`[Orchestrator] Starting scrape for group ${groupId}`);
+  await logSystemEvent('scrape', `Scraping started for group ${groupId}`);
 
   try {
-    // Get recommended access method
-    const recommendation = await getRecommendedAccessMethod(groupId);
-    logger.info(`[Orchestrator] Recommended method for ${groupId}: ${recommendation.method} (${recommendation.reason})`);
-
-    if (!recommendation.isAccessible) {
-      result.errorMessage = recommendation.reason;
-      result.duration = Date.now() - startTime;
-      await logSystemEvent('scrape', `Skipped group ${groupId}: ${recommendation.reason}`);
-      return result;
-    }
-
     let posts: NormalizedPost[] = [];
 
-    // Try the recommended method
-    if (recommendation.method === 'apify' && isApifyConfigured()) {
+    // Step 1: Try Apify first (works for public groups, fast and reliable)
+    if (isApifyConfigured()) {
       try {
-        logger.info(`[Orchestrator] Using Apify for group ${groupId}`);
+        logger.info(`[Orchestrator] Trying Apify for group ${groupId}`);
         posts = await scrapeGroupWithApify(groupId);
-        result.method = 'apify';
 
         if (posts.length > 0) {
-          // Confirm group is public
-          await updateGroupCache(groupId, { groupType: 'public', accessMethod: 'apify' });
+          result.method = 'apify';
+          logger.info(`[Orchestrator] Apify SUCCESS for ${groupId}: ${posts.length} posts`);
+          await updateGroupCache(groupId, { groupType: 'public', accessMethod: 'apify', isAccessible: true });
+        } else {
+          logger.info(`[Orchestrator] Apify returned 0 posts for ${groupId} (likely private group)`);
         }
       } catch (apifyError) {
         logger.warn(`[Orchestrator] Apify failed for ${groupId}: ${(apifyError as Error).message}`);
-        // Fall through to Playwright
+        // Continue to Playwright
       }
     }
 
-    // If Apify didn't work (or wasn't recommended), try Playwright
-    if (posts.length === 0 && (recommendation.method === 'playwright' || recommendation.method === 'apify')) {
+    // Step 2: If Apify didn't get posts, try Playwright (works for all groups with auth)
+    if (posts.length === 0) {
       const sessionValid = await isSessionValid();
 
       if (sessionValid) {
         try {
-          logger.info(`[Orchestrator] Using Playwright for group ${groupId}`);
+          logger.info(`[Orchestrator] Trying Playwright for group ${groupId}`);
           posts = await scrapeGroupWithPlaywright(groupId);
-          result.method = 'playwright';
 
           if (posts.length > 0) {
-            // Update cache - if Apify failed but Playwright worked, it's private
-            await updateGroupCache(groupId, { groupType: 'private', accessMethod: 'playwright' });
+            result.method = 'playwright';
+            logger.info(`[Orchestrator] Playwright SUCCESS for ${groupId}: ${posts.length} posts`);
+            await updateGroupCache(groupId, { groupType: 'private', accessMethod: 'playwright', isAccessible: true });
+          } else {
+            logger.warn(`[Orchestrator] Playwright returned 0 posts for ${groupId}`);
+            result.errorMessage = 'No posts found - user may not be a member of this group';
           }
         } catch (playwrightError) {
           const errorMsg = (playwrightError as Error).message;
           logger.error(`[Orchestrator] Playwright failed for ${groupId}: ${errorMsg}`);
           result.errorMessage = errorMsg;
+
+          // Only mark as inaccessible if it's a clear access error
+          if (errorMsg.includes('not a member') || errorMsg.includes('private') || errorMsg.includes('Join group')) {
+            await updateGroupCache(groupId, { isAccessible: false, errorMessage: errorMsg });
+          }
         }
       } else {
-        logger.warn(`[Orchestrator] No valid session for Playwright scraping of ${groupId}`);
-        if (!result.errorMessage) {
-          result.errorMessage = 'No valid Facebook session for private group access';
-        }
+        logger.warn(`[Orchestrator] No valid session for Playwright - skipping ${groupId}`);
+        result.errorMessage = 'No valid Facebook session';
       }
     }
 
