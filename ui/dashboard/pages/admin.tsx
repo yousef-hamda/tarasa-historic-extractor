@@ -38,6 +38,7 @@ const AdminPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
   const [triggerHistory, setTriggerHistory] = useState<Array<{ action: string; time: Date; success: boolean; message?: string }>>([]);
+  const [pipelineRunning, setPipelineRunning] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -300,20 +301,34 @@ const AdminPage: React.FC = () => {
           <div className="pt-4 border-t border-gray-100">
             <button
               onClick={async () => {
-                if (!apiKey) return;
-                await handleTrigger('/api/trigger-scrape', 'Scrape');
-                await handleTrigger('/api/trigger-classification', 'Classification');
-                await handleTrigger('/api/trigger-message', 'Messages');
+                if (!apiKey || pipelineRunning) return;
+                setPipelineRunning(true);
+                try {
+                  await handleTrigger('/api/trigger-scrape', 'Scrape');
+                  await handleTrigger('/api/trigger-classification', 'Classification');
+                  await handleTrigger('/api/trigger-message', 'Messages');
+                } finally {
+                  setPipelineRunning(false);
+                }
               }}
-              disabled={!apiKey}
+              disabled={!apiKey || pipelineRunning}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors ${
-                apiKey
+                apiKey && !pipelineRunning
                   ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
             >
-              <PlayIcon className="h-5 w-5" />
-              Run Full Pipeline (Scrape + Classify + Send)
+              {pipelineRunning ? (
+                <>
+                  <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                  Running Pipeline...
+                </>
+              ) : (
+                <>
+                  <PlayIcon className="h-5 w-5" />
+                  Run Full Pipeline (Scrape + Classify + Send)
+                </>
+              )}
             </button>
           </div>
         </div>

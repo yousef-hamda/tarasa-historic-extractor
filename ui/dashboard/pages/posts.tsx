@@ -257,7 +257,20 @@ const PostsPage: React.FC = () => {
                     {/* Author */}
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                        {post.authorPhoto ? (
+                          <img
+                            src={post.authorPhoto}
+                            alt={post.authorName || 'Author'}
+                            className="flex-shrink-0 w-10 h-10 rounded-full object-cover"
+                            onError={(e) => {
+                              // Fallback to placeholder on image load error
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              target.nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                        ) : null}
+                        <div className={`flex-shrink-0 w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center ${post.authorPhoto ? 'hidden' : ''}`}>
                           <UserIcon className="h-5 w-5 text-gray-500" />
                         </div>
                         <div className="min-w-0">

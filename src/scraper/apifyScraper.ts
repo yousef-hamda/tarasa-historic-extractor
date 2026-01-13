@@ -28,6 +28,8 @@ export interface ApifyFacebookPost {
   pageUrl?: string;
   userName?: string;
   userUrl?: string;
+  userProfilePicture?: string;
+  profilePicture?: string;
   text?: string;
   timestamp?: string;
   time?: string;
@@ -50,6 +52,7 @@ export interface NormalizedPost {
   groupId: string;
   authorName: string | null;
   authorLink: string | null;
+  authorPhoto: string | null;
   text: string;
 }
 
@@ -127,6 +130,25 @@ const normalizeAuthorLink = (url: string | undefined | null): string | null => {
 };
 
 /**
+ * Clean text by removing Facebook's "See more" truncation artifacts
+ */
+const cleanPostText = (text: string): string => {
+  if (!text) return '';
+
+  // Remove various "See more" patterns that Facebook adds to truncated posts
+  // These patterns appear in different languages and formats
+  let cleaned = text
+    .replace(/…\s*See more\s*$/i, '')
+    .replace(/\.\.\.\s*See more\s*$/i, '')
+    .replace(/…\s*عرض المزيد\s*$/i, '')  // Arabic "See more"
+    .replace(/…\s*ראה עוד\s*$/i, '')     // Hebrew "See more"
+    .replace(/\s*See more\s*$/i, '')
+    .trim();
+
+  return cleaned;
+};
+
+/**
  * Normalize a single Apify post to our database format
  */
 const normalizePost = (post: ApifyFacebookPost, groupId: string): NormalizedPost | null => {
@@ -144,12 +166,23 @@ const normalizePost = (post: ApifyFacebookPost, groupId: string): NormalizedPost
   const authorName = post.userName || post.pageName || null;
   const authorLink = normalizeAuthorLink(post.userUrl || post.pageUrl);
 
+  // Extract profile picture - try multiple possible field names
+  const authorPhoto = post.userProfilePicture || post.profilePicture ||
+    (post as Record<string, unknown>).userPicture as string ||
+    (post as Record<string, unknown>).authorPicture as string ||
+    (post as Record<string, unknown>).profilePic as string ||
+    null;
+
+  // Clean the text from "See more" artifacts
+  const cleanedText = cleanPostText(post.text);
+
   return {
     fbPostId: post.postId,
     groupId,
     authorName,
     authorLink,
-    text: post.text.trim(),
+    authorPhoto,
+    text: cleanedText,
   };
 };
 

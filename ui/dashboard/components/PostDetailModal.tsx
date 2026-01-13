@@ -27,7 +27,19 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
       <div className="px-6 pb-6 space-y-6">
         {/* Author Section */}
         <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg">
-          <div className="flex-shrink-0 w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
+          {post.authorPhoto ? (
+            <img
+              src={post.authorPhoto}
+              alt={post.authorName || 'Author'}
+              className="flex-shrink-0 w-12 h-12 rounded-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                target.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+          ) : null}
+          <div className={`flex-shrink-0 w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center ${post.authorPhoto ? 'hidden' : ''}`}>
             <UserIcon className="h-6 w-6 text-gray-600" />
           </div>
           <div className="flex-1 min-w-0">
@@ -138,10 +150,10 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
             ID: {post.id}
           </span>
           <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
-            FB Post: {post.fbPostId.slice(0, 20)}...
+            FB Post: {post.fbPostId ? `${post.fbPostId.slice(0, 20)}...` : 'N/A'}
           </span>
           <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
-            Group: {post.groupId}
+            Group: {post.groupId || 'N/A'}
           </span>
         </div>
       </div>

@@ -9,16 +9,17 @@ datasource db {
 }
 
 model PostRaw {
-  id         Int                @id @default(autoincrement())
-  groupId    String
-  fbPostId   String             @unique
-  authorName String?
-  authorLink String?
-  text       String
-  scrapedAt  DateTime           @default(now())
-  generated  MessageGenerated[]
-  messages   MessageSent[]
-  classified PostClassified?
+  id          Int                @id @default(autoincrement())
+  groupId     String
+  fbPostId    String             @unique
+  authorName  String?
+  authorLink  String?
+  text        String
+  scrapedAt   DateTime           @default(now())
+  authorPhoto String?
+  generated   MessageGenerated[]
+  messages    MessageSent[]
+  classified  PostClassified?
 
   @@index([groupId])
   @@index([scrapedAt])
@@ -69,7 +70,6 @@ model SystemLog {
   @@index([createdAt])
 }
 
-// Session state tracking for Facebook login
 model SessionState {
   id           Int           @id @default(autoincrement())
   status       SessionStatus @default(unknown)
@@ -86,7 +86,6 @@ model SessionState {
   @@index([lastChecked])
 }
 
-// Group information cache (public/private detection)
 model GroupInfo {
   id           Int          @id @default(autoincrement())
   groupId      String       @unique

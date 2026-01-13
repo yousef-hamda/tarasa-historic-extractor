@@ -91,7 +91,11 @@ const MessagesPage: React.FC = () => {
         <Table<QueuedMessage>
           columns={[
             { header: 'Post', accessor: (row) => row.post?.authorName || String(row.postId) },
-            { header: 'Preview', accessor: (row) => `${row.post?.text?.slice(0, 80) || ''}...` },
+            { header: 'Preview', accessor: (row) => {
+              const text = row.post?.text;
+              if (!text) return '-';
+              return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+            }},
             { header: 'Link', accessor: (row) => row.link },
             { header: 'Created', accessor: (row) => new Date(row.createdAt).toLocaleString() },
           ]}

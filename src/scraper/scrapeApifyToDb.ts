@@ -37,6 +37,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         // Update fields if post already exists (in case content changed)
         authorName: post.authorName,
         authorLink: post.authorLink,
+        authorPhoto: post.authorPhoto,
         text: post.text,
         scrapedAt: new Date(),
       },
@@ -45,6 +46,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         groupId: post.groupId,
         authorName: post.authorName,
         authorLink: post.authorLink,
+        authorPhoto: post.authorPhoto,
         text: post.text,
         scrapedAt: new Date(),
       },
