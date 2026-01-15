@@ -2,26 +2,40 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { apiFetch } from '../utils/api';
+import {
+  HomeIcon,
+  DocumentTextIcon,
+  ChatBubbleLeftRightIcon,
+  UserGroupIcon,
+  ClipboardDocumentListIcon,
+  CogIcon,
+  WrenchScrewdriverIcon,
+  ServerStackIcon,
+  ShieldCheckIcon,
+  Bars3Icon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 
 interface HealthStatus {
   status: 'ok' | 'degraded' | 'unhealthy';
 }
 
 const navLinks = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/posts', label: 'Posts' },
-  { href: '/messages', label: 'Messages' },
-  { href: '/groups', label: 'Groups' },
-  { href: '/logs', label: 'Logs' },
-  { href: '/admin', label: 'Admin' },
-  { href: '/debug', label: 'Debug' },
-  { href: '/backup', label: 'Backup' },
-  { href: '/settings', label: 'Settings' },
+  { href: '/', label: 'Dashboard', icon: HomeIcon },
+  { href: '/posts', label: 'Posts', icon: DocumentTextIcon },
+  { href: '/messages', label: 'Messages', icon: ChatBubbleLeftRightIcon },
+  { href: '/groups', label: 'Groups', icon: UserGroupIcon },
+  { href: '/logs', label: 'Logs', icon: ClipboardDocumentListIcon },
+  { href: '/admin', label: 'Admin', icon: ShieldCheckIcon },
+  { href: '/debug', label: 'Debug', icon: WrenchScrewdriverIcon },
+  { href: '/backup', label: 'Backup', icon: ServerStackIcon },
+  { href: '/settings', label: 'Settings', icon: CogIcon },
 ];
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -41,48 +55,54 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return () => clearInterval(interval);
   }, [fetchHealth]);
 
-  const getStatusColor = () => {
-    if (!health) return 'bg-gray-400';
+  const getStatusConfig = () => {
+    if (!health) return { color: 'bg-slate-400', text: 'Loading' };
     switch (health.status) {
       case 'ok':
-        return 'bg-green-500';
+        return { color: 'bg-emerald-500', text: 'Healthy' };
       case 'degraded':
-        return 'bg-yellow-500';
+        return { color: 'bg-amber-500', text: 'Degraded' };
       case 'unhealthy':
-        return 'bg-red-500';
+        return { color: 'bg-red-500', text: 'Unhealthy' };
       default:
-        return 'bg-gray-400';
+        return { color: 'bg-slate-400', text: 'Unknown' };
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              {/* Logo/Title */}
-              <div className="flex items-center gap-3 mr-8">
-                <div className="relative flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`} />
-                </div>
-                <span className="text-xl font-bold text-gray-900">Tarasa</span>
-              </div>
+  const statusConfig = getStatusConfig();
 
-              {/* Navigation Links */}
-              <div className="flex space-x-1">
+  return (
+    <div className="min-h-screen bg-slate-50">
+      {/* Top Navigation Bar */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-14">
+            {/* Left side - Logo & Navigation */}
+            <div className="flex items-center">
+              {/* Logo */}
+              <Link href="/" className="flex items-center gap-2.5 mr-8">
+                <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">T</span>
+                </div>
+                <span className="hidden sm:block font-semibold text-slate-900">Tarasa</span>
+              </Link>
+
+              {/* Desktop Navigation */}
+              <div className="hidden lg:flex items-center gap-1">
                 {navLinks.map((link) => {
                   const isActive = router.pathname === link.href;
+                  const Icon = link.icon;
                   return (
                     <Link
                       key={link.href}
                       href={link.href}
-                      className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                         isActive
-                          ? 'bg-gray-100 text-gray-900'
-                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                          ? 'bg-slate-100 text-slate-900'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
+                      <Icon className="w-4 h-4" />
                       {link.label}
                     </Link>
                   );
@@ -90,27 +110,67 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
             </div>
 
-            {/* Right side - Status indicator */}
+            {/* Right side - Status & Mobile Menu */}
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="hidden sm:inline">System:</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                    health?.status === 'ok'
-                      ? 'bg-green-100 text-green-800'
-                      : health?.status === 'degraded'
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-red-100 text-red-800'
-                  }`}
-                >
-                  {health?.status || 'Loading...'}
+              {/* System Status */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
+                <div className={`w-2 h-2 rounded-full ${statusConfig.color}`} />
+                <span className="text-xs font-medium text-slate-600">
+                  {statusConfig.text}
                 </span>
               </div>
+
+              {/* Mobile menu button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="lg:hidden p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              >
+                {mobileMenuOpen ? (
+                  <XMarkIcon className="w-5 h-5" />
+                ) : (
+                  <Bars3Icon className="w-5 h-5" />
+                )}
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Mobile Navigation Menu */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden border-t border-slate-200 bg-white">
+            <div className="px-4 py-2 space-y-1">
+              {navLinks.map((link) => {
+                const isActive = router.pathname === link.href;
+                const Icon = link.icon;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </nav>
-      <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">{children}</main>
+
+      {/* Main Content */}
+      <main className="pt-14">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="animate-slide-up">
+            {children}
+          </div>
+        </div>
+      </main>
     </div>
   );
 };

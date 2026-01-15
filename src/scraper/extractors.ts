@@ -459,7 +459,17 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
 
     if (!containers.length) {
       logger.warn('Still no containers after fallback selectors.');
-      return posts;
+      // Try alternative extraction method for groups with different DOM structure
+      return extractPostsAlternative(page);
+    }
+  }
+
+  // Check if containers have actual text content - if not, use alternative method
+  if (containers.length > 0) {
+    const firstContainerText = await containers[0].evaluate((el: Element) => (el.textContent || '').length);
+    if (firstContainerText < 30) {
+      logger.warn('Article containers found but empty - trying alternative extraction...');
+      return extractPostsAlternative(page);
     }
   }
 
@@ -780,8 +790,119 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
   }
 
   await humanDelay();
-  
+
   logger.info(`Extraction complete: Found ${posts.length} valid posts`);
 
+  return posts;
+};
+
+/**
+ * Alternative post extraction for groups with non-standard DOM structure
+ * Used when role="article" containers are empty or missing
+ */
+const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
+  logger.info('Using alternative extraction method (div[dir="auto"])...');
+  const posts: ScrapedPost[] = [];
+  const seenTexts = new Set<string>();
+
+  // Find all div[dir="auto"] with substantial text that looks like post content
+  const postTexts = await page.evaluate(() => {
+    const results: Array<{
+      text: string;
+      authorName: string | null;
+      authorLink: string | null;
+    }> = [];
+
+    const dirAutoDivs = document.querySelectorAll('div[dir="auto"]');
+
+    for (const div of dirAutoDivs) {
+      const text = (div as HTMLElement).innerText || '';
+
+      // Skip if too short or looks like UI element
+      if (text.length < 50) continue;
+      if (text.startsWith('Facebook')) continue;
+      if (text.match(/^(Like|Comment|Share|Reply|See more|See translation)/)) continue;
+
+      // Skip if it's just repeated "Facebook" text (placeholder images)
+      if (text.replace(/Facebook/g, '').trim().length < 30) continue;
+
+      // Clean the text
+      const cleanedText = text
+        .replace(/See more\.\.\.$/gm, '')
+        .replace(/See translation$/gm, '')
+        .replace(/See original$/gm, '')
+        .replace(/Rate this translation$/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      if (cleanedText.length < 40) continue;
+
+      // Try to find author info from nearby elements
+      let authorName: string | null = null;
+      let authorLink: string | null = null;
+
+      // Look for author in parent elements
+      let parent = div.parentElement;
+      for (let i = 0; i < 10 && parent; i++) {
+        // Look for links to profiles
+        const links = parent.querySelectorAll('a[href*="facebook.com"]');
+        for (const link of links) {
+          const href = link.getAttribute('href') || '';
+          // Check if it's a profile link
+          if (href.includes('/user/') || href.includes('profile.php') ||
+              href.includes('/people/') || href.match(/facebook\.com\/[a-zA-Z0-9.]+\/?$/)) {
+            if (!authorLink) {
+              authorLink = href;
+              // Get name from link text or aria-label
+              const name = (link as HTMLElement).innerText?.trim() ||
+                          link.getAttribute('aria-label') || null;
+              if (name && name.length > 1 && name.length < 50) {
+                authorName = name;
+              }
+            }
+            break;
+          }
+        }
+        if (authorLink) break;
+        parent = parent.parentElement;
+      }
+
+      results.push({
+        text: cleanedText,
+        authorName,
+        authorLink
+      });
+
+      // Limit results
+      if (results.length >= 30) break;
+    }
+
+    return results;
+  });
+
+  logger.info(`Alternative extraction found ${postTexts.length} potential posts`);
+
+  for (const postData of postTexts) {
+    // Skip duplicates (same text content)
+    const textHash = postData.text.substring(0, 100);
+    if (seenTexts.has(textHash)) continue;
+    seenTexts.add(textHash);
+
+    // Generate post ID from content
+    const postId = `hash_${generateContentHash(postData.text, postData.authorLink || undefined)}`;
+
+    // Normalize author link
+    const authorLink = postData.authorLink ? normalizeAuthorLink(postData.authorLink) : undefined;
+
+    posts.push({
+      fbPostId: postId,
+      authorName: postData.authorName || undefined,
+      authorLink,
+      authorPhoto: undefined, // Not extracted in alternative method
+      text: postData.text,
+    });
+  }
+
+  logger.info(`Alternative extraction complete: Found ${posts.length} valid posts`);
   return posts;
 };

@@ -54,9 +54,38 @@ async function humanType(page: Page, selector: string, text: string): Promise<vo
  * Check if logged in by looking for session cookies
  */
 async function isLoggedIn(context: BrowserContext): Promise<{ loggedIn: boolean; userId: string | null }> {
-  const cookies = await context.cookies();
-  const cUser = cookies.find((c) => c.name === 'c_user' && c.domain.includes('facebook.com'));
-  const xs = cookies.find((c) => c.name === 'xs' && c.domain.includes('facebook.com'));
+  // Get all cookies
+  let cookies = await context.cookies();
+
+  // Also try to get cookies specifically from Facebook URLs
+  const fbUrls = ['https://www.facebook.com', 'https://facebook.com', 'https://m.facebook.com'];
+  for (const url of fbUrls) {
+    try {
+      const domainCookies = await context.cookies(url);
+      for (const cookie of domainCookies) {
+        if (!cookies.find((c) => c.name === cookie.name && c.domain === cookie.domain)) {
+          cookies.push(cookie);
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  // Check for c_user and xs cookies with flexible domain matching
+  const cUser = cookies.find((c) =>
+    c.name === 'c_user' &&
+    (c.domain.includes('facebook') || c.domain === '.facebook.com' || c.domain === 'facebook.com')
+  );
+  const xs = cookies.find((c) =>
+    c.name === 'xs' &&
+    (c.domain.includes('facebook') || c.domain === '.facebook.com' || c.domain === 'facebook.com')
+  );
+
+  logger.debug(`Cookie check: total=${cookies.length}, c_user=${!!cUser}, xs=${!!xs}`);
+  if (cUser) {
+    logger.debug(`c_user domain: ${cUser.domain}`);
+  }
 
   return {
     loggedIn: Boolean(cUser && xs),
