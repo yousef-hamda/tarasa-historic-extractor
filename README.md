@@ -77,7 +77,12 @@ tarasa-historic-extractor/
 │   │   ├── selectors.ts          # Facebook DOM selectors
 │   │   ├── alerts.ts             # Email alert system
 │   │   ├── systemLog.ts          # Database logging utilities
-│   │   └── openaiRetry.ts        # OpenAI API retry logic
+│   │   ├── openaiRetry.ts        # OpenAI API retry logic
+│   │   ├── circuitBreaker.ts     # Circuit breaker for external services
+│   │   └── browserPool.ts        # Browser instance pool manager
+│   ├── session/
+│   │   ├── sessionHealth.ts      # Session health tracking
+│   │   └── sessionManager.ts     # Session initialization & validation
 │   └── server.ts                 # Express server entry point
 ├── ui/
 │   └── dashboard/
@@ -742,6 +747,10 @@ View configuration:
 | `MAX_MESSAGES_PER_DAY` | No | Daily message quota | `20` (default) |
 | `SYSTEM_EMAIL_ALERT` | No | Email for alerts (2FA/captcha) | `alerts@example.com` |
 | `SYSTEM_EMAIL_PASSWORD` | No | Email app password | (Gmail app password) |
+| `API_KEY` | Prod | API key for authenticated requests | (random hash) |
+| `MAX_BROWSER_INSTANCES` | No | Maximum concurrent browser instances | `2` (default) |
+| `APIFY_TOKEN` | No | Apify API token for public group scraping | `apify_api_xxx...` |
+| `APIFY_RESULTS_LIMIT` | No | Max results from Apify per scrape | `100` (default) |
 
 ### Cron Schedule
 
@@ -859,7 +868,49 @@ For issues or questions:
 
 ## 🔄 Version History
 
-### v1.0.0 (Current)
+### v1.1.0 (Current)
+Major reliability and performance improvements:
+
+**Circuit Breaker Pattern:**
+- ✅ Added circuit breaker for Apify API (opens after 5 failures, resets after 1 hour)
+- ✅ Added circuit breaker for OpenAI API (opens after 10 failures, resets after 15 minutes)
+- ✅ Prevents cascade failures when external services are down
+- ✅ Automatic recovery with half-open state testing
+
+**Browser Resource Management:**
+- ✅ New `BrowserPool` utility limits concurrent browser instances (default: 2)
+- ✅ Prevents memory exhaustion during parallel scraping
+- ✅ Queuing system for requests when pool is full
+- ✅ Configurable via `MAX_BROWSER_INSTANCES` environment variable
+
+**Message Deduplication:**
+- ✅ Added unique constraint on `(postId, authorLink)` in MessageSent table
+- ✅ Added `retryCount` field to track message retry attempts
+- ✅ Maximum 3 retry attempts per message to prevent spam
+- ✅ Fixed quota calculation to count ALL message attempts (not just successful)
+
+**Session Management:**
+- ✅ Added startup session validation before cron jobs begin
+- ✅ Session health synced with database on every validation
+- ✅ Automatic lock file cleanup on browser launch
+- ✅ Better handling of stale browser profiles
+
+**Performance Optimizations:**
+- ✅ Increased classifier batch size from 10 to 25
+- ✅ Increased message generator batch size from 10 to 20
+- ✅ Reduced scroll wait times for faster scraping
+- ✅ Optimized page load detection
+
+**Security Improvements:**
+- ✅ API_KEY is now mandatory in production mode
+- ✅ Proper API authentication for all dashboard endpoints
+
+**Bug Fixes:**
+- ✅ Fixed confidence validation (0-100 range check)
+- ✅ Fixed browser launch errors with persistent profiles
+- ✅ Fixed message quota calculation including all attempts
+
+### v1.0.0
 - ✅ Facebook scraping with auto-login
 - ✅ AI classification (OpenAI GPT-4o-mini)
 - ✅ English message generation

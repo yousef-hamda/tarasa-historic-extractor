@@ -11,17 +11,52 @@ import { withRetries } from '../utils/retry';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS, QUOTA } from '../config/constants';
+import { getMessagingEnabled } from '../routes/settings';
+
+// Maximum retry attempts before marking a message as permanently failed
+const MAX_RETRY_ATTEMPTS = 3;
 
 const getRemainingMessageQuota = async (): Promise<number> => {
   const max = Number(process.env.MAX_MESSAGES_PER_DAY) || QUOTA.DEFAULT_MAX_PER_DAY;
   const since = new Date(Date.now() - QUOTA.WINDOW_MS);
+  // Count ALL message attempts (sent + error + pending), not just sent
   const count = await prisma.messageSent.count({
-    where: { sentAt: { gte: since }, status: 'sent' },
+    where: { sentAt: { gte: since } },
   });
   return Math.max(0, max - count);
 };
 
+/**
+ * Check if a message has already been sent or has exceeded retry limits
+ */
+const shouldSkipMessage = async (postId: number, authorLink: string): Promise<{ skip: boolean; reason?: string }> => {
+  const existing = await prisma.messageSent.findUnique({
+    where: { postId_authorLink: { postId, authorLink } },
+  });
+
+  if (!existing) {
+    return { skip: false };
+  }
+
+  if (existing.status === 'sent') {
+    return { skip: true, reason: 'already sent' };
+  }
+
+  if (existing.retryCount >= MAX_RETRY_ATTEMPTS) {
+    return { skip: true, reason: `exceeded ${MAX_RETRY_ATTEMPTS} retry attempts` };
+  }
+
+  return { skip: false };
+};
+
 export const dispatchMessages = async (): Promise<void> => {
+  // Check if messaging is enabled
+  if (!getMessagingEnabled()) {
+    logger.info('Messaging is paused by admin. Messages will be queued.');
+    await logSystemEvent('message', 'Messaging paused - messages queued but not sent.');
+    return;
+  }
+
   let remaining = await getRemainingMessageQuota();
   if (remaining <= 0) {
     logger.warn('Daily message quota reached');
@@ -64,16 +99,14 @@ export const dispatchMessages = async (): Promise<void> => {
         }
         continue;
       }
-      // Skip if this post already has a sent message
-      const alreadySent = await prisma.messageSent.findFirst({
-        where: { postId: candidate.postId, status: 'sent' },
-      });
-      if (alreadySent) {
-        await logSystemEvent('message', `Skipped dispatch for post ${candidate.postId}; already sent.`);
+      // Skip if message already sent or exceeded retry limits
+      const skipCheck = await shouldSkipMessage(candidate.postId, post.authorLink);
+      if (skipCheck.skip) {
+        await logSystemEvent('message', `Skipped dispatch for post ${candidate.postId}; ${skipCheck.reason}.`);
         try {
           await prisma.messageGenerated.delete({ where: { id: candidate.id } });
         } catch (queueError) {
-          logger.error(`Failed to delete duplicate generated message ${candidate.id}: ${(queueError as Error).message}`);
+          logger.error(`Failed to delete generated message ${candidate.id}: ${(queueError as Error).message}`);
         }
         continue;
       }
@@ -134,11 +167,17 @@ export const dispatchMessages = async (): Promise<void> => {
         logger.error(`Failed to send message for post ${candidate.postId}: ${sendError.message}`);
       }
 
-      // Record result in database (only one record per attempt)
+      // Record result in database using upsert (handles unique constraint)
       try {
         if (messageSentSuccessfully) {
-          await prisma.messageSent.create({
-            data: {
+          await prisma.messageSent.upsert({
+            where: { postId_authorLink: { postId: candidate.postId, authorLink: post.authorLink } },
+            update: {
+              status: 'sent',
+              error: null,
+              sentAt: new Date(),
+            },
+            create: {
               postId: candidate.postId,
               authorLink: post.authorLink,
               status: 'sent',
@@ -148,15 +187,24 @@ export const dispatchMessages = async (): Promise<void> => {
           remaining -= 1;
           await logSystemEvent('message', `Message sent for post ${candidate.postId}`);
         } else {
-          await prisma.messageSent.create({
-            data: {
+          // Increment retry count on failure
+          await prisma.messageSent.upsert({
+            where: { postId_authorLink: { postId: candidate.postId, authorLink: post.authorLink } },
+            update: {
+              status: 'error',
+              error: sendError?.message || 'Unknown error',
+              retryCount: { increment: 1 },
+              sentAt: new Date(),
+            },
+            create: {
               postId: candidate.postId,
               authorLink: post.authorLink,
               status: 'error',
               error: sendError?.message || 'Unknown error',
+              retryCount: 1,
             },
           });
-          // Keep the generated message for retry - don't delete it
+          // Keep the generated message for retry (up to MAX_RETRY_ATTEMPTS)
           await logSystemEvent('error', `Message dispatch failed for post ${candidate.postId}: ${sendError?.message}`);
         }
       } catch (dbError) {
@@ -175,3 +223,17 @@ export const dispatchMessages = async (): Promise<void> => {
     await browser.close();
   }
 };
+
+// Execute when run directly via npm run message
+if (require.main === module) {
+  require('dotenv/config');
+  dispatchMessages()
+    .then(() => {
+      logger.info('Message dispatch completed');
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error(`Message dispatch failed: ${error.message}`);
+      process.exit(1);
+    });
+}

@@ -198,6 +198,20 @@ async function main() {
     fs.mkdirSync(BROWSER_DATA_DIR, { recursive: true });
   }
 
+  // Clean up stale lock files that can prevent browser launch
+  const lockFiles = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+  for (const lockFile of lockFiles) {
+    const lockPath = path.join(BROWSER_DATA_DIR, lockFile);
+    try {
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath);
+        console.log(`🧹 Removed stale lock file: ${lockFile}`);
+      }
+    } catch {
+      // Ignore errors - file might not exist or be locked
+    }
+  }
+
   // Launch with persistent context
   const context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless: false,
@@ -207,7 +221,11 @@ async function main() {
     args: [
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
     ],
+    timeout: 60000, // 60 second timeout for launch
   });
 
   const page = await context.newPage();

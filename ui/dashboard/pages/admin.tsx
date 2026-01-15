@@ -18,12 +18,8 @@ import {
   Cog6ToothIcon,
   ClipboardDocumentListIcon,
   PlayIcon,
-  StopIcon,
   InformationCircleIcon,
   CheckCircleIcon,
-  ClockIcon,
-  EyeIcon,
-  KeyIcon,
 } from '@heroicons/react/24/outline';
 
 const AdminPage: React.FC = () => {
@@ -33,8 +29,6 @@ const AdminPage: React.FC = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentErrors, setRecentErrors] = useState<SystemLog[]>([]);
   const [recentLogs, setRecentLogs] = useState<SystemLog[]>([]);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
   const [triggerHistory, setTriggerHistory] = useState<Array<{ action: string; time: Date; success: boolean; message?: string }>>([]);
@@ -78,16 +72,11 @@ const AdminPage: React.FC = () => {
   }, [fetchData]);
 
   const handleTrigger = async (endpoint: string, actionName: string): Promise<{ success: boolean; message?: string }> => {
-    if (!apiKey) {
-      return { success: false, message: 'Please enter an API key' };
-    }
-
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
         },
       });
 
@@ -232,35 +221,6 @@ const AdminPage: React.FC = () => {
             Manually trigger system operations. These bypass the scheduled cron jobs.
           </p>
 
-          {/* API Key Input */}
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-              <KeyIcon className="h-4 w-4" />
-              Authentication
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1 max-w-md">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your API key"
-                  className="w-full border border-gray-300 rounded-md pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <EyeIcon className="h-5 w-5" />
-                </button>
-              </div>
-              {apiKey && (
-                <CheckCircleIcon className="h-5 w-5 text-green-500" />
-              )}
-            </div>
-          </div>
-
           {/* Trigger Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <TriggerButton
@@ -269,7 +229,6 @@ const AdminPage: React.FC = () => {
               onClick={() => handleTrigger('/api/trigger-scrape', 'Scrape')}
               variant="primary"
               icon={<BoltIcon className="h-5 w-5" />}
-              disabled={!apiKey}
             />
             <TriggerButton
               label="Trigger Classification"
@@ -277,7 +236,6 @@ const AdminPage: React.FC = () => {
               onClick={() => handleTrigger('/api/trigger-classification', 'Classification')}
               variant="secondary"
               icon={<SparklesIcon className="h-5 w-5" />}
-              disabled={!apiKey}
             />
             <TriggerButton
               label="Trigger Messages"
@@ -285,7 +243,6 @@ const AdminPage: React.FC = () => {
               onClick={() => handleTrigger('/api/trigger-message', 'Messages')}
               variant="success"
               icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />}
-              disabled={!apiKey}
             />
             <TriggerButton
               label="Validate Session"
@@ -293,7 +250,6 @@ const AdminPage: React.FC = () => {
               onClick={() => handleTrigger('/api/session/validate', 'Session Validation')}
               variant="danger"
               icon={<ShieldCheckIcon className="h-5 w-5" />}
-              disabled={!apiKey}
             />
           </div>
 
@@ -301,7 +257,7 @@ const AdminPage: React.FC = () => {
           <div className="pt-4 border-t border-gray-100">
             <button
               onClick={async () => {
-                if (!apiKey || pipelineRunning) return;
+                if (pipelineRunning) return;
                 setPipelineRunning(true);
                 try {
                   await handleTrigger('/api/trigger-scrape', 'Scrape');
@@ -311,9 +267,9 @@ const AdminPage: React.FC = () => {
                   setPipelineRunning(false);
                 }
               }}
-              disabled={!apiKey || pipelineRunning}
+              disabled={pipelineRunning}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-colors ${
-                apiKey && !pipelineRunning
+                !pipelineRunning
                   ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}

@@ -27,7 +27,18 @@ const CLASSIFICATION_SCHEMA = {
 } as const;
 
 const model = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
-const BATCH_SIZE = Number(process.env.CLASSIFIER_BATCH_SIZE ?? '10');
+// Increased default batch size for better throughput (was 10)
+const BATCH_SIZE = Math.min(Number(process.env.CLASSIFIER_BATCH_SIZE ?? '25'), 50);
+
+/**
+ * Validate confidence score is within valid range
+ */
+const validateConfidence = (confidence: number): number => {
+  if (typeof confidence !== 'number' || isNaN(confidence)) {
+    return 50; // Default to 50 if invalid
+  }
+  return Math.max(0, Math.min(100, Math.round(confidence)));
+};
 
 
 export const classifyPosts = async (): Promise<void> => {
@@ -82,7 +93,7 @@ export const classifyPosts = async (): Promise<void> => {
         data: {
           postId: post.id,
           isHistoric: validated.is_historic,
-          confidence: validated.confidence,
+          confidence: validateConfidence(validated.confidence),
           reason: validated.reason,
         },
       });
@@ -99,3 +110,17 @@ export const classifyPosts = async (): Promise<void> => {
     await logSystemEvent('classify', `Classified ${processed} posts`);
   }
 };
+
+// Execute when run directly via npm run classify
+if (require.main === module) {
+  require('dotenv/config');
+  classifyPosts()
+    .then(() => {
+      logger.info('Classification completed');
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error(`Classification failed: ${error.message}`);
+      process.exit(1);
+    });
+}

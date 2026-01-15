@@ -73,7 +73,9 @@ export const updateGroupCache = async (
 
 /**
  * Detect group type by attempting to scrape with Apify
- * If Apify returns posts, it's public. If not, it's likely private.
+ * If Apify returns posts, it's public. If not, we need Playwright to verify.
+ * IMPORTANT: Don't assume a group is private just because Apify failed -
+ * it could be due to circuit breaker, rate limits, or temporary issues.
  */
 export const detectGroupType = async (groupId: string): Promise<GroupDetectionResult> => {
   logger.info(`Detecting group type for ${groupId}...`);
@@ -94,6 +96,10 @@ export const detectGroupType = async (groupId: string): Promise<GroupDetectionRe
       };
     }
   }
+
+  // Track if Apify failed due to circuit breaker or other reasons
+  let apifyFailed = false;
+  let apifyError = '';
 
   // Try Apify to detect if public
   if (isApifyConfigured()) {
@@ -119,48 +125,80 @@ export const detectGroupType = async (groupId: string): Promise<GroupDetectionRe
           errorMessage: null,
         };
       } else {
-        // No posts returned - likely private
-        logger.info(`Group ${groupId} appears PRIVATE (Apify returned 0 posts)`);
+        // No posts returned - could be private OR empty group
+        // Don't assume private yet
+        logger.info(`Group ${groupId} - Apify returned 0 posts, needs verification`);
       }
     } catch (error) {
-      logger.warn(`Apify probe failed for ${groupId}: ${(error as Error).message}`);
+      apifyFailed = true;
+      apifyError = (error as Error).message;
+      logger.warn(`Apify probe failed for ${groupId}: ${apifyError}`);
     }
+  } else {
+    // Apify not configured - we can't determine if public or private
+    apifyFailed = true;
+    apifyError = 'Apify not configured';
   }
 
   // Check if we have a valid session for Playwright
   const hasSession = await isSessionValid();
 
   if (hasSession) {
-    // We have a session, so mark as private with Playwright access
+    // We have a session - the group is accessible via Playwright
+    // Don't assume it's private - it might be public but Apify failed
+    const groupType = apifyFailed && apifyError.includes('circuit breaker')
+      ? 'unknown'  // Keep as unknown if we couldn't determine due to circuit breaker
+      : 'private'; // Otherwise likely private since Apify couldn't get posts
+
     await updateGroupCache(groupId, {
-      groupType: 'private',
+      groupType: groupType as GroupType,
       accessMethod: 'playwright',
       isAccessible: true,
-      errorMessage: null,
+      errorMessage: apifyFailed ? `Will use Playwright (${apifyError})` : null,
     });
 
     return {
       groupId,
-      groupType: 'private',
+      groupType: groupType as GroupType,
       accessMethod: 'playwright',
       isAccessible: true,
       errorMessage: null,
     };
   } else {
-    // No session, can't access private groups
+    // No session - check if we should mark as inaccessible
+    // Only mark as inaccessible if we know Apify also failed definitively
+    if (apifyFailed && !apifyError.includes('circuit breaker')) {
+      await updateGroupCache(groupId, {
+        groupType: 'unknown',
+        accessMethod: 'none',
+        isAccessible: false,
+        errorMessage: 'No valid Facebook session. Please login with: npx ts-node src/scripts/facebook-login.ts',
+      });
+
+      return {
+        groupId,
+        groupType: 'unknown',
+        accessMethod: 'none',
+        isAccessible: false,
+        errorMessage: 'No valid Facebook session. Please login with: npx ts-node src/scripts/facebook-login.ts',
+      };
+    }
+
+    // If Apify failed due to circuit breaker, don't mark as inaccessible yet
+    // The group might be public and will work once circuit breaker resets
     await updateGroupCache(groupId, {
-      groupType: 'private',
+      groupType: 'unknown',
       accessMethod: 'none',
-      isAccessible: false,
-      errorMessage: 'No valid Facebook session for private group access',
+      isAccessible: true, // Assume accessible - circuit breaker is temporary
+      errorMessage: apifyError || 'Status unknown - will retry',
     });
 
     return {
       groupId,
-      groupType: 'private',
+      groupType: 'unknown',
       accessMethod: 'none',
-      isAccessible: false,
-      errorMessage: 'No valid Facebook session for private group access',
+      isAccessible: true, // Optimistic - don't show as inaccessible due to temporary issues
+      errorMessage: apifyError || 'Status unknown - will retry',
     };
   }
 };
@@ -236,11 +274,12 @@ export const getGroupsWithAccessInfo = async (): Promise<
         lastScraped: cached.lastScraped,
       });
     } else {
+      // New groups default to accessible until proven otherwise
       results.push({
         groupId,
         groupType: 'unknown' as GroupType,
         accessMethod: 'none' as AccessMethod,
-        isAccessible: false,
+        isAccessible: true,
         lastScraped: null,
       });
     }

@@ -6,7 +6,6 @@ import { classifyPosts } from '../ai/classifier';
 import { generateMessages } from '../ai/generator';
 import { dispatchMessages } from '../messenger/messenger';
 import { logSystemEvent } from '../utils/systemLog';
-import { apiKeyAuth } from '../middleware/apiAuth';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { parsePositiveInt, parseNonNegativeInt } from '../utils/validation';
 
@@ -42,7 +41,7 @@ router.get('/api/posts', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-scrape', triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     // Using hybrid scraper: Apify for public groups, Playwright fallback for private groups
     await scrapeAllGroups();
@@ -53,7 +52,7 @@ router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: 
   }
 });
 
-router.post('/api/trigger-classification', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-classification', triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
@@ -63,7 +62,7 @@ router.post('/api/trigger-classification', apiKeyAuth, triggerRateLimiter, async
   }
 });
 
-router.post('/api/trigger-message', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-message', triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await generateMessages();
     await dispatchMessages();

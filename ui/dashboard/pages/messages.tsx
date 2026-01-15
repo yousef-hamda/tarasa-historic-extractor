@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Table from '../components/Table';
 import Card from '../components/Card';
 import { apiFetch } from '../utils/api';
+import { PlayIcon, PauseIcon } from '@heroicons/react/24/solid';
 
 interface PostInfo {
   id: number;
@@ -37,6 +38,39 @@ const MessagesPage: React.FC = () => {
   const [data, setData] = useState<MessageDashboardState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [messagingEnabled, setMessagingEnabled] = useState(true);
+  const [togglingMessaging, setTogglingMessaging] = useState(false);
+
+  const fetchMessagingStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/settings/messaging');
+      if (res.ok) {
+        const data = await res.json();
+        setMessagingEnabled(data.enabled);
+      }
+    } catch {
+      // Default to enabled
+    }
+  }, []);
+
+  const toggleMessaging = async () => {
+    setTogglingMessaging(true);
+    try {
+      const res = await fetch('/api/settings/messaging', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !messagingEnabled }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessagingEnabled(data.enabled);
+      }
+    } catch (err) {
+      console.error('Failed to toggle messaging:', err);
+    } finally {
+      setTogglingMessaging(false);
+    }
+  };
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -57,7 +91,8 @@ const MessagesPage: React.FC = () => {
       }
     };
     fetchMessages();
-  }, []);
+    fetchMessagingStatus();
+  }, [fetchMessagingStatus]);
 
   if (loading) {
     return (
@@ -79,7 +114,40 @@ const MessagesPage: React.FC = () => {
   return (
     <div className="p-8 space-y-6">
       <div className="flex flex-col gap-4">
-        <h1 className="text-2xl font-bold">Messages</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Messages</h1>
+          {/* Messaging Toggle */}
+          <button
+            onClick={toggleMessaging}
+            disabled={togglingMessaging}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+              messagingEnabled
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-300'
+                : 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-300'
+            }`}
+          >
+            {messagingEnabled ? (
+              <>
+                <PauseIcon className="h-5 w-5" />
+                Messaging ON - Click to Pause
+              </>
+            ) : (
+              <>
+                <PlayIcon className="h-5 w-5" />
+                Messaging PAUSED - Click to Resume
+              </>
+            )}
+          </button>
+        </div>
+
+        {!messagingEnabled && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-amber-800 font-medium">
+              Messaging is currently paused. Messages will be generated and queued but NOT sent until you turn messaging back on.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card title="Queued Messages" value={data.stats?.queue ?? 0} subtitle="Awaiting Messenger dispatch" />
           <Card title="Sent (24h)" value={data.stats?.sentLast24h ?? 0} subtitle="Rolling 24-hour window" />

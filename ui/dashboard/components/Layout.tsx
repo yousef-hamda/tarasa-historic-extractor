@@ -11,6 +11,7 @@ const navLinks = [
   { href: '/', label: 'Dashboard' },
   { href: '/posts', label: 'Posts' },
   { href: '/messages', label: 'Messages' },
+  { href: '/groups', label: 'Groups' },
   { href: '/logs', label: 'Logs' },
   { href: '/admin', label: 'Admin' },
   { href: '/settings', label: 'Settings' },

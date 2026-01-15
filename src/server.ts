@@ -9,6 +9,7 @@ import healthRouter from './routes/health';
 import settingsRouter from './routes/settings';
 import statsRouter from './routes/stats';
 import sessionRouter from './routes/session';
+import groupsRouter from './routes/groups';
 import logger from './utils/logger';
 import './cron';
 import { errorHandler } from './middleware/errorHandler';
@@ -31,6 +32,7 @@ app.use(healthRouter);
 app.use(settingsRouter);
 app.use(statsRouter);
 app.use(sessionRouter);
+app.use(groupsRouter);
 app.use(errorHandler);
 
 const port = process.env.PORT || 4000;

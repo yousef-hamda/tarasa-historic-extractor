@@ -11,6 +11,7 @@
 
 import { ApifyClient } from 'apify-client';
 import logger from '../utils/logger';
+import { apifyCircuitBreaker } from '../utils/circuitBreaker';
 
 // Apify Actor for Facebook scraping
 const FACEBOOK_SCRAPER_ACTOR = 'apify/facebook-posts-scraper';
@@ -197,12 +198,19 @@ export const scrapeGroupWithApify = async (
   groupId: string,
   resultsLimit: number = DEFAULT_RESULTS_LIMIT
 ): Promise<NormalizedPost[]> => {
+  // Check circuit breaker before attempting
+  if (apifyCircuitBreaker.isOpen()) {
+    logger.warn(`[Apify] Circuit breaker is OPEN, skipping Apify for group ${groupId}`);
+    throw new Error('Apify circuit breaker is open - service temporarily disabled');
+  }
+
   const client = getApifyClient();
   const groupUrl = `https://www.facebook.com/groups/${groupId}`;
 
   logger.info(`Starting Apify scrape for group ${groupId} (limit: ${resultsLimit})`);
 
-  try {
+  // Execute with circuit breaker protection
+  return apifyCircuitBreaker.execute(async () => {
     // Run the Apify actor
     const run = await client.actor(FACEBOOK_SCRAPER_ACTOR).call({
       startUrls: [{ url: groupUrl }],
@@ -234,12 +242,7 @@ export const scrapeGroupWithApify = async (
     logger.info(`Normalized ${normalizedPosts.length} valid posts from group ${groupId}`);
 
     return normalizedPosts;
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Apify scrape failed for group ${groupId}: ${errorMessage}`);
-    throw error;
-  }
+  });
 };
 
 /**
