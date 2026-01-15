@@ -22,6 +22,7 @@ import {
   SessionHealthData,
 } from './sessionHealth';
 import { TIMEOUTS } from '../config/constants';
+import { autoLogin } from '../scripts/facebook-auto-login';
 
 // Browser data directory for persistent sessions
 const BROWSER_DATA_DIR = path.resolve(process.cwd(), 'browser-data');
@@ -292,8 +293,41 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
     }
 
     if (validation.needsLogin) {
+      logger.info('Session invalid - attempting auto-login...');
+      await logSystemEvent('auth', 'Session invalid - attempting auto-login');
+
+      // Try auto-login if credentials are available
+      if (process.env.FB_EMAIL && process.env.FB_PASSWORD) {
+        try {
+          // Close current context before auto-login (it opens its own browser)
+          if (context) {
+            await (context as BrowserContext).close();
+            context = null;
+          }
+
+          const loginResult = await autoLogin();
+
+          if (loginResult.success) {
+            logger.info(`Auto-login successful! User: ${loginResult.userId}`);
+            await logSystemEvent('auth', `Auto-login successful for user ${loginResult.userId}`);
+
+            const health = await markSessionValid(loginResult.userId!);
+            await updateSessionStateInDb('valid', null, loginResult.userId);
+            return health;
+          } else {
+            logger.warn(`Auto-login failed: ${loginResult.error}`);
+            await logSystemEvent('auth', `Auto-login failed: ${loginResult.error}`);
+          }
+        } catch (autoLoginError) {
+          logger.error(`Auto-login error: ${(autoLoginError as Error).message}`);
+        }
+      } else {
+        logger.warn('Auto-login skipped - FB_EMAIL and FB_PASSWORD not set in .env');
+      }
+
+      // If auto-login failed or not available, mark as invalid
       const health = await markSessionInvalid('Login required');
-      await logSystemEvent('auth', 'Session invalid - login required');
+      await logSystemEvent('auth', 'Session invalid - manual login required');
 
       // Update database
       await updateSessionStateInDb('invalid', 'Login required');

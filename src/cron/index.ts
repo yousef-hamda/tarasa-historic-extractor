@@ -25,5 +25,9 @@ import './classify-cron';
 import './message-cron';
 import './login-refresh';
 import './session-check-cron';
+import { startBackupCron } from './backup-cron';
 
-logger.info('Cron schedules registered (scrape, classify, message, login-refresh, session-check)');
+// Start backup cron
+startBackupCron();
+
+logger.info('Cron schedules registered (scrape, classify, message, login-refresh, session-check, backup)');
