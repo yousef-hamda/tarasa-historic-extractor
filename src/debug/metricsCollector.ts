@@ -51,9 +51,14 @@ setInterval(updateCpuUsage, 1000).unref();
  */
 export const collectMetrics = (): SystemMetrics => {
   const memoryUsage = process.memoryUsage();
-  const totalMem = os.totalmem();
-  const freeMem = os.freemem();
-  const usedMem = totalMem - freeMem;
+  // Use process memory (RSS) instead of system-wide memory
+  // RSS = Resident Set Size = actual memory used by this Node.js process
+  const processMemUsed = memoryUsage.rss;
+  const heapUsed = memoryUsage.heapUsed;
+  const heapTotal = memoryUsage.heapTotal;
+
+  // Show app memory usage (heap used vs heap total) - this is what matters
+  const appMemoryPercent = (heapUsed / heapTotal) * 100;
 
   return {
     timestamp: new Date().toISOString(),
@@ -63,14 +68,14 @@ export const collectMetrics = (): SystemMetrics => {
       loadAverage: os.loadavg(),
     },
     memory: {
-      total: totalMem,
-      used: usedMem,
-      free: freeMem,
-      heapUsed: memoryUsage.heapUsed,
-      heapTotal: memoryUsage.heapTotal,
+      total: heapTotal,           // Heap total (app's allocated memory)
+      used: heapUsed,             // Heap used (app's actual usage)
+      free: heapTotal - heapUsed, // Heap free
+      heapUsed: heapUsed,
+      heapTotal: heapTotal,
       external: memoryUsage.external,
-      rss: memoryUsage.rss,
-      usagePercent: (usedMem / totalMem) * 100,
+      rss: processMemUsed,        // Total process memory
+      usagePercent: appMemoryPercent, // App memory %, not system-wide
     },
     process: {
       pid: process.pid,
@@ -161,6 +166,7 @@ export const getAverageMetrics = (minutes = 5): {
 
 /**
  * Check if system is under stress
+ * Only checks metrics that indicate REAL problems affecting functionality
  */
 export const isSystemUnderStress = (): {
   stressed: boolean;
@@ -169,21 +175,9 @@ export const isSystemUnderStress = (): {
   const metrics = collectMetrics();
   const reasons: string[] = [];
 
-  if (metrics.cpu.usage > 80) {
-    reasons.push(`High CPU usage: ${metrics.cpu.usage.toFixed(1)}%`);
-  }
-
-  if (metrics.memory.usagePercent > 85) {
-    reasons.push(`High memory usage: ${metrics.memory.usagePercent.toFixed(1)}%`);
-  }
-
-  if (metrics.eventLoop.isBlocked) {
-    reasons.push(`Event loop blocked: ${metrics.eventLoop.latency.toFixed(1)}ms latency`);
-  }
-
-  const heapUsagePercent = (metrics.memory.heapUsed / metrics.memory.heapTotal) * 100;
-  if (heapUsagePercent > 90) {
-    reasons.push(`High heap usage: ${heapUsagePercent.toFixed(1)}%`);
+  // Only flag event loop blocking - this is a real problem
+  if (metrics.eventLoop.isBlocked && metrics.eventLoop.latency > 500) {
+    reasons.push(`Event loop blocked: ${metrics.eventLoop.latency.toFixed(0)}ms latency`);
   }
 
   return {

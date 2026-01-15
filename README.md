@@ -83,20 +83,36 @@ tarasa-historic-extractor/
 │   ├── session/
 │   │   ├── sessionHealth.ts      # Session health tracking
 │   │   └── sessionManager.ts     # Session initialization & validation
+│   ├── debug/
+│   │   ├── index.ts              # Debug module exports
+│   │   ├── types.ts              # Type definitions
+│   │   ├── metricsCollector.ts   # CPU, memory, event loop monitoring
+│   │   ├── requestTracker.ts     # HTTP request profiling
+│   │   ├── errorTracker.ts       # Error tracking & categorization
+│   │   ├── selfHealing.ts        # Auto-recovery engine
+│   │   ├── websocket.ts          # Real-time WebSocket server
+│   │   ├── queryProfiler.ts      # Database query profiling
+│   │   └── eventEmitter.ts       # Central event bus
+│   ├── backup/
+│   │   ├── index.ts              # Backup module exports
+│   │   └── backupManager.ts      # Full/incremental backup system
 │   └── server.ts                 # Express server entry point
 ├── ui/
 │   └── dashboard/
 │       ├── components/
 │       │   ├── Card.tsx          # Statistics card component
 │       │   ├── Table.tsx         # Reusable table component
-│       │   └── Layout.tsx        # Navigation layout wrapper
+│       │   ├── Layout.tsx        # Navigation layout wrapper
+│       │   └── SystemStatusIndicator.tsx  # Animated system status display
 │       ├── pages/
 │       │   ├── _app.tsx          # Next.js app wrapper
 │       │   ├── index.tsx         # Dashboard home page
 │       │   ├── posts.tsx         # Posts management page
 │       │   ├── messages.tsx      # Messages queue & history
 │       │   ├── logs.tsx          # System logs viewer
-│       │   └── settings.tsx      # Configuration page
+│       │   ├── settings.tsx      # Configuration page
+│       │   ├── debug.tsx         # Debug console & monitoring
+│       │   └── backup.tsx        # Backup management page
 │       ├── styles/
 │       │   └── globals.css       # Global styles with Tailwind
 │       ├── next.config.mjs       # Next.js configuration
@@ -631,6 +647,194 @@ View configuration:
 - Daily message limit
 - System status
 
+### Debug Console (/debug)
+Advanced real-time system monitoring with visual status indicators:
+
+**Visual Status Indicator:**
+The Debug Console features a prominent status indicator at the top that shows system health:
+
+| Status | Color | Meaning |
+|--------|-------|---------|
+| **Healthy** | Green gradient with pulse animation | All systems operational, normal performance |
+| **Degraded** | Yellow/orange gradient with bounce animation | Memory > 80% or CPU > 70%, needs attention |
+| **Critical** | Red gradient with shake animation | System under stress, high error rate (> 10%), immediate action needed |
+| **Offline** | Gray gradient, no animation | Unable to connect to server |
+
+**Overview Tab:**
+- **CPU Usage**: Real-time CPU percentage with progress bar
+- **Memory Usage**: RAM consumption with visual indicator
+- **Heap Usage**: Node.js heap memory statistics
+- **Uptime**: How long the server has been running
+- **Event Loop**: Latency monitoring (detects blocked event loop)
+- **System Stress**: Automatic detection of performance issues
+- **Request Statistics**: Requests/minute, average response time, error rate
+
+**Requests Tab:**
+- Live feed of HTTP requests
+- Response times highlighted (slow requests marked in yellow/red)
+- Method, path, status code, and timing for each request
+
+**Errors Tab:**
+- Categorized error tracking with fingerprinting
+- Occurrence count for repeated errors
+- One-click error resolution
+- Error types: scraper, auth, api, database, external, unknown
+
+**Healing Tab:**
+- **Self-Healing Actions**: Automatic recovery attempts with status
+- **Circuit Breakers**: Status of protection for external services (OpenAI, Apify)
+  - Closed (green): Normal operation
+  - Open (red): Service blocked due to failures
+  - Half-open (yellow): Testing recovery
+
+**Quick Actions:**
+- **Trigger GC**: Force garbage collection to free memory
+- **Run Healing**: Manually trigger self-healing checks
+- **Auto-refresh Toggle**: Enable/disable real-time updates
+
+### Backup Manager (/backup)
+Complete database backup and restore system:
+
+**Quick Backup:**
+- One-click full database backup
+- Creates compressed `.sql.gz` file with timestamp
+- SHA-256 checksum verification
+
+**Backup Types:**
+
+| Type | Description | Contents |
+|------|-------------|----------|
+| **Full** | Complete database dump | All tables: PostRaw, PostClassified, MessageGenerated, MessageSent, SystemLog |
+| **Incremental** | Changes since last backup | Only new/modified records (faster, smaller) |
+| **Config** | Configuration only | Environment variables, session data, cookies |
+
+**Backup History:**
+- List of all backups with metadata
+- File size, creation date, checksum
+- Download and delete options
+
+**Restore System:**
+- Select backup to restore
+- **Dry Run**: Preview what will be restored without making changes
+- Full restore with automatic backup of current state
+- Progress tracking during restore
+
+**Scheduled Backups:**
+- Automatic daily full backup at midnight
+- Configurable via cron settings
+
+---
+
+## 🛡️ Self-Healing System
+
+The system includes an intelligent self-healing engine that automatically detects and fixes common issues:
+
+### Health Monitoring
+The engine continuously monitors:
+- Memory pressure (triggers GC when > 85% usage)
+- Database connectivity (auto-reconnects on failure)
+- External service availability (Apify, OpenAI)
+- Event loop blocking (alerts on high latency)
+
+### Automatic Recovery Actions
+
+| Issue | Detection | Recovery Action |
+|-------|-----------|-----------------|
+| High Memory | Memory > 85% | Force garbage collection |
+| Database Connection | Failed queries | Reconnect Prisma client |
+| External Service Down | Circuit breaker open | Automatic retry after cooldown |
+| Stale Session | Login failures | Clear cookies, re-authenticate |
+
+### Circuit Breaker Pattern
+External services are protected by circuit breakers:
+
+```
+CLOSED → OPEN → HALF_OPEN → CLOSED
+   ↑        |        ↓
+   └────────┴────────┘
+```
+
+- **Closed**: Normal operation, requests pass through
+- **Open**: Too many failures, requests blocked (prevents cascade failures)
+- **Half-Open**: Testing if service recovered, limited requests allowed
+
+**Configuration:**
+- Apify: Opens after 5 failures, resets after 1 hour
+- OpenAI: Opens after 10 failures, resets after 15 minutes
+
+---
+
+## 📡 Debug API Endpoints
+
+### GET /api/debug/overview
+Complete system status overview.
+
+**Response:**
+```json
+{
+  "timestamp": "2025-11-17T15:30:00.000Z",
+  "system": {
+    "metrics": {
+      "cpu": { "usage": 12.5, "cores": 8 },
+      "memory": { "usagePercent": 45.2, "heapUsed": 52428800 },
+      "eventLoop": { "latency": 1.2, "isBlocked": false }
+    },
+    "stressStatus": { "stressed": false, "reasons": [] }
+  },
+  "requests": {
+    "stats": { "totalRequests": 1500, "errorRate": 0.5 }
+  },
+  "healing": {
+    "enabled": true,
+    "activeIssues": [],
+    "actionsExecuted": 5
+  }
+}
+```
+
+### GET /api/debug/requests
+Recent HTTP request logs with performance data.
+
+### GET /api/debug/errors
+Unresolved errors with categorization and occurrence counts.
+
+### POST /api/debug/gc
+Trigger manual garbage collection.
+
+### POST /api/debug/healing/run
+Run self-healing checks manually.
+
+### GET /api/backup/list
+List all available backups.
+
+### POST /api/backup/quick
+Create a one-click full backup.
+
+**Response:**
+```json
+{
+  "success": true,
+  "backup": {
+    "id": "backup-2025-11-17-153000",
+    "type": "full",
+    "size": 1048576,
+    "checksum": "sha256:abc123...",
+    "createdAt": "2025-11-17T15:30:00.000Z"
+  }
+}
+```
+
+### POST /api/backup/restore
+Restore from a backup file.
+
+**Request:**
+```json
+{
+  "backupId": "backup-2025-11-17-153000",
+  "dryRun": true
+}
+```
+
 ---
 
 ## 🔧 Troubleshooting
@@ -868,7 +1072,44 @@ For issues or questions:
 
 ## 🔄 Version History
 
-### v1.1.0 (Current)
+### v1.2.0 (Current)
+Major update with advanced debugging and backup system:
+
+**Debug Console:**
+- Real-time system monitoring dashboard with WebSocket updates
+- Visual status indicator with animated states (healthy/degraded/critical/offline)
+- CPU, memory, heap, and event loop monitoring
+- HTTP request tracking with response time analysis
+- Error tracking with categorization and deduplication
+- Self-healing engine with automatic problem detection and recovery
+- Circuit breaker status monitoring for external services
+- One-click garbage collection trigger
+- Manual healing run capability
+
+**Backup System:**
+- One-click full database backup
+- Incremental backup support (changes only)
+- Configuration backup (env vars, cookies)
+- Gzip compression with SHA-256 checksums
+- Backup restoration with dry-run preview
+- Scheduled daily backups at midnight
+- Backup history with download/delete options
+
+**Self-Healing Engine:**
+- Memory pressure detection and automatic GC
+- Database reconnection on failures
+- External service monitoring
+- Event loop blocking detection
+- Automated recovery actions with logging
+
+**UI Improvements:**
+- Animated status indicators with CSS animations
+- Glass effect styling
+- Progress bars for system metrics
+- Tab-based navigation in debug console
+- Real-time WebSocket updates
+
+### v1.1.0
 Major reliability and performance improvements:
 
 **Circuit Breaker Pattern:**

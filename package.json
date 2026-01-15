@@ -7,9 +7,9 @@
     "ui/dashboard"
   ],
   "scripts": {
-    "dev": "ts-node src/server.ts",
+    "dev": "NODE_OPTIONS='--max-old-space-size=2048' ts-node src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node --max-old-space-size=1024 dist/server.js",
     "scrape": "ts-node src/scraper/scraper.ts",
     "classify": "ts-node src/ai/classifier.ts",
     "generate": "ts-node src/ai/generator.ts",

@@ -65,6 +65,6 @@ export const triggerRateLimiter = createRateLimiter({
 
 export const apiRateLimiter = createRateLimiter({
   windowMs: 60000, // 1 minute
-  maxRequests: 100,
+  maxRequests: 500, // Increased to handle debug dashboard
   message: 'Too many API requests. Please slow down.',
 });

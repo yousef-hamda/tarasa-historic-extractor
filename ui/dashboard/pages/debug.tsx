@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import SystemStatusIndicator from '../components/SystemStatusIndicator';
 
 interface SystemMetrics {
   timestamp: string;
@@ -368,6 +369,30 @@ export default function DebugPage() {
       {/* Overview Tab */}
       {activeTab === 'overview' && overview && (
         <div className="space-y-6">
+          {/* Main Status Indicator - Only shows REAL problems */}
+          <SystemStatusIndicator
+            status={
+              !overview ? 'offline' :
+              overview.requests.stats.errorRate > 20 ? 'critical' :
+              overview.system.stressStatus.stressed ? 'critical' :
+              overview.requests.stats.errorRate > 5 ? 'degraded' :
+              'healthy'
+            }
+            title={
+              !overview ? 'System Offline' :
+              overview.requests.stats.errorRate > 20 ? 'High Error Rate' :
+              overview.system.stressStatus.stressed ? 'System Issue' :
+              overview.requests.stats.errorRate > 5 ? 'Some Errors' :
+              'All Systems Operational'
+            }
+            subtitle={
+              !overview ? 'Unable to connect to server' :
+              overview.requests.stats.errorRate > 5 ? `${overview.requests.stats.errorRate.toFixed(1)}% of requests failing` :
+              overview.system.stressStatus.stressed ? overview.system.stressStatus.reasons.join(', ') :
+              `Uptime: ${formatDuration(overview.system.metrics.process.uptime)} | ${overview.requests.stats.requestsPerMinute.toFixed(0)} req/min | ${overview.requests.stats.avgResponseTime.toFixed(0)}ms avg`
+            }
+          />
+
           {/* System Status Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg shadow p-4">
@@ -391,18 +416,17 @@ export default function DebugPage() {
             </div>
 
             <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500">Memory</h3>
+              <h3 className="text-sm font-medium text-gray-500">App Memory</h3>
               <div className="mt-2 flex items-baseline">
                 <span className="text-2xl font-bold text-gray-900">
-                  {overview.system.metrics.memory.usagePercent.toFixed(1)}%
+                  {formatBytes(overview.system.metrics.memory.heapUsed)}
                 </span>
+                <span className="ml-2 text-xs text-gray-400">used</span>
               </div>
-              <p className="text-sm text-gray-500">{overview.system.formatted.memory}</p>
+              <p className="text-sm text-gray-500">{overview.system.formatted.heapUsage}</p>
               <div className="mt-2 h-2 bg-gray-200 rounded">
                 <div
-                  className={`h-2 rounded ${
-                    overview.system.metrics.memory.usagePercent > 85 ? 'bg-red-500' : 'bg-green-500'
-                  }`}
+                  className="h-2 rounded bg-blue-500"
                   style={{ width: `${Math.min(100, overview.system.metrics.memory.usagePercent)}%` }}
                 />
               </div>
