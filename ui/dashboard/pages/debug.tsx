@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import SystemStatusIndicator from '../components/SystemStatusIndicator';
+import {
+  WrenchScrewdriverIcon,
+  CpuChipIcon,
+  ServerStackIcon,
+  ClockIcon,
+  ArrowPathIcon,
+  BoltIcon,
+  ShieldCheckIcon,
+  ExclamationTriangleIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ChartBarIcon,
+  SignalIcon,
+  BeakerIcon,
+} from '@heroicons/react/24/outline';
 
 interface SystemMetrics {
   timestamp: string;
@@ -118,37 +133,151 @@ const formatDuration = (seconds: number): string => {
   return `${(seconds / 86400).toFixed(1)}d`;
 };
 
+// Circular Progress Component
+const CircularProgress: React.FC<{
+  value: number;
+  max: number;
+  label: string;
+  color: string;
+  size?: number;
+}> = ({ value, max, label, color, size = 100 }) => {
+  const percentage = Math.min(100, (value / max) * 100);
+  const circumference = 2 * Math.PI * 40;
+  const offset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+          <circle
+            cx="50" cy="50" r="40"
+            fill="none"
+            stroke="#E2E8F0"
+            strokeWidth="8"
+          />
+          <circle
+            cx="50" cy="50" r="40"
+            fill="none"
+            stroke={color}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-all duration-1000"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xl font-semibold text-slate-900">{percentage.toFixed(0)}%</span>
+        </div>
+      </div>
+      <p className="text-sm text-slate-500 mt-2">{label}</p>
+    </div>
+  );
+};
+
+// Metric Card Component
+const MetricCard: React.FC<{
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  status?: 'good' | 'warning' | 'critical';
+}> = ({ title, value, subtitle, icon: Icon, status }) => (
+  <div className="bg-white border border-slate-200 rounded-xl p-5 transition-colors hover:border-slate-300">
+    <div className="flex items-start justify-between">
+      <div className="flex-1">
+        <p className="text-sm text-slate-500 font-medium">{title}</p>
+        <p className={`text-2xl font-semibold mt-1 ${
+          status === 'critical' ? 'text-red-600' :
+          status === 'warning' ? 'text-amber-600' :
+          'text-slate-900'
+        }`}>
+          {value}
+        </p>
+        {subtitle && (
+          <p className="text-xs text-slate-400 mt-1">{subtitle}</p>
+        )}
+      </div>
+      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+        <Icon className="w-5 h-5 text-slate-600" />
+      </div>
+    </div>
+    {status && (
+      <div className={`mt-3 w-2 h-2 rounded-full ${
+        status === 'critical' ? 'bg-red-500 animate-pulse' :
+        status === 'warning' ? 'bg-amber-500' :
+        'bg-emerald-500'
+      }`} />
+    )}
+  </div>
+);
+
+// Status Badge with Icon
 const StatusBadge: React.FC<{ status: string; type?: 'health' | 'circuit' | 'action' }> = ({ status, type }) => {
-  const getColor = () => {
+  const getStyle = () => {
     if (type === 'circuit') {
       switch (status) {
-        case 'closed': return 'bg-green-100 text-green-800';
-        case 'open': return 'bg-red-100 text-red-800';
-        case 'half_open': return 'bg-yellow-100 text-yellow-800';
+        case 'closed': return { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: CheckCircleIcon };
+        case 'open': return { bg: 'bg-red-50', text: 'text-red-700', icon: XCircleIcon };
+        case 'half_open': return { bg: 'bg-amber-50', text: 'text-amber-700', icon: ExclamationTriangleIcon };
+        default: return { bg: 'bg-slate-100', text: 'text-slate-600', icon: SignalIcon };
       }
     }
     if (type === 'action') {
       switch (status) {
-        case 'success': return 'bg-green-100 text-green-800';
-        case 'failed': return 'bg-red-100 text-red-800';
-        case 'executing': return 'bg-blue-100 text-blue-800';
-        case 'pending': return 'bg-gray-100 text-gray-800';
+        case 'success': return { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: CheckCircleIcon };
+        case 'failed': return { bg: 'bg-red-50', text: 'text-red-700', icon: XCircleIcon };
+        case 'executing': return { bg: 'bg-slate-100', text: 'text-slate-700', icon: ArrowPathIcon };
+        case 'pending': return { bg: 'bg-slate-100', text: 'text-slate-600', icon: ClockIcon };
+        default: return { bg: 'bg-slate-100', text: 'text-slate-600', icon: SignalIcon };
       }
     }
     switch (status) {
-      case 'critical': return 'bg-red-100 text-red-800';
-      case 'warning': return 'bg-yellow-100 text-yellow-800';
-      case 'info': return 'bg-blue-100 text-blue-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'critical': return { bg: 'bg-red-50', text: 'text-red-700', icon: XCircleIcon };
+      case 'warning': return { bg: 'bg-amber-50', text: 'text-amber-700', icon: ExclamationTriangleIcon };
+      case 'info': return { bg: 'bg-slate-100', text: 'text-slate-700', icon: SignalIcon };
+      default: return { bg: 'bg-slate-100', text: 'text-slate-600', icon: SignalIcon };
     }
   };
 
+  const style = getStyle();
+  const Icon = style.icon;
+
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getColor()}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${style.bg} ${style.text}`}>
+      <Icon className="w-3.5 h-3.5" />
       {status}
     </span>
   );
 };
+
+// Tab Button Component
+const TabButton: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  count?: number;
+}> = ({ active, onClick, icon: Icon, label, count }) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-sm transition-all ${
+      active
+        ? 'bg-slate-900 text-white'
+        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+    }`}
+  >
+    <Icon className="w-4 h-4" />
+    {label}
+    {count !== undefined && count > 0 && (
+      <span className={`px-1.5 py-0.5 rounded text-xs ${
+        active ? 'bg-white/20' : 'bg-slate-100'
+      }`}>
+        {count}
+      </span>
+    )}
+  </button>
+);
 
 export default function DebugPage() {
   const [overview, setOverview] = useState<DebugOverview | null>(null);
@@ -157,7 +286,6 @@ export default function DebugPage() {
   const [healingActions, setHealingActions] = useState<HealingAction[]>([]);
   const [circuitBreakers, setCircuitBreakers] = useState<CircuitBreaker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'errors' | 'healing'>('overview');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -217,7 +345,6 @@ export default function DebugPage() {
     setLoading(false);
   }, [fetchOverview, fetchRequests, fetchErrors, fetchHealing]);
 
-  // WebSocket connection for real-time updates
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.hostname}:4000/debug/ws`;
@@ -226,7 +353,6 @@ export default function DebugPage() {
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('Debug WebSocket connected');
         ws.send(JSON.stringify({ type: 'get_dashboard_state' }));
       };
 
@@ -241,12 +367,7 @@ export default function DebugPage() {
         }
       };
 
-      ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-      };
-
       ws.onclose = () => {
-        console.log('WebSocket disconnected, reconnecting in 5s...');
         setTimeout(connectWs, 5000);
       };
 
@@ -310,11 +431,17 @@ export default function DebugPage() {
 
   if (loading && !overview) {
     return (
-      <div className="animate-pulse">
-        <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-        <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="space-y-6 animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-xl bg-slate-200" />
+          <div className="space-y-2">
+            <div className="h-8 w-48 bg-slate-200 rounded-lg" />
+            <div className="h-4 w-64 bg-slate-100 rounded" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-gray-200 rounded"></div>
+            <div key={i} className="h-28 bg-slate-200 rounded-xl" />
           ))}
         </div>
       </div>
@@ -322,213 +449,213 @@ export default function DebugPage() {
   }
 
   return (
-    <>
-      <div className="mb-6 flex justify-between items-center">
+    <div className="space-y-6 animate-slide-up">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Debug Console</h1>
-          <p className="text-gray-600">Real-time system monitoring and diagnostics</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Debug Console</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Real-time monitoring and diagnostics</p>
         </div>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 cursor-pointer">
+
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
             <input
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded"
+              className="rounded text-slate-600"
             />
-            <span className="text-sm text-gray-600">Auto-refresh</span>
+            <span className="text-sm text-slate-600">Auto-refresh</span>
+            {autoRefresh && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
           </label>
           <button
             onClick={fetchAll}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+            className="btn-secondary"
           >
+            <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
 
+      {/* Main Status Indicator */}
+      {overview && (
+        <SystemStatusIndicator
+          status={
+            !overview ? 'offline' :
+            overview.requests.stats.errorRate > 20 ? 'critical' :
+            overview.system.stressStatus.stressed ? 'critical' :
+            overview.requests.stats.errorRate > 5 ? 'degraded' :
+            'healthy'
+          }
+          title={
+            !overview ? 'System Offline' :
+            overview.requests.stats.errorRate > 20 ? 'High Error Rate' :
+            overview.system.stressStatus.stressed ? 'System Issue' :
+            overview.requests.stats.errorRate > 5 ? 'Some Errors' :
+            'All Systems Operational'
+          }
+          subtitle={
+            !overview ? 'Unable to connect to server' :
+            overview.requests.stats.errorRate > 5 ? `${overview.requests.stats.errorRate.toFixed(1)}% of requests failing` :
+            overview.system.stressStatus.stressed ? overview.system.stressStatus.reasons.join(', ') :
+            `Uptime: ${formatDuration(overview.system.metrics.process.uptime)} | ${overview.requests.stats.requestsPerMinute.toFixed(0)} req/min | ${overview.requests.stats.avgResponseTime.toFixed(0)}ms avg`
+          }
+        />
+      )}
+
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex space-x-8">
-          {['overview', 'requests', 'errors', 'healing'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab as typeof activeTab)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm capitalize ${
-                activeTab === tab
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
+      <div className="flex flex-wrap gap-2">
+        <TabButton
+          active={activeTab === 'overview'}
+          onClick={() => setActiveTab('overview')}
+          icon={ChartBarIcon}
+          label="Overview"
+        />
+        <TabButton
+          active={activeTab === 'requests'}
+          onClick={() => setActiveTab('requests')}
+          icon={SignalIcon}
+          label="Requests"
+          count={requests.length}
+        />
+        <TabButton
+          active={activeTab === 'errors'}
+          onClick={() => setActiveTab('errors')}
+          icon={ExclamationTriangleIcon}
+          label="Errors"
+          count={errors.length}
+        />
+        <TabButton
+          active={activeTab === 'healing'}
+          onClick={() => setActiveTab('healing')}
+          icon={ShieldCheckIcon}
+          label="Self-Healing"
+        />
       </div>
 
       {/* Overview Tab */}
       {activeTab === 'overview' && overview && (
         <div className="space-y-6">
-          {/* Main Status Indicator - Only shows REAL problems */}
-          <SystemStatusIndicator
-            status={
-              !overview ? 'offline' :
-              overview.requests.stats.errorRate > 20 ? 'critical' :
-              overview.system.stressStatus.stressed ? 'critical' :
-              overview.requests.stats.errorRate > 5 ? 'degraded' :
-              'healthy'
-            }
-            title={
-              !overview ? 'System Offline' :
-              overview.requests.stats.errorRate > 20 ? 'High Error Rate' :
-              overview.system.stressStatus.stressed ? 'System Issue' :
-              overview.requests.stats.errorRate > 5 ? 'Some Errors' :
-              'All Systems Operational'
-            }
-            subtitle={
-              !overview ? 'Unable to connect to server' :
-              overview.requests.stats.errorRate > 5 ? `${overview.requests.stats.errorRate.toFixed(1)}% of requests failing` :
-              overview.system.stressStatus.stressed ? overview.system.stressStatus.reasons.join(', ') :
-              `Uptime: ${formatDuration(overview.system.metrics.process.uptime)} | ${overview.requests.stats.requestsPerMinute.toFixed(0)} req/min | ${overview.requests.stats.avgResponseTime.toFixed(0)}ms avg`
-            }
-          />
-
-          {/* System Status Cards */}
+          {/* Metric Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500">CPU Usage</h3>
-              <div className="mt-2 flex items-baseline">
-                <span className="text-2xl font-bold text-gray-900">
-                  {overview.system.metrics.cpu.usage.toFixed(1)}%
-                </span>
-                <span className="ml-2 text-sm text-gray-500">
-                  ({overview.system.metrics.cpu.cores} cores)
-                </span>
-              </div>
-              <div className="mt-2 h-2 bg-gray-200 rounded">
-                <div
-                  className={`h-2 rounded ${
-                    overview.system.metrics.cpu.usage > 80 ? 'bg-red-500' : 'bg-green-500'
-                  }`}
-                  style={{ width: `${Math.min(100, overview.system.metrics.cpu.usage)}%` }}
-                />
-              </div>
-            </div>
+            <MetricCard
+              title="CPU Usage"
+              value={`${overview.system.metrics.cpu.usage.toFixed(1)}%`}
+              subtitle={`${overview.system.metrics.cpu.cores} cores`}
+              icon={CpuChipIcon}
+              status={overview.system.metrics.cpu.usage > 80 ? 'critical' : overview.system.metrics.cpu.usage > 60 ? 'warning' : 'good'}
+            />
+            <MetricCard
+              title="Memory Used"
+              value={formatBytes(overview.system.metrics.memory.heapUsed)}
+              subtitle={overview.system.formatted.heapUsage}
+              icon={ServerStackIcon}
+              status="good"
+            />
+            <MetricCard
+              title="Event Loop"
+              value={`${overview.system.metrics.eventLoop.latency.toFixed(1)}ms`}
+              subtitle={overview.system.metrics.eventLoop.isBlocked ? 'Blocked!' : 'Running smoothly'}
+              icon={BoltIcon}
+              status={overview.system.metrics.eventLoop.isBlocked ? 'critical' : 'good'}
+            />
+            <MetricCard
+              title="Uptime"
+              value={formatDuration(overview.system.metrics.process.uptime)}
+              subtitle={`PID: ${overview.system.metrics.process.pid}`}
+              icon={ClockIcon}
+              status="good"
+            />
+          </div>
 
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500">App Memory</h3>
-              <div className="mt-2 flex items-baseline">
-                <span className="text-2xl font-bold text-gray-900">
-                  {formatBytes(overview.system.metrics.memory.heapUsed)}
-                </span>
-                <span className="ml-2 text-xs text-gray-400">used</span>
-              </div>
-              <p className="text-sm text-gray-500">{overview.system.formatted.heapUsage}</p>
-              <div className="mt-2 h-2 bg-gray-200 rounded">
-                <div
-                  className="h-2 rounded bg-blue-500"
-                  style={{ width: `${Math.min(100, overview.system.metrics.memory.usagePercent)}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500">Heap Usage</h3>
-              <div className="mt-2 flex items-baseline">
-                <span className="text-2xl font-bold text-gray-900">
-                  {overview.system.formatted.heapUsage}
-                </span>
-              </div>
-              <p className="text-sm text-gray-500">
-                {formatBytes(overview.system.metrics.memory.heapUsed)} used
-              </p>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500">Uptime</h3>
-              <div className="mt-2 flex items-baseline">
-                <span className="text-2xl font-bold text-gray-900">
-                  {formatDuration(overview.system.metrics.process.uptime)}
-                </span>
-              </div>
-              <p className="text-sm text-gray-500">PID: {overview.system.metrics.process.pid}</p>
+          {/* Circular Progress Charts */}
+          <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+            <h3 className="text-lg font-semibold text-slate-900 mb-6">System Resources</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              <CircularProgress
+                value={overview.system.metrics.cpu.usage}
+                max={100}
+                label="CPU Usage"
+                color="#475569"
+              />
+              <CircularProgress
+                value={overview.system.metrics.memory.usagePercent}
+                max={100}
+                label="Memory Usage"
+                color="#475569"
+              />
+              <CircularProgress
+                value={100 - overview.requests.stats.errorRate}
+                max={100}
+                label="Success Rate"
+                color="#10B981"
+              />
+              <CircularProgress
+                value={Math.min(100, (overview.requests.stats.requestsPerMinute / 100) * 100)}
+                max={100}
+                label="Request Load"
+                color="#475569"
+              />
             </div>
           </div>
 
-          {/* Event Loop & Stress Status */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">Event Loop</h3>
-              <div className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full ${
-                  overview.system.metrics.eventLoop.isBlocked ? 'bg-red-500' : 'bg-green-500'
-                }`} />
-                <span className="text-lg font-medium">
-                  {overview.system.metrics.eventLoop.latency.toFixed(1)}ms latency
-                </span>
+          {/* Request Statistics */}
+          <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <ChartBarIcon className="w-5 h-5 text-slate-600" />
               </div>
-              {overview.system.metrics.eventLoop.isBlocked && (
-                <p className="mt-2 text-sm text-red-600">Event loop is blocked!</p>
-              )}
+              <h3 className="text-lg font-semibold text-slate-900">Request Statistics</h3>
+              <span className="text-sm text-slate-400">(last 5 minutes)</span>
             </div>
-
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500 mb-2">System Stress</h3>
-              <div className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full ${
-                  overview.system.stressStatus.stressed ? 'bg-red-500' : 'bg-green-500'
-                }`} />
-                <span className="text-lg font-medium">
-                  {overview.system.stressStatus.stressed ? 'Under Stress' : 'Normal'}
-                </span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="text-3xl font-semibold text-slate-900">{overview.requests.stats.totalRequests}</p>
+                <p className="text-sm text-slate-500 mt-1">Total Requests</p>
               </div>
-              {overview.system.stressStatus.reasons.length > 0 && (
-                <ul className="mt-2 text-sm text-red-600">
-                  {overview.system.stressStatus.reasons.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          {/* Request Stats */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-4">Request Statistics (last 5 min)</h3>
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <p className="text-2xl font-bold">{overview.requests.stats.totalRequests}</p>
-                <p className="text-sm text-gray-500">Total Requests</p>
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="text-3xl font-semibold text-slate-900">{overview.requests.stats.requestsPerMinute.toFixed(1)}</p>
+                <p className="text-sm text-slate-500 mt-1">Requests/min</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold">{overview.requests.stats.requestsPerMinute.toFixed(1)}</p>
-                <p className="text-sm text-gray-500">Requests/min</p>
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="text-3xl font-semibold text-slate-900">{overview.requests.stats.avgResponseTime.toFixed(0)}ms</p>
+                <p className="text-sm text-slate-500 mt-1">Avg Response</p>
               </div>
-              <div>
-                <p className="text-2xl font-bold">{overview.requests.stats.avgResponseTime.toFixed(0)}ms</p>
-                <p className="text-sm text-gray-500">Avg Response Time</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{overview.requests.stats.errorRate.toFixed(1)}%</p>
-                <p className="text-sm text-gray-500">Error Rate</p>
+              <div className={`p-4 rounded-lg border ${
+                overview.requests.stats.errorRate > 5
+                  ? 'bg-red-50 border-red-100'
+                  : 'bg-slate-50 border-slate-100'
+              }`}>
+                <p className={`text-3xl font-semibold ${
+                  overview.requests.stats.errorRate > 5 ? 'text-red-600' : 'text-slate-900'
+                }`}>{overview.requests.stats.errorRate.toFixed(1)}%</p>
+                <p className="text-sm text-slate-500 mt-1">Error Rate</p>
               </div>
             </div>
           </div>
 
           {/* Quick Actions */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-4">Quick Actions</h3>
-            <div className="flex gap-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <BeakerIcon className="w-5 h-5 text-slate-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Quick Actions</h3>
+            </div>
+            <div className="flex flex-wrap gap-4">
               <button
                 onClick={triggerGC}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
+                className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors"
               >
+                <ServerStackIcon className="w-5 h-5" />
                 Trigger GC
               </button>
               <button
                 onClick={triggerHealing}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
               >
+                <ShieldCheckIcon className="w-5 h-5" />
                 Run Healing Checks
               </button>
             </div>
@@ -536,17 +663,22 @@ export default function DebugPage() {
 
           {/* Active Issues */}
           {overview.healing.activeIssues.length > 0 && (
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="text-sm font-medium text-gray-500 mb-4">Active Health Issues</h3>
-              <div className="space-y-2">
+            <div className="bg-white border border-slate-200 rounded-xl p-6 border-l-4 border-l-amber-500 transition-colors hover:border-slate-300">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">Active Health Issues</h3>
+              </div>
+              <div className="space-y-3">
                 {overview.healing.activeIssues.map((issue) => (
-                  <div key={issue.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex items-center gap-2">
+                  <div key={issue.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-3">
                       <StatusBadge status={issue.type} type="health" />
-                      <span className="text-sm">{issue.message}</span>
+                      <span className="text-sm text-slate-700">{issue.message}</span>
                     </div>
                     {issue.autoHealable && (
-                      <span className="text-xs text-blue-600">Auto-healable</span>
+                      <span className="text-xs text-slate-600 bg-slate-200 px-2 py-1 rounded">Auto-healable</span>
                     )}
                   </div>
                 ))}
@@ -558,62 +690,103 @@ export default function DebugPage() {
 
       {/* Requests Tab */}
       {activeTab === 'requests' && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Path</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {requests.map((req) => (
-                <tr key={req.id}>
-                  <td className="px-4 py-2 text-sm text-gray-500">
-                    {new Date(req.timestamp).toLocaleTimeString()}
-                  </td>
-                  <td className="px-4 py-2 text-sm font-medium">{req.method}</td>
-                  <td className="px-4 py-2 text-sm text-gray-700 truncate max-w-xs">{req.path}</td>
-                  <td className="px-4 py-2">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      req.statusCode < 400 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {req.statusCode}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-500">{req.responseTime.toFixed(0)}ms</td>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Time</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Method</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Path</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Duration</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {requests.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
+                          <SignalIcon className="w-8 h-8 text-slate-400" />
+                        </div>
+                        <p className="text-slate-600 font-medium">No requests logged yet</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  requests.map((req) => (
+                    <tr key={req.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm text-slate-500 font-mono">
+                        {new Date(req.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          req.method === 'GET' ? 'bg-slate-100 text-slate-700' :
+                          req.method === 'POST' ? 'bg-emerald-50 text-emerald-700' :
+                          req.method === 'PUT' ? 'bg-amber-50 text-amber-700' :
+                          req.method === 'DELETE' ? 'bg-red-50 text-red-700' :
+                          'bg-slate-100 text-slate-700'
+                        }`}>
+                          {req.method}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-700 truncate max-w-xs font-mono">
+                        {req.path}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          req.statusCode < 400 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                        }`}>
+                          {req.statusCode}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500">
+                        {req.responseTime.toFixed(0)}ms
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* Errors Tab */}
       {activeTab === 'errors' && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           {errors.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No unresolved errors</div>
+            <div className="p-12 text-center">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
+                  <CheckCircleIcon className="w-8 h-8 text-emerald-500" />
+                </div>
+                <div>
+                  <p className="text-slate-700 font-medium">No Unresolved Errors</p>
+                  <p className="text-slate-400 text-sm mt-1">All systems running smoothly</p>
+                </div>
+              </div>
+            </div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-slate-100">
               {errors.map((err) => (
-                <div key={err.id} className="p-4">
+                <div key={err.id} className="p-5 hover:bg-slate-50 transition-colors">
                   <div className="flex justify-between items-start">
-                    <div>
-                      <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
                         <StatusBadge status={err.type} />
-                        <span className="font-medium">{err.message}</span>
+                        <span className="font-medium text-slate-900">{err.message}</span>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {err.occurrences} occurrences | Last: {new Date(err.timestamp).toLocaleString()}
+                      <p className="text-sm text-slate-500">
+                        <span className="bg-slate-100 px-2 py-0.5 rounded">{err.occurrences} occurrences</span>
+                        <span className="mx-2">|</span>
+                        Last: {new Date(err.timestamp).toLocaleString()}
                       </p>
                     </div>
                     <button
                       onClick={() => resolveError(err.id)}
-                      className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
                     >
                       Resolve
                     </button>
@@ -629,20 +802,32 @@ export default function DebugPage() {
       {activeTab === 'healing' && (
         <div className="space-y-6">
           {/* Circuit Breakers */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-4">Circuit Breakers</h3>
+          <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <BoltIcon className="w-5 h-5 text-slate-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Circuit Breakers</h3>
+            </div>
             {circuitBreakers.length === 0 ? (
-              <p className="text-gray-500">No circuit breakers registered</p>
+              <p className="text-slate-500 text-center py-8">No circuit breakers registered</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {circuitBreakers.map((cb) => (
-                  <div key={cb.name} className="p-3 bg-gray-50 rounded">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{cb.name}</span>
+                  <div key={cb.name} className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="font-medium text-slate-900">{cb.name}</span>
                       <StatusBadge status={cb.state} type="circuit" />
                     </div>
-                    <div className="mt-2 text-sm text-gray-500">
-                      Failures: {cb.failures} | Successes: {cb.successes}
+                    <div className="flex gap-4 text-sm">
+                      <div>
+                        <span className="text-slate-500">Failures:</span>
+                        <span className="ml-1 font-medium text-red-600">{cb.failures}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Successes:</span>
+                        <span className="ml-1 font-medium text-emerald-600">{cb.successes}</span>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -651,26 +836,33 @@ export default function DebugPage() {
           </div>
 
           {/* Healing Actions */}
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500 mb-4">Recent Healing Actions</h3>
+          <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                <ShieldCheckIcon className="w-5 h-5 text-slate-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Recent Healing Actions</h3>
+            </div>
             {healingActions.length === 0 ? (
-              <p className="text-gray-500">No healing actions recorded</p>
+              <p className="text-slate-500 text-center py-8">No healing actions recorded</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {healingActions.map((action) => (
-                  <div key={action.id} className="p-3 bg-gray-50 rounded">
+                  <div key={action.id} className="p-4 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
                           <StatusBadge status={action.status} type="action" />
-                          <span className="font-medium">{action.action}</span>
+                          <span className="font-medium text-slate-900">{action.action}</span>
                         </div>
-                        <p className="text-sm text-gray-500 mt-1">Problem: {action.problem}</p>
+                        <p className="text-sm text-slate-500">Problem: {action.problem}</p>
                         {action.result && (
-                          <p className="text-sm text-gray-600 mt-1">Result: {action.result}</p>
+                          <p className="text-sm text-slate-600 mt-1 bg-white px-2 py-1 rounded">
+                            Result: {action.result}
+                          </p>
                         )}
                       </div>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-slate-400 font-mono">
                         {new Date(action.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
@@ -681,6 +873,6 @@ export default function DebugPage() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

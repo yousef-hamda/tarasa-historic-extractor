@@ -1,5 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import {
+  ServerStackIcon,
+  ArrowPathIcon,
+  CloudArrowDownIcon,
+  CloudArrowUpIcon,
+  TrashIcon,
+  ShieldCheckIcon,
+  Cog6ToothIcon,
+  ClockIcon,
+  DocumentDuplicateIcon,
+  FolderIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon,
+  ArchiveBoxIcon,
+  PlayIcon,
+} from '@heroicons/react/24/outline';
 
 interface BackupInfo {
   id: string;
@@ -58,31 +75,74 @@ const formatDate = (dateString: string): string => {
   return new Date(dateString).toLocaleString();
 };
 
+// Stat Card Component
+const StatCard: React.FC<{
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = ({ title, value, subtitle, icon: Icon }) => (
+  <div className="bg-white border border-slate-200 rounded-xl p-5 transition-colors hover:border-slate-300">
+    <div className="flex items-start justify-between">
+      <div className="flex-1">
+        <p className="text-sm text-slate-500 font-medium">{title}</p>
+        <p className="text-2xl font-semibold text-slate-900 mt-1">{value}</p>
+        {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
+      </div>
+      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+        <Icon className="w-5 h-5 text-slate-600" />
+      </div>
+    </div>
+  </div>
+);
+
+// Status Badge with Icon
 const StatusBadge: React.FC<{ status: BackupInfo['status'] }> = ({ status }) => {
-  const colors = {
-    pending: 'bg-gray-100 text-gray-800',
-    in_progress: 'bg-blue-100 text-blue-800',
-    completed: 'bg-green-100 text-green-800',
-    failed: 'bg-red-100 text-red-800',
+  const getStyle = () => {
+    switch (status) {
+      case 'completed':
+        return { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: CheckCircleIcon };
+      case 'failed':
+        return { bg: 'bg-red-50', text: 'text-red-700', icon: XCircleIcon };
+      case 'in_progress':
+        return { bg: 'bg-slate-100', text: 'text-slate-700', icon: ArrowPathIcon };
+      case 'pending':
+      default:
+        return { bg: 'bg-slate-100', text: 'text-slate-600', icon: ClockIcon };
+    }
   };
 
+  const style = getStyle();
+  const Icon = style.icon;
+
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[status]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${style.bg} ${style.text}`}>
+      <Icon className={`w-3.5 h-3.5 ${status === 'in_progress' ? 'animate-spin' : ''}`} />
       {status.replace('_', ' ')}
     </span>
   );
 };
 
+// Type Badge
 const TypeBadge: React.FC<{ type: BackupInfo['type'] }> = ({ type }) => {
-  const colors = {
-    full: 'bg-purple-100 text-purple-800',
-    incremental: 'bg-blue-100 text-blue-800',
-    config: 'bg-yellow-100 text-yellow-800',
-    logs: 'bg-gray-100 text-gray-800',
+  const getStyle = () => {
+    switch (type) {
+      case 'full':
+        return { bg: 'bg-slate-100', text: 'text-slate-700' };
+      case 'incremental':
+        return { bg: 'bg-slate-100', text: 'text-slate-700' };
+      case 'config':
+        return { bg: 'bg-amber-50', text: 'text-amber-700' };
+      case 'logs':
+      default:
+        return { bg: 'bg-slate-100', text: 'text-slate-600' };
+    }
   };
 
+  const style = getStyle();
+
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[type]}`}>
+    <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${style.bg} ${style.text}`}>
       {type}
     </span>
   );
@@ -120,7 +180,7 @@ export default function BackupPage() {
     fetchBackups();
   }, [fetchBackups]);
 
-  const showMessage = (type: 'success' | 'error', text: string) => {
+  const showMessageToast = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 5000);
   };
@@ -137,13 +197,13 @@ export default function BackupPage() {
       const data = await res.json();
 
       if (res.ok) {
-        showMessage('success', `${type.charAt(0).toUpperCase() + type.slice(1)} backup created successfully!`);
+        showMessageToast('success', `${type.charAt(0).toUpperCase() + type.slice(1)} backup created successfully!`);
         fetchBackups();
       } else {
-        showMessage('error', data.error || 'Failed to create backup');
+        showMessageToast('error', data.error || 'Failed to create backup');
       }
     } catch (err) {
-      showMessage('error', 'Failed to create backup');
+      showMessageToast('error', 'Failed to create backup');
     } finally {
       setCreating(false);
     }
@@ -159,13 +219,13 @@ export default function BackupPage() {
       const data = await res.json();
 
       if (res.ok) {
-        showMessage('success', 'Quick backup completed!');
+        showMessageToast('success', 'Quick backup completed!');
         fetchBackups();
       } else {
-        showMessage('error', data.error || 'Backup failed');
+        showMessageToast('error', data.error || 'Backup failed');
       }
     } catch (err) {
-      showMessage('error', 'Failed to create backup');
+      showMessageToast('error', 'Failed to create backup');
     } finally {
       setCreating(false);
     }
@@ -184,17 +244,17 @@ export default function BackupPage() {
       if (res.ok) {
         const result = data.result as RestoreResult;
         if (dryRun) {
-          showMessage('success', `Dry run: Would restore ${result.recordsRestored} records from ${result.tablesRestored.length} tables`);
+          showMessageToast('success', `Dry run: Would restore ${result.recordsRestored} records from ${result.tablesRestored.length} tables`);
         } else {
-          showMessage('success', `Restored ${result.recordsRestored} records from ${result.tablesRestored.length} tables`);
+          showMessageToast('success', `Restored ${result.recordsRestored} records from ${result.tablesRestored.length} tables`);
         }
         setShowRestoreModal(null);
         fetchBackups();
       } else {
-        showMessage('error', data.error || 'Restore failed');
+        showMessageToast('error', data.error || 'Restore failed');
       }
     } catch (err) {
-      showMessage('error', 'Failed to restore backup');
+      showMessageToast('error', 'Failed to restore backup');
     } finally {
       setRestoring(null);
     }
@@ -206,12 +266,12 @@ export default function BackupPage() {
       const data = await res.json();
 
       if (data.valid) {
-        showMessage('success', 'Backup verified successfully - integrity OK');
+        showMessageToast('success', 'Backup verified successfully - integrity OK');
       } else {
-        showMessage('error', `Backup verification failed: ${data.error}`);
+        showMessageToast('error', `Backup verification failed: ${data.error}`);
       }
     } catch (err) {
-      showMessage('error', 'Failed to verify backup');
+      showMessageToast('error', 'Failed to verify backup');
     }
   };
 
@@ -222,14 +282,14 @@ export default function BackupPage() {
       const res = await apiFetch(`/api/backup/${backupId}`, { method: 'DELETE' });
 
       if (res.ok) {
-        showMessage('success', 'Backup deleted');
+        showMessageToast('success', 'Backup deleted');
         fetchBackups();
       } else {
         const data = await res.json();
-        showMessage('error', data.error || 'Failed to delete backup');
+        showMessageToast('error', data.error || 'Failed to delete backup');
       }
     } catch (err) {
-      showMessage('error', 'Failed to delete backup');
+      showMessageToast('error', 'Failed to delete backup');
     }
   };
 
@@ -239,13 +299,13 @@ export default function BackupPage() {
       const data = await res.json();
 
       if (res.ok) {
-        showMessage('success', `Cleanup completed: ${data.deleted} backups removed`);
+        showMessageToast('success', `Cleanup completed: ${data.deleted} backups removed`);
         fetchBackups();
       } else {
-        showMessage('error', data.error || 'Cleanup failed');
+        showMessageToast('error', data.error || 'Cleanup failed');
       }
     } catch (err) {
-      showMessage('error', 'Failed to run cleanup');
+      showMessageToast('error', 'Failed to run cleanup');
     }
   };
 
@@ -260,87 +320,107 @@ export default function BackupPage() {
       if (res.ok) {
         const data = await res.json();
         setConfig(data.config);
-        showMessage('success', 'Configuration updated');
+        showMessageToast('success', 'Configuration updated');
         setShowConfigModal(false);
       } else {
-        showMessage('error', 'Failed to update configuration');
+        showMessageToast('error', 'Failed to update configuration');
       }
     } catch (err) {
-      showMessage('error', 'Failed to update configuration');
+      showMessageToast('error', 'Failed to update configuration');
     }
   };
 
   if (loading) {
     return (
-      <div className="animate-pulse">
-        <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-        <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="space-y-6 animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-xl bg-slate-200" />
+          <div className="space-y-2">
+            <div className="h-8 w-48 bg-slate-200 rounded-lg" />
+            <div className="h-4 w-64 bg-slate-100 rounded" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-24 bg-gray-200 rounded"></div>
+            <div key={i} className="h-28 bg-slate-200 rounded-xl" />
           ))}
         </div>
-        <div className="h-64 bg-gray-200 rounded"></div>
       </div>
     );
   }
 
   return (
-    <>
+    <div className="space-y-6 animate-slide-up">
       {/* Message Toast */}
       {message && (
         <div
-          className={`fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
-            message.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+          className={`fixed top-24 right-4 p-4 rounded-xl shadow-lg z-50 flex items-center gap-3 animate-slide-up ${
+            message.type === 'success'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-red-600 text-white'
           }`}
         >
+          {message.type === 'success' ? (
+            <CheckCircleIcon className="w-5 h-5" />
+          ) : (
+            <XCircleIcon className="w-5 h-5" />
+          )}
           {message.text}
         </div>
       )}
 
       {/* Header */}
-      <div className="mb-6 flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Backup Manager</h1>
-          <p className="text-gray-600">Create, manage, and restore database backups</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Backup Manager</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Create, manage, and restore database backups</p>
         </div>
-        <div className="flex gap-2">
+
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setShowConfigModal(true)}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+            className="btn-secondary"
           >
+            <Cog6ToothIcon className="w-4 h-4" />
             Settings
           </button>
           <button
             onClick={fetchBackups}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+            className="btn-secondary"
           >
+            <ArrowPathIcon className="w-4 h-4" />
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Quick Backup Button */}
-      <div className="mb-6 p-6 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg text-white">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-bold">Quick Backup</h2>
-            <p className="text-blue-100">Create a full database backup with one click</p>
+      {/* Quick Backup Hero */}
+      <div className="bg-slate-900 rounded-xl p-8">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div className="text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center">
+                <CloudArrowUpIcon className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-2xl font-semibold">Quick Backup</h2>
+            </div>
+            <p className="text-slate-300">Create a full database backup with one click</p>
           </div>
           <button
             onClick={quickBackup}
             disabled={creating}
-            className="px-6 py-3 bg-white text-blue-600 font-bold rounded-lg hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-8 py-4 bg-white text-slate-900 font-medium rounded-lg hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {creating ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
+              <>
+                <ArrowPathIcon className="w-5 h-5 animate-spin" />
                 Creating...
-              </span>
+              </>
             ) : (
-              'Create Backup Now'
+              <>
+                <PlayIcon className="w-5 h-5" />
+                Create Backup Now
+              </>
             )}
           </button>
         </div>
@@ -348,186 +428,229 @@ export default function BackupPage() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500">Total Backups</h3>
-            <p className="text-2xl font-bold text-gray-900">{stats.totalBackups}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500">Total Size</h3>
-            <p className="text-2xl font-bold text-gray-900">{formatBytes(stats.totalSize)}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500">Last Backup</h3>
-            <p className="text-lg font-bold text-gray-900">
-              {stats.lastBackup ? new Date(stats.lastBackup).toLocaleDateString() : 'Never'}
-            </p>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-sm font-medium text-gray-500">Backup Types</h3>
-            <div className="flex gap-2 mt-1">
-              {Object.entries(stats.backupsByType).map(([type, count]) => (
-                <span key={type} className="text-sm">
-                  {type}: {count}
-                </span>
-              ))}
-            </div>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Backups"
+            value={stats.totalBackups}
+            icon={ArchiveBoxIcon}
+          />
+          <StatCard
+            title="Total Size"
+            value={formatBytes(stats.totalSize)}
+            icon={FolderIcon}
+          />
+          <StatCard
+            title="Last Backup"
+            value={stats.lastBackup ? new Date(stats.lastBackup).toLocaleDateString() : 'Never'}
+            subtitle={stats.lastBackup ? new Date(stats.lastBackup).toLocaleTimeString() : undefined}
+            icon={ClockIcon}
+          />
+          <StatCard
+            title="By Type"
+            value={Object.values(stats.backupsByType).reduce((a, b) => a + b, 0)}
+            subtitle={Object.entries(stats.backupsByType).map(([t, c]) => `${t}: ${c}`).join(' | ')}
+            icon={DocumentDuplicateIcon}
+          />
         </div>
       )}
 
       {/* Create Backup Options */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <h3 className="text-sm font-medium text-gray-500 mb-4">Create New Backup</h3>
-        <div className="flex gap-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 transition-colors hover:border-slate-300">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+            <CloudArrowUpIcon className="w-5 h-5 text-slate-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">Create New Backup</h3>
+        </div>
+        <div className="flex flex-wrap gap-4">
           <button
             onClick={() => createBackup('full')}
             disabled={creating}
-            className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors"
           >
+            <ArchiveBoxIcon className="w-5 h-5" />
             Full Backup
           </button>
           <button
             onClick={() => createBackup('incremental')}
             disabled={creating}
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors"
           >
+            <DocumentDuplicateIcon className="w-5 h-5" />
             Incremental
           </button>
           <button
             onClick={() => createBackup('config')}
             disabled={creating}
-            className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors"
           >
+            <Cog6ToothIcon className="w-5 h-5" />
             Config Only
           </button>
           <div className="flex-1" />
           <button
             onClick={runCleanup}
-            className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded"
+            className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
           >
+            <TrashIcon className="w-5 h-5" />
             Run Cleanup
           </button>
         </div>
       </div>
 
       {/* Backups List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200">
-          <h3 className="text-lg font-medium">Backup History</h3>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-3">
+            <ArchiveBoxIcon className="w-5 h-5 text-slate-500" />
+            <h3 className="text-lg font-semibold text-slate-900">Backup History</h3>
+            <span className="text-sm text-slate-400">({backups.length} backups)</span>
+          </div>
         </div>
         {backups.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            No backups found. Create your first backup above.
+          <div className="p-16 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center">
+                <ArchiveBoxIcon className="w-8 h-8 text-slate-400" />
+              </div>
+              <div>
+                <p className="text-slate-600 font-medium">No backups found</p>
+                <p className="text-slate-400 text-sm mt-1">Create your first backup using the options above</p>
+              </div>
+            </div>
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Records</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {backups.map((backup) => (
-                <tr key={backup.id}>
-                  <td className="px-4 py-3 text-sm font-mono text-gray-600">
-                    {backup.id.substring(0, 20)}...
-                  </td>
-                  <td className="px-4 py-3">
-                    <TypeBadge type={backup.type} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={backup.status} />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {formatDate(backup.createdAt)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {formatBytes(backup.size)}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {backup.recordCount?.toLocaleString() || '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      {backup.restorable && backup.status === 'completed' && (
-                        <button
-                          onClick={() => setShowRestoreModal(backup)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                          Restore
-                        </button>
-                      )}
-                      <button
-                        onClick={() => verifyBackup(backup.id)}
-                        className="text-green-600 hover:text-green-800 text-sm"
-                      >
-                        Verify
-                      </button>
-                      <button
-                        onClick={() => deleteBackup(backup.id)}
-                        className="text-red-600 hover:text-red-800 text-sm"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Size</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Records</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {backups.map((backup) => (
+                  <tr key={backup.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-sm text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                        {backup.id.substring(0, 12)}...
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <TypeBadge type={backup.type} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={backup.status} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <ClockIcon className="w-4 h-4 text-slate-400" />
+                        {formatDate(backup.createdAt)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600 font-medium">
+                      {formatBytes(backup.size)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500">
+                      {backup.recordCount?.toLocaleString() || '-'}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        {backup.restorable && backup.status === 'completed' && (
+                          <button
+                            onClick={() => setShowRestoreModal(backup)}
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                          >
+                            <CloudArrowDownIcon className="w-4 h-4" />
+                            Restore
+                          </button>
+                        )}
+                        <button
+                          onClick={() => verifyBackup(backup.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+                        >
+                          <ShieldCheckIcon className="w-4 h-4" />
+                          Verify
+                        </button>
+                        <button
+                          onClick={() => deleteBackup(backup.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       {/* Restore Modal */}
       {showRestoreModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold mb-4">Restore from Backup</h3>
-            <p className="text-gray-600 mb-4">
-              Backup: <span className="font-mono">{showRestoreModal.id.substring(0, 20)}...</span>
-            </p>
-            <p className="text-gray-600 mb-4">
-              Created: {formatDate(showRestoreModal.createdAt)}
-            </p>
-            {showRestoreModal.tables && (
-              <p className="text-gray-600 mb-4">
-                Tables: {showRestoreModal.tables.join(', ')}
-              </p>
-            )}
-
-            <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
-              <p className="text-yellow-800 text-sm">
-                Warning: Restoring with overwrite will delete existing data in the selected tables.
-              </p>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4 animate-slide-up">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">
+                <CloudArrowDownIcon className="w-6 h-6 text-slate-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900">Restore Backup</h3>
             </div>
 
-            <div className="flex gap-4 justify-end">
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between p-3 bg-slate-50 rounded-lg">
+                <span className="text-slate-500">Backup ID</span>
+                <span className="font-mono text-sm">{showRestoreModal.id.substring(0, 16)}...</span>
+              </div>
+              <div className="flex justify-between p-3 bg-slate-50 rounded-lg">
+                <span className="text-slate-500">Created</span>
+                <span>{formatDate(showRestoreModal.createdAt)}</span>
+              </div>
+              {showRestoreModal.tables && (
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <span className="text-slate-500 block mb-1">Tables</span>
+                  <span className="text-sm">{showRestoreModal.tables.join(', ')}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-6">
+              <div className="flex items-start gap-3">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-amber-800 text-sm">
+                  Restoring with overwrite will delete existing data in the selected tables.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
               <button
                 onClick={() => setShowRestoreModal(null)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded"
+                className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => restoreBackup(showRestoreModal.id, false, true)}
                 disabled={restoring === showRestoreModal.id}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
               >
                 Dry Run
               </button>
               <button
                 onClick={() => restoreBackup(showRestoreModal.id, true, false)}
                 disabled={restoring === showRestoreModal.id}
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
               >
-                {restoring === showRestoreModal.id ? 'Restoring...' : 'Restore (Overwrite)'}
+                {restoring === showRestoreModal.id ? 'Restoring...' : 'Restore'}
               </button>
             </div>
           </div>
@@ -536,72 +659,77 @@ export default function BackupPage() {
 
       {/* Config Modal */}
       {showConfigModal && config && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold mb-4">Backup Settings</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4 animate-slide-up">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Cog6ToothIcon className="w-6 h-6 text-slate-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-900">Backup Settings</h3>
+            </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-gray-700">Auto Backup</label>
+            <div className="space-y-4 mb-6">
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                <label className="text-slate-700 font-medium">Auto Backup</label>
                 <input
                   type="checkbox"
                   checked={config.autoBackup}
                   onChange={(e) => updateConfig({ autoBackup: e.target.checked })}
-                  className="rounded"
+                  className="rounded text-slate-600 w-5 h-5"
                 />
               </div>
 
-              <div>
-                <label className="text-gray-700 block mb-1">Schedule (cron)</label>
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <label className="text-slate-700 font-medium block mb-2">Schedule (cron)</label>
                 <input
                   type="text"
                   value={config.schedule}
                   onChange={(e) => setConfig({ ...config, schedule: e.target.value })}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
 
-              <div>
-                <label className="text-gray-700 block mb-1">Retention Days</label>
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <label className="text-slate-700 font-medium block mb-2">Retention Days</label>
                 <input
                   type="number"
                   value={config.retentionDays}
                   onChange={(e) => setConfig({ ...config, retentionDays: parseInt(e.target.value) })}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
 
-              <div>
-                <label className="text-gray-700 block mb-1">Max Backups</label>
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <label className="text-slate-700 font-medium block mb-2">Max Backups</label>
                 <input
                   type="number"
                   value={config.maxBackups}
                   onChange={(e) => setConfig({ ...config, maxBackups: parseInt(e.target.value) })}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500"
                 />
               </div>
 
-              <div className="flex items-center justify-between">
-                <label className="text-gray-700">Include System Logs</label>
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                <label className="text-slate-700 font-medium">Include System Logs</label>
                 <input
                   type="checkbox"
                   checked={config.includeLogs}
                   onChange={(e) => setConfig({ ...config, includeLogs: e.target.checked })}
-                  className="rounded"
+                  className="rounded text-slate-600 w-5 h-5"
                 />
               </div>
             </div>
 
-            <div className="flex gap-4 justify-end mt-6">
+            <div className="flex gap-3">
               <button
                 onClick={() => setShowConfigModal(false)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded"
+                className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => updateConfig(config)}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
+                className="flex-1 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-medium transition-colors"
               >
                 Save Changes
               </button>
@@ -609,6 +737,6 @@ export default function BackupPage() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
