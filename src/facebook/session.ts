@@ -20,6 +20,9 @@ import {
 } from '../session/sessionManager';
 import { loadSessionHealth, markSessionValid, markSessionBlocked } from '../session/sessionHealth';
 
+// Helper to replace deprecated page.waitForTimeout
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
 const BROWSER_DATA_DIR = path.resolve(process.cwd(), 'browser-data');
 
@@ -137,7 +140,7 @@ export const ensureLogin = async (context: BrowserContext): Promise<void> => {
   });
   
   // Wait for page to be interactive
-  await page.waitForTimeout(3000);
+  await sleep(3000);
 
   const loginNeeded =
     (await findFirstHandle(page, selectors.loginEmail)).handle ||
@@ -148,7 +151,7 @@ export const ensureLogin = async (context: BrowserContext): Promise<void> => {
     await fillFirstMatchingSelector(page, selectors.loginEmail, process.env.FB_EMAIL || '');
     await fillFirstMatchingSelector(page, selectors.loginPassword, process.env.FB_PASSWORD || '');
     await clickFirstMatchingSelector(page, selectors.loginButton);
-    await page.waitForTimeout(5000); // Wait for login
+    await sleep(5000); // Wait for login
     await humanDelay();
   }
 
@@ -181,7 +184,7 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
       timeout: TIMEOUTS.NAVIGATION,
     });
 
-    await page.waitForTimeout(3000);
+    await sleep(3000);
 
     const loginNeeded =
       (await findFirstHandle(page, selectors.loginEmail)).handle ||
@@ -192,7 +195,7 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
       await fillFirstMatchingSelector(page, selectors.loginEmail, process.env.FB_EMAIL || '');
       await fillFirstMatchingSelector(page, selectors.loginPassword, process.env.FB_PASSWORD || '');
       await clickFirstMatchingSelector(page, selectors.loginButton);
-      await page.waitForTimeout(5000);
+      await sleep(5000);
       await humanDelay();
     }
 

@@ -8,10 +8,93 @@ export interface ScrapedPost {
   fbPostId: string;
   authorName?: string;
   authorLink?: string;
+  authorPhoto?: string;
   text: string;
 }
 
 const MIN_TEXT_LENGTH = 30;
+
+/**
+ * Clean post text by removing Facebook UI elements
+ */
+const cleanPostText = (text: string | null | undefined): string => {
+  if (!text) return '';
+
+  // UI elements to remove (case insensitive patterns)
+  const uiPatterns = [
+    // Engagement buttons
+    /^Like$/gim,
+    /^Comment$/gim,
+    /^Share$/gim,
+    /^Reply$/gim,
+    /^Send$/gim,
+    // Time indicators
+    /^\d+[hdwmy]$/gim,  // 5d, 2h, 1w, 3m, 1y
+    /^\d+\s*(hour|hours|day|days|week|weeks|month|months|year|years)\s*ago$/gim,
+    /^Just now$/gim,
+    /^Yesterday$/gim,
+    // Translation and more
+    /^See translation$/gim,
+    /^See original$/gim,
+    /^See more$/gim,
+    /^See More$/gim,
+    /^\.\.\.more$/gim,
+    /^Translated by$/gim,
+    /See more\.\.\.$/gim,  // "See more..." at end of line
+    /ראה עוד$/gim,  // Hebrew "See more"
+    /עוד\.\.\.$/gim,  // Hebrew "more..."
+    /عرض المزيد$/gim,  // Arabic "See more"
+    // Reactions
+    /^\d+\s*comments?$/gim,
+    /^\d+\s*shares?$/gim,
+    /^\d+\s*likes?$/gim,
+    /^\d+\s*reactions?$/gim,
+    /^All comments$/gim,
+    /^Most relevant$/gim,
+    /^Newest$/gim,
+    // Write comment prompts
+    /^Write a comment\.\.\.$/gim,
+    /^Write a public comment\.\.\.$/gim,
+    // Author repeated at start (after name extraction)
+    /^Author$/gim,
+    // Group info
+    /^Group$/gim,
+    /^Public group$/gim,
+    /^Private group$/gim,
+    // Misc UI
+    /^Hide$/gim,
+    /^Report$/gim,
+    /^Save$/gim,
+    /^Copy link$/gim,
+    /^Turn on notifications$/gim,
+  ];
+
+  // Split by newlines and filter out UI elements
+  const lines = text.split('\n');
+  const cleanedLines = lines.filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+
+    // Check against all UI patterns
+    for (const pattern of uiPatterns) {
+      pattern.lastIndex = 0; // Reset regex state
+      if (pattern.test(trimmed)) {
+        return false;
+      }
+    }
+
+    // Remove lines that are just the author name repeated (single short word at start)
+    if (trimmed.length < 3) return false;
+
+    return true;
+  });
+
+  // Join and clean up extra whitespace
+  return cleanedLines
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')  // Max 2 consecutive newlines
+    .trim();
+};
 
 const generateContentHash = (text: string, authorLink?: string): string => {
   const content = `${text}|${authorLink || ''}`;
@@ -444,27 +527,59 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       logger.debug(`Could not debug container ${i + 1}: ${debugErr}`);
     }
 
-    // Extract text first (we need it for ID generation)
+    // FIRST: Click "See more" button to expand full text
+    try {
+      const seeMoreSelectors = [
+        'div[role="button"]:has-text("See more")',
+        'div[role="button"]:has-text("ראה עוד")',  // Hebrew
+        'div[role="button"]:has-text("عرض المزيد")',  // Arabic
+        'span:has-text("See more")',
+        'div[dir="auto"] span:has-text("See more")',
+        '[role="button"]:has-text("...more")',
+      ];
+
+      for (const selector of seeMoreSelectors) {
+        try {
+          const seeMoreBtn = await container.$(selector);
+          if (seeMoreBtn) {
+            await seeMoreBtn.click();
+            await new Promise(resolve => setTimeout(resolve, 500)); // Wait for expansion
+            logger.debug(`Container ${i + 1}: Clicked "See more" button`);
+            break;
+          }
+        } catch {
+          // Try next selector
+        }
+      }
+    } catch (seeMoreError) {
+      logger.debug(`Container ${i + 1}: Could not expand "See more": ${(seeMoreError as Error).message}`);
+    }
+
+    // Extract text (we need it for ID generation)
     let text = '';
 
-    // Strategy 1: Try specific text selectors
-    for (const textSelector of selectors.postTextCandidates) {
-      const textHandle = await container.$(textSelector);
-      if (textHandle) {
-        const candidate = (await textHandle.innerText())?.trim();
+    // Strategy 1: Find the main post content div (usually has data-ad-preview or dir="auto")
+    try {
+      const contentDiv = await container.$('div[data-ad-preview="message"], div[data-ad-comet-preview="message"]');
+      if (contentDiv) {
+        const candidate = (await contentDiv.innerText())?.trim();
         if (candidate && candidate.length > text.length) {
           text = candidate;
         }
       }
+    } catch {
+      // Continue to next strategy
     }
 
-    // Strategy 2: If no text found, try to find the main content div with See more
+    // Strategy 2: Try specific text selectors
     if (!text || text.length < MIN_TEXT_LENGTH) {
-      const seeMoreParent = await container.$('div:has(div[role="button"]:text-matches("See more|See More|...more"))');
-      if (seeMoreParent) {
-        const candidate = (await seeMoreParent.innerText())?.trim();
-        if (candidate && candidate.length > text.length) {
-          text = candidate.replace(/See more|See More|\.\.\.more/g, '').trim();
+      for (const textSelector of selectors.postTextCandidates) {
+        const textHandle = await container.$(textSelector);
+        if (textHandle) {
+          const candidate = (await textHandle.innerText())?.trim();
+          if (candidate && candidate.length > text.length) {
+            text = candidate;
+          }
         }
       }
     }
@@ -495,10 +610,7 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       try {
         const fullText = await container.innerText();
         // Clean up the text - remove common UI elements
-        const cleaned = fullText
-          ?.replace(/Like|Comment|Share|Reply|See more|See More|\d+ comments?|\d+ shares?/gi, '')
-          .replace(/\n+/g, '\n')
-          .trim();
+        const cleaned = cleanPostText(fullText);
         if (cleaned && cleaned.length > text.length && cleaned.length >= MIN_TEXT_LENGTH) {
           text = cleaned;
         }
@@ -507,6 +619,9 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
         logger.debug(`Container ${i + 1}: Container detached during full text extraction`);
       }
     }
+
+    // Always clean the final text to remove any UI elements
+    text = cleanPostText(text);
 
     if (!text || text.length < MIN_TEXT_LENGTH) {
       logger.warn(`Container ${i + 1}: Text too short or missing (${text.length} chars)`);
@@ -586,12 +701,78 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
       }
     }
 
-    logger.debug(`Container ${i + 1}: Author: ${authorName || 'Unknown'}, Link: ${authorLink || 'None'}`);
+    // Extract author photo with multiple strategies
+    let authorPhoto: string | undefined;
+    try {
+      // Strategy 1: Find profile photo via aria-label link (most reliable)
+      const photoStrategies = [
+        'a[aria-label] img[src*="scontent"]',
+        'a[aria-label] image[*|href*="scontent"]',
+        'a[href*="facebook.com/"] img[src*="scontent"]',
+        'svg image[*|href*="scontent"]',
+        'img[src*="scontent"][alt]',
+        'a[role="link"] img[src*="fbcdn"]',
+      ];
+
+      for (const selector of photoStrategies) {
+        if (authorPhoto) break;
+        try {
+          const photoEl = await container.$(selector);
+          if (photoEl) {
+            // Try both src and xlink:href
+            let src = await photoEl.getAttribute('src');
+            if (!src) {
+              src = await photoEl.getAttribute('href');
+            }
+            if (!src) {
+              src = await photoEl.evaluate((el) => {
+                return el.getAttribute('xlink:href') ||
+                       el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                       (el as HTMLImageElement).src;
+              });
+            }
+            if (src && (src.includes('scontent') || src.includes('fbcdn'))) {
+              authorPhoto = src;
+              logger.debug(`Container ${i + 1}: Found photo with selector: ${selector}`);
+            }
+          }
+        } catch {
+          // Try next selector
+        }
+      }
+
+      // Strategy 2: Use page.evaluate for deeper search
+      if (!authorPhoto) {
+        authorPhoto = await container.evaluate((el) => {
+          // Find images in the header area (first 200px)
+          const images = el.querySelectorAll('img, image');
+          for (const img of images) {
+            const rect = img.getBoundingClientRect();
+            const containerRect = el.getBoundingClientRect();
+            // Only consider images near the top (profile photos)
+            if (rect.top - containerRect.top < 100) {
+              const src = img.getAttribute('src') ||
+                         img.getAttribute('href') ||
+                         img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+              if (src && (src.includes('scontent') || src.includes('fbcdn'))) {
+                return src;
+              }
+            }
+          }
+          return undefined;
+        });
+      }
+    } catch (e) {
+      logger.debug(`Container ${i + 1}: Photo extraction failed: ${(e as Error).message}`);
+    }
+
+    logger.debug(`Container ${i + 1}: Author: ${authorName || 'Unknown'}, Link: ${authorLink || 'None'}, Photo: ${authorPhoto ? 'Yes' : 'No'}`);
 
     posts.push({
       fbPostId: postId,
       authorName,
       authorLink,
+      authorPhoto,
       text,
     });
 

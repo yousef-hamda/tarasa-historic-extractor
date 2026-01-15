@@ -11,15 +11,13 @@
 
 import { Browser, BrowserContext } from 'playwright';
 import logger from '../utils/logger';
-import { humanDelay } from '../utils/delays';
 import { extractPosts } from './extractors';
 import { createFacebookContext, saveCookies, getCookieHealth } from '../facebook/session';
-import { TIMEOUTS } from '../config/constants';
 import { NormalizedPost } from './apifyScraper';
+import { browserPool } from '../utils/browserPool';
 
 // Maximum retries for browser operations
 const MAX_BROWSER_RETRIES = 2;
-const RETRY_DELAY_MS = 5000;
 
 /**
  * Check if we have a valid Facebook session before attempting to scrape
@@ -54,6 +52,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /**
  * Scrape a single Facebook group using Playwright
+ * OPTIMIZED for faster performance with reduced wait times
  *
  * @param groupId - The Facebook group ID to scrape
  * @returns Array of normalized posts
@@ -61,6 +60,17 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export const scrapeGroupWithPlaywright = async (groupId: string): Promise<NormalizedPost[]> => {
   const groupUrl = `https://www.facebook.com/groups/${groupId}`;
   logger.info(`[Playwright] Starting scrape for group ${groupId}`);
+
+  // Use browser pool to limit concurrent instances
+  return browserPool.execute(async () => {
+    return scrapeGroupInternal(groupId, groupUrl);
+  });
+};
+
+/**
+ * Internal scraping implementation (called within browser pool)
+ */
+const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<NormalizedPost[]> => {
 
   // Pre-check: verify we have a valid session
   const hasSession = await hasValidFacebookSession();
@@ -84,18 +94,40 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
       context = ctx.context;
 
       const page = await context.newPage();
-      page.setDefaultTimeout(TIMEOUTS.PAGE_DEFAULT);
+      // OPTIMIZED: Use shorter default timeout (15s instead of 90s)
+      page.setDefaultTimeout(15000);
 
       // Navigate to group with error handling
       try {
-        await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
+        await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         logger.info(`[Playwright] Navigated to ${groupUrl}`);
       } catch (navError) {
         throw new Error(`Navigation failed: ${(navError as Error).message}`);
       }
 
-      // Check if we need to join the group
-      await humanDelay(3000, 5000);
+      // Wait for feed to appear FIRST (most important element)
+      logger.info('[Playwright] Waiting for feed container...');
+      try {
+        await page.waitForSelector('div[role="feed"]', { timeout: 20000 });
+        logger.info('[Playwright] Feed container found');
+      } catch {
+        // Try waiting for any article as fallback
+        try {
+          await page.waitForSelector('div[role="article"]', { timeout: 10000 });
+          logger.info('[Playwright] Article found (feed selector failed)');
+        } catch {
+          logger.warn('[Playwright] No feed or articles found, continuing anyway...');
+        }
+      }
+
+      // Quick popup dismissal (non-blocking, don't wait)
+      page.$$('[aria-label="Close"], button:has-text("Not now")').then(async (buttons) => {
+        for (const btn of buttons.slice(0, 2)) {
+          btn.click().catch((e) => logger.debug(`[Playwright] Popup dismiss click failed: ${e.message}`));
+        }
+      }).catch((e) => logger.debug(`[Playwright] Popup dismissal skipped: ${e.message}`));
+
+      // Check if we need to join the group (quick check)
       const needsToJoin = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('div[role="button"], span[role="button"]'));
         return buttons.some((el) => el.textContent?.includes('Join group'));
@@ -104,11 +136,11 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
       if (needsToJoin) {
         logger.info('[Playwright] Not a member of this group. Attempting to join...');
         try {
-          await page.click('div[role="button"]:has-text("Join group")');
-          await humanDelay(3000, 5000);
+          await page.click('div[role="button"]:has-text("Join group")', { timeout: 5000 });
+          await sleep(2000);
           logger.info('[Playwright] Join request submitted');
-          await page.reload({ waitUntil: 'domcontentloaded' });
-          await humanDelay(5000, 7000);
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+          await sleep(3000);
         } catch (joinError) {
           logger.warn(`[Playwright] Could not auto-join group: ${joinError}`);
           await saveCookies(context);
@@ -117,76 +149,80 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
         }
       }
 
-      // Click on Discussion tab if visible
+      // Extract group name and update cache
       try {
-        const discussionTab = await page.$('a:has-text("Discussion"), span:has-text("Discussion")');
-        if (discussionTab) {
-          await discussionTab.click();
-          logger.info('[Playwright] Clicked Discussion tab');
-          await humanDelay(3000, 5000);
+        const groupName = await page.evaluate(() => {
+          // Try multiple selectors for group name
+          const selectors = [
+            'h1 a[href*="/groups/"]',
+            'h1 span',
+            'div[role="main"] h1',
+            'a[aria-label][href*="/groups/"]',
+          ];
+          for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (el && el.textContent) {
+              const name = el.textContent.trim();
+              if (name.length > 2 && name.length < 100) {
+                return name;
+              }
+            }
+          }
+          // Fallback to page title
+          const title = document.title;
+          if (title && !title.includes('Facebook')) {
+            return title.split('|')[0].trim();
+          }
+          return null;
+        });
+
+        if (groupName) {
+          logger.info(`[Playwright] Group name: ${groupName}`);
+          // Update group info in database
+          const { updateGroupCache } = await import('./groupDetector');
+          await updateGroupCache(groupId, { groupName });
         }
-      } catch (tabError) {
-        logger.debug(`[Playwright] Discussion tab click skipped: ${(tabError as Error).message}`);
+      } catch (e) {
+        logger.debug(`[Playwright] Could not extract group name: ${(e as Error).message}`);
       }
 
-      // Wait for feed to appear
-      logger.info('[Playwright] Waiting for feed container...');
-      try {
-        await page.waitForSelector('div[role="feed"]', { timeout: 15000 });
-        logger.info('[Playwright] Feed container found');
-      } catch {
-        logger.warn('[Playwright] Feed container not found, continuing anyway...');
-      }
-
-      // Dismiss any popups or overlays
-      try {
-        const closeButtons = await page.$$('[aria-label="Close"], [aria-label*="close"], button:has-text("Not now")');
-        for (const btn of closeButtons.slice(0, 2)) {
-          await btn.click().catch(() => {});
-          await humanDelay(500, 1000);
-        }
-      } catch {
-        // No popups to dismiss
-      }
-
-      // Scroll aggressively to load posts
+      // OPTIMIZED: Faster scrolling with larger increments and shorter waits
       logger.info('[Playwright] Scrolling to load posts...');
-      const scrollIterations = 8; // More scrolls to load more content
+      const scrollIterations = 6;
       for (let i = 0; i < scrollIterations; i++) {
-        await page.evaluate('window.scrollBy(0, 1000)');
-        await humanDelay(1000, 1500);
+        await page.evaluate('window.scrollBy(0, 1500)');
+        await sleep(800); // Fixed short delay instead of random
 
-        // Check how many articles we have loaded
-        const articleCount = await page.evaluate(() =>
-          document.querySelectorAll('div[role="article"]').length
-        );
-
+        // Check article count every other scroll
         if (i % 2 === 0) {
-          logger.info(`[Playwright] Scroll ${i + 1}/${scrollIterations}, articles loaded: ${articleCount}`);
-        }
+          const articleCount = await page.evaluate(() =>
+            document.querySelectorAll('div[role="article"]').length
+          );
+          logger.info(`[Playwright] Scroll ${i + 1}/${scrollIterations}, articles: ${articleCount}`);
 
-        // If we have enough articles, we can stop scrolling
-        if (articleCount >= 20) {
-          logger.info('[Playwright] Sufficient articles loaded, stopping scroll');
-          break;
+          // If we have enough articles, stop scrolling
+          if (articleCount >= 15) {
+            logger.info('[Playwright] Sufficient articles loaded, stopping scroll');
+            break;
+          }
         }
       }
 
-      // Wait for content to settle
-      await humanDelay(2000, 3000);
+      // OPTIMIZED: Reduced settle time from 2-3s to 1s
+      await sleep(1000);
 
       // Extract posts
       let posts = await extractPosts(page);
       logger.info(`[Playwright] First extraction: ${posts.length} posts`);
 
-      // If few posts found, try scrolling more and re-extracting
-      if (posts.length < 5) {
-        logger.info('[Playwright] Few posts found, scrolling more...');
-        for (let i = 0; i < 4; i++) {
-          await page.evaluate('window.scrollBy(0, 1500)');
-          await humanDelay(1500, 2000);
+      // If few posts found, quick extra scroll
+      if (posts.length < 3) {
+        logger.info('[Playwright] Few posts, quick additional scroll...');
+        for (let i = 0; i < 3; i++) {
+          await page.evaluate('window.scrollBy(0, 2000)');
+          await sleep(600);
         }
-        await humanDelay(2000, 3000);
+        await sleep(800);
         posts = await extractPosts(page);
         logger.info(`[Playwright] Second extraction: ${posts.length} posts`);
       }
@@ -199,11 +235,11 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
         groupId: groupId,
         authorName: post.authorName || null,
         authorLink: post.authorLink || null,
-        authorPhoto: null, // Profile photos not extracted by Playwright scraper
+        authorPhoto: post.authorPhoto || null,
         text: post.text,
       }));
 
-      // Save cookies (if context is still valid) and close browser on success
+      // Save cookies and close browser
       try {
         if (context) {
           await saveCookies(context);
@@ -219,7 +255,7 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
       lastError = error as Error;
       logger.error(`[Playwright] Attempt ${attempt} failed: ${lastError.message}`);
 
-      // Try to save cookies before closing (they may still be valid)
+      // Try to save cookies before closing
       try {
         if (context) {
           await saveCookies(context);
@@ -231,10 +267,10 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
       // Clean up browser on error
       await safeCloseBrowser(browser);
 
-      // Wait before retrying
+      // OPTIMIZED: Reduced retry delay from 5s to 3s
       if (attempt < MAX_BROWSER_RETRIES) {
-        logger.info(`[Playwright] Waiting ${RETRY_DELAY_MS}ms before retry...`);
-        await sleep(RETRY_DELAY_MS);
+        logger.info('[Playwright] Waiting 3s before retry...');
+        await sleep(3000);
       }
     }
   }

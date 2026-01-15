@@ -8,3 +8,24 @@ build
 .next
 *.log
 src/config/cookies.json
+
+# Browser profile data (created by Facebook login)
+browser-data/
+!browser-data/.gitkeep
+
+# Runtime state files
+messaging-state.json
+session-health.json
+
+# Logs
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

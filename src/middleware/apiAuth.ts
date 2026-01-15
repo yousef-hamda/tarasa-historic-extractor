@@ -1,18 +1,33 @@
 import { Request, Response, NextFunction } from 'express';
 import logger from '../utils/logger';
 
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
 /**
  * Middleware to protect trigger endpoints with API key authentication.
  * The API key should be passed in the X-API-Key header.
- * Set the API_KEY environment variable to enable authentication.
- * If API_KEY is not set, authentication is bypassed (for development).
+ *
+ * SECURITY:
+ * - In production: API_KEY is REQUIRED - requests will fail if not configured
+ * - In development: API_KEY is optional but strongly recommended
  */
 export const apiKeyAuth = (req: Request, res: Response, next: NextFunction) => {
   const apiKey = process.env.API_KEY;
 
-  // If no API key is configured, skip authentication (development mode)
+  // In production, API key is mandatory
   if (!apiKey) {
-    return next();
+    if (isDevelopment) {
+      // Allow in development but log a warning
+      logger.warn(`[Security] API_KEY not configured - endpoint unprotected: ${req.method} ${req.path}`);
+      return next();
+    } else {
+      // Block in production
+      logger.error(`[Security] API_KEY not configured in production! Blocking request to ${req.path}`);
+      return res.status(500).json({
+        error: 'Server Configuration Error',
+        message: 'API authentication not configured'
+      });
+    }
   }
 
   const providedKey = req.headers['x-api-key'];
@@ -26,6 +41,20 @@ export const apiKeyAuth = (req: Request, res: Response, next: NextFunction) => {
     logger.warn(`API auth failed: Invalid API key for ${req.method} ${req.path}`);
     return res.status(403).json({ error: 'Forbidden', message: 'Invalid API key' });
   }
+
+  next();
+};
+
+/**
+ * Middleware for optional API key authentication (allows both authenticated and public access)
+ * Use for endpoints that should work without auth but provide extra features with auth
+ */
+export const optionalApiKeyAuth = (req: Request, res: Response, next: NextFunction) => {
+  const apiKey = process.env.API_KEY;
+  const providedKey = req.headers['x-api-key'];
+
+  // Mark request as authenticated if valid key provided
+  (req as any).isAuthenticated = apiKey && providedKey === apiKey;
 
   next();
 };

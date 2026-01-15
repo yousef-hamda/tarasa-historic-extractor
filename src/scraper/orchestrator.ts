@@ -5,12 +5,18 @@
  * - Group type (public/private)
  * - Session health
  * - Previous success/failure patterns
+ *
+ * Method priority (2025 optimized):
+ * 1. MBasic - Plain HTML, fastest, hard to detect
+ * 2. Apify - Reliable for public groups
+ * 3. Playwright - Fallback for private groups
  */
 
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { isApifyConfigured, scrapeGroupWithApify, NormalizedPost } from './apifyScraper';
+import { scrapeGroupWithMBasic, isMBasicAvailable } from './mbasicScraper';
 import { scrapeGroupWithPlaywright } from './playwrightScraper';
 import { isSessionValid } from '../session/sessionManager';
 import { loadSessionHealth } from '../session/sessionHealth';
@@ -96,8 +102,44 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
   try {
     let posts: NormalizedPost[] = [];
 
-    // Step 1: Try Apify first (works for public groups, fast and reliable)
-    if (isApifyConfigured()) {
+    // Check cached group info to optimize method selection
+    const cachedInfo = await detectGroupType(groupId);
+    const isKnownPrivate = cachedInfo.groupType === 'private';
+    const knownWorkingMethod = cachedInfo.accessMethod;
+
+    // If we know the group is private, skip MBasic and Apify (they won't work)
+    if (isKnownPrivate) {
+      logger.info(`[Orchestrator] Group ${groupId} is known private, skipping MBasic and Apify`);
+    }
+
+    // Step 1: Try MBasic first (fastest, lightweight HTML, hard to detect)
+    // Skip for known private groups - MBasic doesn't work with auth sessions
+    if (!isKnownPrivate) {
+      const mbasicAvailable = await isMBasicAvailable();
+      if (mbasicAvailable) {
+        try {
+          logger.info(`[Orchestrator] Trying MBasic for group ${groupId}`);
+          posts = await scrapeGroupWithMBasic(groupId);
+
+          if (posts.length > 0) {
+            result.method = 'mbasic';
+            logger.info(`[Orchestrator] MBasic SUCCESS for ${groupId}: ${posts.length} posts`);
+            await updateGroupCache(groupId, { accessMethod: 'mbasic', isAccessible: true });
+          } else {
+            logger.info(`[Orchestrator] MBasic returned 0 posts for ${groupId}`);
+          }
+        } catch (mbasicError) {
+          logger.warn(`[Orchestrator] MBasic failed for ${groupId}: ${(mbasicError as Error).message}`);
+          // Continue to Apify
+        }
+      } else {
+        logger.info(`[Orchestrator] MBasic not available (no valid session)`);
+      }
+    }
+
+    // Step 2: Try Apify (works for public groups, reliable)
+    // Skip for known private groups - Apify cannot access private groups
+    if (posts.length === 0 && !isKnownPrivate && isApifyConfigured()) {
       try {
         logger.info(`[Orchestrator] Trying Apify for group ${groupId}`);
         posts = await scrapeGroupWithApify(groupId);
@@ -108,6 +150,8 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
           await updateGroupCache(groupId, { groupType: 'public', accessMethod: 'apify', isAccessible: true });
         } else {
           logger.info(`[Orchestrator] Apify returned 0 posts for ${groupId} (likely private group)`);
+          // Mark as private so we skip these methods next time
+          await updateGroupCache(groupId, { groupType: 'private' });
         }
       } catch (apifyError) {
         logger.warn(`[Orchestrator] Apify failed for ${groupId}: ${(apifyError as Error).message}`);
@@ -115,7 +159,7 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
       }
     }
 
-    // Step 2: If Apify didn't get posts, try Playwright (works for all groups with auth)
+    // Step 3: Try Playwright as fallback (works for all groups with auth)
     if (posts.length === 0) {
       const sessionValid = await isSessionValid();
 
@@ -130,7 +174,9 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
             await updateGroupCache(groupId, { groupType: 'private', accessMethod: 'playwright', isAccessible: true });
           } else {
             logger.warn(`[Orchestrator] Playwright returned 0 posts for ${groupId}`);
-            result.errorMessage = 'No posts found - user may not be a member of this group';
+            result.errorMessage = 'No new posts found in feed';
+            // Still mark as accessible since we successfully loaded the page
+            await updateGroupCache(groupId, { groupType: 'private', accessMethod: 'playwright', isAccessible: true });
           }
         } catch (playwrightError) {
           const errorMsg = (playwrightError as Error).message;
@@ -167,9 +213,15 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
       logger.info(`[Orchestrator] Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method}`);
     } else {
       if (!result.errorMessage) {
-        result.errorMessage = 'No posts found';
+        result.errorMessage = 'No new posts found';
       }
-      await markGroupError(groupId, result.errorMessage);
+      // Don't mark as inaccessible just because no posts were found
+      // The group might be empty or already fully scraped
+      // Only log the warning - keep the group accessible
+      await updateGroupCache(groupId, {
+        errorMessage: result.errorMessage,
+        // Keep isAccessible: true - 0 posts doesn't mean inaccessible
+      });
       logger.warn(`[Orchestrator] Group ${groupId}: ${result.errorMessage}`);
     }
 
@@ -286,6 +338,7 @@ export const getScrapingStatus = async (): Promise<{
   }>;
   sessionValid: boolean;
   apifyConfigured: boolean;
+  mbasicAvailable: boolean;
 }> => {
   const groupIds = getGroupIds();
   const groups = [];
@@ -307,5 +360,6 @@ export const getScrapingStatus = async (): Promise<{
     groups,
     sessionValid: await isSessionValid(),
     apifyConfigured: isApifyConfigured(),
+    mbasicAvailable: await isMBasicAvailable(),
   };
 };

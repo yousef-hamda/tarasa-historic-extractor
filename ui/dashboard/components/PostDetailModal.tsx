@@ -77,8 +77,8 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
             <ChatBubbleLeftRightIcon className="h-4 w-4" />
             Post Content
           </h5>
-          <div className="p-4 bg-white border border-gray-200 rounded-lg max-h-64 overflow-y-auto">
-            <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+          <div className="p-4 bg-white border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+            <p className="text-gray-800 whitespace-pre-wrap leading-relaxed" dir="auto">
               {post.text}
             </p>
           </div>

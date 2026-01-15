@@ -8,7 +8,6 @@ import { Request, Response, Router } from 'express';
 import { getSessionStatus, checkAndUpdateSession } from '../session/sessionManager';
 import { loadSessionHealth } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
-import { apiKeyAuth } from '../middleware/apiAuth';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
@@ -44,7 +43,6 @@ router.get('/api/session/status', async (_req: Request, res: Response) => {
  */
 router.post(
   '/api/session/validate',
-  apiKeyAuth,
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
     try {

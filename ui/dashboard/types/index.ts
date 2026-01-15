@@ -114,7 +114,7 @@ export interface GroupInfo {
   groupId: string;
   groupType: 'public' | 'private' | 'unknown';
   groupName?: string;
-  accessMethod: 'apify' | 'playwright' | 'none';
+  accessMethod: 'mbasic' | 'apify' | 'playwright' | 'none';
   isAccessible: boolean;
   lastScraped: string | null;
   errorMessage?: string;

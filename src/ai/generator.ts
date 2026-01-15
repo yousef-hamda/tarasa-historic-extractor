@@ -5,21 +5,30 @@ import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
 import { normalizeMessageContent, validateGeneratedMessage } from '../utils/openaiHelpers';
 
-const TEMPLATE_PROMPT = `أنت تكتب رسائل قصيرة ودودة بالعربية إلى أشخاص على فيسبوك شاركوا قصة أو ذكرى تاريخية.
+const TEMPLATE_PROMPT = `You write short, friendly messages to people on Facebook who shared a historical story or memory.
 
-القواعد:
-1) خاطِب الشخص باسمه الأول بلطف وبلهجة طبيعية.
-2) امدح ما شاركه بشكل محدد (إشارة إلى القصة أو ذكرياته).
-3) عرّف باختصار بمنصة تراسا: "منصة تراسا مخصصة لحفظ التاريخ المجتمعي والذكريات الشخصية للأجيال القادمة".
-4) ادعُه لمشاركة قصته كاملة عبر الرابط المرفق، واجعل الرابط جزءاً طبيعياً من النص.
-5) اجعل الرسالة إنسانية وغير روبوتية، متنوعة الصياغة، وبطول 3-5 جمل قصيرة.
-6) لا تستخدم رموزاً تعبيرية مكررة أو صيغ رسمية مفرطة.
+CRITICAL: You MUST write the message in the SAME LANGUAGE as the original post:
+- If the post is in Hebrew (עברית) → write the message in Hebrew
+- If the post is in Arabic (العربية) → write the message in Arabic
+- If the post is in English → write the message in English
 
-أرسل فقط نص الرسالة النهائي باللغة العربية متضمناً الرابط المقدم.`;
+Rules:
+1) Address the person by their first name warmly and naturally.
+2) Compliment what they shared specifically (reference their story or memories).
+3) Briefly introduce Tarasa platform:
+   - Hebrew: "פלטפורמת טראסא מוקדשת לשימור ההיסטוריה הקהילתית והזכרונות האישיים לדורות הבאים"
+   - Arabic: "منصة تراسا مخصصة لحفظ التاريخ المجتمعي والذكريات الشخصية للأجيال القادمة"
+   - English: "Tarasa platform is dedicated to preserving community history and personal memories for future generations"
+4) Invite them to share their full story via the provided link, making the link a natural part of the text.
+5) Keep the message human and not robotic, varied in phrasing, 3-5 short sentences.
+6) Don't use repetitive emojis or overly formal phrases.
+
+Return ONLY the final message text in the SAME LANGUAGE as the original post, including the provided link.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const model = process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini';
-const MAX_BATCH = Number(process.env.GENERATOR_BATCH_SIZE ?? '10');
+// Increased default batch size for better throughput (was 10)
+const MAX_BATCH = Math.min(Number(process.env.GENERATOR_BATCH_SIZE ?? '20'), 50);
 
 const buildLink = (postId: number, text: string) => {
   const base = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
@@ -118,3 +127,17 @@ export const generateMessages = async (): Promise<void> => {
     await logSystemEvent('message', `Generated ${generated} personalized messages`);
   }
 };
+
+// Execute when run directly via npm run generate
+if (require.main === module) {
+  require('dotenv/config');
+  generateMessages()
+    .then(() => {
+      logger.info('Message generation completed');
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error(`Message generation failed: ${error.message}`);
+      process.exit(1);
+    });
+}

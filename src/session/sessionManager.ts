@@ -412,6 +412,68 @@ export const isSessionValid = async (): Promise<boolean> => {
 };
 
 /**
+ * Initialize session on startup - validates and syncs session state
+ * Call this before starting cron jobs to ensure session is ready
+ */
+export const initializeSession = async (): Promise<{ ready: boolean; message: string }> => {
+  logger.info('Initializing session on startup...');
+
+  try {
+    // Load file-based session health
+    const fileHealth = await loadSessionHealth();
+
+    // Get database session state
+    const dbState = await getSessionStateFromDb();
+
+    // Check for desync between file and DB
+    if (dbState && fileHealth.status !== dbState.status) {
+      logger.warn(`Session state desync detected: file=${fileHealth.status}, db=${dbState.status}`);
+
+      // Trust the most recent valid state
+      if (dbState.status === 'valid' && fileHealth.status !== 'valid') {
+        // DB says valid but file doesn't - verify with actual check
+        logger.info('Verifying session validity...');
+        await checkAndUpdateSession();
+      }
+    }
+
+    // Reload after potential sync
+    const currentHealth = await loadSessionHealth();
+
+    if (currentHealth.status === 'valid') {
+      logger.info(`Session ready: user ${currentHealth.userId || 'unknown'}`);
+      return { ready: true, message: `Session valid for user ${currentHealth.userId}` };
+    }
+
+    if (currentHealth.status === 'blocked') {
+      logger.error('Session is blocked - manual intervention required');
+      await logSystemEvent('auth', 'Session blocked on startup - requires manual login');
+      return { ready: false, message: `Session blocked: ${currentHealth.errorMessage}` };
+    }
+
+    // Session not valid - check if it's just expired/unknown and needs refresh
+    if (currentHealth.status === 'expired' || currentHealth.status === 'unknown') {
+      logger.info('Session expired or unknown - attempting validation...');
+      const newHealth = await checkAndUpdateSession();
+
+      if (newHealth.status === 'valid') {
+        logger.info('Session validated successfully');
+        return { ready: true, message: 'Session validated on startup' };
+      }
+    }
+
+    // Session invalid or needs login
+    logger.warn(`Session not ready: ${currentHealth.status}`);
+    return { ready: false, message: `Session status: ${currentHealth.status}` };
+
+  } catch (error) {
+    const message = (error as Error).message;
+    logger.error(`Session initialization failed: ${message}`);
+    return { ready: false, message: `Initialization error: ${message}` };
+  }
+};
+
+/**
  * Get session status summary
  */
 export const getSessionStatus = async (): Promise<{
