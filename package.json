@@ -1,6 +1,6 @@
 {
   "name": "tarasa-historic-extractor",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "private": true,
   "workspaces": [
     ".",
@@ -20,6 +20,10 @@
     "smoke": "ts-node src/scripts/smoke-tests.ts",
     "test": "bash src/scripts/run-tests.sh",
     "test:full": "API_KEY=$API_KEY bash src/scripts/run-tests.sh",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:unit:coverage": "vitest run --coverage",
+    "test:unit:ui": "vitest --ui",
     "fb:login": "ts-node src/scripts/facebook-login.ts",
     "session:check": "ts-node src/scripts/check-session.ts",
     "dashboard:dev": "npm run --workspace=tarasa-dashboard dev",
@@ -30,30 +34,42 @@
     "@heroicons/react": "^2.2.0",
     "@playwright/mcp": "^0.0.54",
     "@prisma/client": "^6.19.0",
+    "@sentry/node": "^10.34.0",
     "apify-client": "^2.20.0",
     "async": "^3.2.6",
     "axios": "^1.13.2",
+    "bullmq": "^5.66.5",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.9.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^7.0.12",
     "openai": "^4.104.0",
     "playwright": "^1.56.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "rate-limiter-flexible": "^9.0.1",
     "recharts": "^3.6.0",
     "stack-trace": "^1.0.0-pre2",
     "winston": "^3.13.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
+    "@types/ioredis": "^4.28.10",
     "@types/node": "^20.19.25",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^7.0.3",
     "@types/ws": "^8.5.10",
+    "@vitest/coverage-v8": "^4.0.17",
     "prisma": "^6.19.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   }
 }

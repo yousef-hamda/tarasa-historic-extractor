@@ -15,6 +15,13 @@ class DebugEventEmitter extends EventEmitter {
   constructor() {
     super();
     this.setMaxListeners(50);
+
+    // IMPORTANT: Add a default 'error' listener to prevent Node.js from throwing
+    // when emitting 'error' events with no subscribers.
+    // Without this, emitting 'error' with no listeners causes an uncaught exception.
+    this.on('error', () => {
+      // Silently consume 'error' events - they're already logged elsewhere
+    });
   }
 
   /**

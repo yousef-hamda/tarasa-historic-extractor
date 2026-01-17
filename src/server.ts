@@ -19,6 +19,12 @@ import { errorHandler } from './middleware/errorHandler';
 import { apiRateLimiter } from './middleware/rateLimiter';
 import { disconnectDatabase } from './database/prisma';
 
+// New security and monitoring imports
+import { initSentry, captureException, isSentryEnabled } from './config/sentry';
+import { securityHeaders, advancedRateLimiter, sanitizeRequest, getCorsOptions } from './middleware/security';
+import { closeRedisConnection, isRedisConnected } from './config/redis';
+import { closeAllQueues } from './queues/jobQueue';
+
 // Debug system imports
 import {
   initializeWebSocket,
@@ -28,8 +34,17 @@ import {
   trackError
 } from './debug';
 
+// Circuit breaker reset on startup
+import { resetAllCircuitBreakers, getCircuitBreakerStatus } from './utils/circuitBreaker';
+
 // Validate environment variables before starting
 validateEnv();
+
+// Initialize Sentry for error tracking (before anything else)
+initSentry();
+if (isSentryEnabled()) {
+  logger.info('Sentry error tracking initialized');
+}
 
 // Setup global error handlers for debug system
 setupGlobalErrorHandlers();
@@ -43,13 +58,25 @@ const httpServer = createServer(app);
 const wss = initializeWebSocket(httpServer);
 logger.info('Debug WebSocket server initialized');
 
-const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001').split(',').map((o) => o.trim());
-app.use(cors({ origin: allowedOrigins, credentials: true }));
-app.use(express.json());
+// Security headers (Helmet.js) - must be first
+app.use(securityHeaders);
+
+// CORS configuration with dynamic origin validation
+app.use(cors(getCorsOptions()));
+
+// Body parsing with size limits
+app.use(express.json({ limit: '1mb' }));
+
+// Request sanitization (prototype pollution protection)
+app.use(sanitizeRequest);
 
 // Add request tracking middleware for debugging (before rate limiter)
 app.use(requestTrackerMiddleware);
 
+// Advanced rate limiting with Redis backend (falls back to memory if Redis unavailable)
+app.use(advancedRateLimiter);
+
+// Legacy rate limiter as backup
 app.use(apiRateLimiter);
 
 // API Routes
@@ -77,6 +104,11 @@ httpServer.listen(port, () => {
   logger.info(`Debug WebSocket available at ws://localhost:${port}/debug/ws`);
   logger.info(`Debug Dashboard API at http://localhost:${port}/api/debug/overview`);
   logger.info(`Backup API at http://localhost:${port}/api/backup/list`);
+
+  // Reset circuit breakers on startup - clears any stale OPEN states
+  resetAllCircuitBreakers();
+  const cbStatus = getCircuitBreakerStatus();
+  logger.info(`Circuit breakers reset: Apify=${cbStatus.apify.state}, OpenAI=${cbStatus.openai.state}`);
 });
 
 // Graceful shutdown handling
@@ -109,6 +141,14 @@ const gracefulShutdown = async (signal: string) => {
     logger.info('HTTP server closed');
 
     try {
+      // Close BullMQ queues
+      await closeAllQueues();
+      logger.info('Job queues closed');
+
+      // Close Redis connection
+      await closeRedisConnection();
+      logger.info('Redis connection closed');
+
       // Disconnect from database
       await disconnectDatabase();
       logger.info('Database connection closed');
@@ -116,6 +156,7 @@ const gracefulShutdown = async (signal: string) => {
       logger.info('Graceful shutdown completed');
       process.exit(0);
     } catch (error) {
+      captureException(error as Error);
       logger.error(`Error during shutdown: ${(error as Error).message}`);
       process.exit(1);
     }
@@ -133,6 +174,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
+  captureException(error);
   trackError(error, 'uncaught', { fatal: true });
   logger.error(`Uncaught Exception: ${error.message}`);
   logger.error(error.stack || '');
@@ -142,6 +184,7 @@ process.on('uncaughtException', (error) => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
+  captureException(error);
   trackError(error, 'unhandled', { type: 'promise_rejection' });
   logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
   gracefulShutdown('unhandledRejection');

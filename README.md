@@ -67,7 +67,9 @@ tarasa-historic-extractor/
 │   │   ├── posts.ts              # Posts API endpoints
 │   │   ├── messages.ts           # Messages API endpoints
 │   │   ├── logs.ts               # System logs endpoint
-│   │   └── health.ts             # Health check endpoint
+│   │   ├── health.ts             # Health check endpoint
+│   │   ├── session.ts            # Session status & renewal endpoints
+│   │   └── debug.ts              # Debug & diagnostics endpoints
 │   ├── scraper/
 │   │   ├── scraper.ts            # Facebook group scraper
 │   │   └── extractors.ts         # Post data extraction logic
@@ -92,7 +94,8 @@ tarasa-historic-extractor/
 │   │   ├── selfHealing.ts        # Auto-recovery engine
 │   │   ├── websocket.ts          # Real-time WebSocket server
 │   │   ├── queryProfiler.ts      # Database query profiling
-│   │   └── eventEmitter.ts       # Central event bus
+│   │   ├── eventEmitter.ts       # Central event bus
+│   │   └── diagnostics.ts        # Comprehensive system diagnostics with auto-fix
 │   ├── backup/
 │   │   ├── index.ts              # Backup module exports
 │   │   └── backupManager.ts      # Full/incremental backup system
@@ -642,10 +645,26 @@ Chronological event log showing:
 Useful for debugging and monitoring system health.
 
 ### Settings Page
-View configuration:
+View and manage configuration:
+
+**Configuration Cards:**
 - Configured Facebook groups
 - Daily message limit
-- System status
+- Tarasa submission URL
+- Email alerts status
+
+**Facebook Session Management:**
+- Real-time session status (Active/Expired with color indicator)
+- User details: ID, Last Checked, Private Groups access
+- One-click **"Renew Session"** button
+- Automatic browser-based login refresh
+- Helpful error messages for 2FA/captcha issues
+
+**Manual Triggers:**
+- Trigger Scrape
+- Trigger Classification
+- Trigger Messages
+- All require API key authentication
 
 ### Debug Console (/debug)
 Advanced real-time system monitoring with visual status indicators:
@@ -686,6 +705,24 @@ The Debug Console features a prominent status indicator at the top that shows sy
   - Closed (green): Normal operation
   - Open (red): Service blocked due to failures
   - Half-open (yellow): Testing recovery
+
+**Diagnostics Tab:**
+- **Run Full Diagnostics**: One-click comprehensive system health check
+- **11 Automated Tests** covering:
+  - Database connection and table integrity
+  - Facebook session validity
+  - OpenAI API connectivity
+  - Apify service status
+  - Browser pool availability
+  - Memory usage (RSS-based)
+  - Environment variables
+  - Group configuration
+  - Classification queue
+  - Recent scraping activity
+- **Real-time Progress**: Watch tests run with live SSE streaming
+- **Auto-Fix**: Automatically repairs issues when possible
+- **Test Categories**: Color-coded by type (database, auth, services, etc.)
+- **Result Persistence**: View last diagnostic run results
 
 **Quick Actions:**
 - **Trigger GC**: Force garbage collection to free memory
@@ -929,6 +966,63 @@ Restore from a backup file.
 
 ---
 
+## 🧪 Testing
+
+The project includes a comprehensive test suite using Vitest:
+
+### Running Tests
+
+```bash
+# Run all tests
+npm run test:unit
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+```
+
+### Test Structure
+
+```
+tests/
+├── setup.ts              # Global test setup and mocks
+├── validation.test.ts    # Zod validation schema tests
+└── security.test.ts      # Security middleware tests
+```
+
+### Test Categories
+
+| Category | Description |
+|----------|-------------|
+| **Validation** | Tests for Zod schemas (pagination, filters, classification results) |
+| **Security** | Tests for rate limiting, CORS, request sanitization |
+| **Integration** | End-to-end tests for API endpoints (when database available) |
+
+### Writing Tests
+
+Tests use Vitest with the following patterns:
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+
+describe('Feature Name', () => {
+  it('should do something specific', () => {
+    // Arrange
+    const input = { ... };
+
+    // Act
+    const result = someFunction(input);
+
+    // Assert
+    expect(result).toBe(expected);
+  });
+});
+```
+
+---
+
 ## 📝 Configuration Reference
 
 ### Environment Variables
@@ -955,6 +1049,11 @@ Restore from a backup file.
 | `MAX_BROWSER_INSTANCES` | No | Maximum concurrent browser instances | `2` (default) |
 | `APIFY_TOKEN` | No | Apify API token for public group scraping | `apify_api_xxx...` |
 | `APIFY_RESULTS_LIMIT` | No | Max results from Apify per scrape | `100` (default) |
+| `HEADLESS` | No | Run browser in headless mode | `true` (default) |
+| `REDIS_URL` | No | Redis connection for caching/queues | `redis://localhost:6379` |
+| `SENTRY_DSN` | No | Sentry DSN for error tracking | `https://xxx@sentry.io/xxx` |
+| `CORS_ORIGINS` | No | Allowed CORS origins (comma-separated) | `http://localhost:3000` |
+| `TRIGGER_RATE_LIMIT_PER_MINUTE` | No | Rate limit for trigger endpoints | `30` (default) |
 
 ### Cron Schedule
 
@@ -975,7 +1074,64 @@ To modify schedules, edit files in `src/cron/`
 
 - **Hosting:** Railway, Render, Heroku, or DigitalOcean
 - **Database:** Supabase, Neon, or Railway PostgreSQL
+- **Redis:** Redis Cloud, Upstash, or Railway Redis (optional but recommended)
 - **Process Manager:** PM2 (for keeping server alive)
+- **Error Tracking:** Sentry (optional)
+
+### Docker Deployment
+
+The project includes Docker support for easy deployment:
+
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Or build manually
+docker build -t tarasa-extractor .
+docker run -d \
+  --env-file .env \
+  -p 4000:4000 \
+  tarasa-extractor
+```
+
+**Docker Compose** (`docker-compose.yml`) includes:
+- Application container
+- PostgreSQL database (optional - can use external)
+- Redis for caching (optional)
+
+### Redis Configuration (Optional)
+
+Redis provides:
+- **Caching**: Faster API responses
+- **Rate Limiting**: Distributed rate limiting across instances
+- **Job Queues**: BullMQ for reliable job processing
+
+```bash
+# Local development
+REDIS_URL=redis://localhost:6379
+
+# Cloud (Upstash, Redis Cloud)
+REDIS_URL=redis://username:password@host:port
+
+# If Redis is unavailable, the system falls back to in-memory alternatives
+```
+
+### Sentry Error Tracking (Optional)
+
+Monitor production errors with Sentry:
+
+1. Create a Sentry project at https://sentry.io
+2. Get your DSN from Project Settings > Client Keys
+3. Set environment variable:
+   ```bash
+   SENTRY_DSN=https://xxx@xxx.ingest.sentry.io/xxx
+   ```
+
+Features:
+- Automatic error capture with stack traces
+- Performance monitoring (10% sample in production)
+- Error filtering for expected errors (network issues, etc.)
+- Release tracking
 
 ### Deployment Steps
 
@@ -1023,14 +1179,19 @@ To modify schedules, edit files in `src/cron/`
 
 ### Production Checklist
 
-- [ ] Environment variables configured
+- [ ] Environment variables configured (`NODE_ENV=production`)
+- [ ] Database connection secured (SSL mode enabled)
 - [ ] Database backups enabled
-- [ ] Monitoring/alerting set up
-- [ ] SSL certificates installed
+- [ ] `API_KEY` set to a secure random value
+- [ ] `CORS_ORIGINS` set to your frontend domains only
+- [ ] Redis configured for distributed rate limiting (optional)
+- [ ] Sentry DSN configured for error tracking (optional)
+- [ ] SSL certificates installed (HTTPS)
 - [ ] Rate limiting configured
 - [ ] Log rotation enabled
 - [ ] Cron jobs running
-- [ ] Health checks responding
+- [ ] Health checks responding (`/api/health`)
+- [ ] Monitoring/alerting set up
 
 ---
 
@@ -1072,7 +1233,76 @@ For issues or questions:
 
 ## 🔄 Version History
 
-### v1.2.0 (Current)
+### v1.4.0 (Current)
+Major update with comprehensive diagnostics, session management, and critical bug fixes:
+
+**System Diagnostics:**
+- ✅ New comprehensive diagnostic system with 11 automated tests
+- ✅ Real-time SSE streaming for live progress updates
+- ✅ Auto-fix capabilities for common issues:
+  - Database reconnection on failure
+  - Circuit breaker reset for OpenAI/Apify
+  - Memory monitoring (RSS-based, not heap percentage)
+- ✅ New "Diagnostics" tab in Debug Console with animated UI
+- ✅ Category-based test organization (database, auth, services, scraping, ai, system)
+- ✅ Test result persistence for viewing last diagnostic run
+
+**Facebook Session Management:**
+- ✅ New "Facebook Session" section in Settings page
+- ✅ Real-time session status display (Active/Expired)
+- ✅ Session details: User ID, Last Checked, Private Groups access
+- ✅ One-click "Renew Session" button
+- ✅ New API endpoint: `POST /api/session/renew`
+- ✅ Helpful error hints for 2FA and captcha issues
+
+**Author Photo Extraction Fix:**
+- ✅ Fixed critical bug where 53% of posts were missing author photos
+- ✅ Adapted to Facebook's new DOM structure (SVG `<image href="">` instead of `<img src="">`)
+- ✅ Implemented position-based photo matching for alternative extraction
+- ✅ Conditional upsert logic to preserve existing photos when new extraction fails
+- ✅ Photo coverage improved from 47% to 71.4% for active groups
+
+**Memory Monitoring Fix:**
+- ✅ Fixed false "Memory Critical" alerts in diagnostics
+- ✅ Changed from heap percentage (misleading) to RSS total (accurate)
+- ✅ Node.js naturally uses most of its heap - this is normal behavior
+- ✅ Only alerts when total memory exceeds 1.5GB (indicates real leak)
+
+**API Endpoints Added:**
+- `GET /api/debug/diagnostics` - Get last diagnostic result
+- `GET /api/debug/diagnostics/stream` - Run diagnostics with SSE streaming
+- `POST /api/debug/diagnostics/run` - Run diagnostics (non-streaming)
+- `POST /api/session/renew` - Manually renew Facebook session
+
+**UI Improvements:**
+- New Diagnostics tab with gradient hero section
+- Animated test cards with category icons
+- Real-time progress indicators
+- Color-coded status (passed=green, fixed=blue, failed=red)
+- Session status cards in Settings page
+
+### v1.3.0
+Maintenance release with improved configuration and documentation:
+
+**Configuration:**
+- Fixed Vitest 4 deprecation warning (migrated `poolOptions` to new format)
+- Expanded `.env.example` with all configuration options
+- Added Redis, Sentry, CORS, and rate limiting documentation
+- Improved environment variable documentation
+
+**Documentation:**
+- Added comprehensive Testing section with Vitest usage examples
+- Added Docker deployment section with docker-compose support
+- Added Redis configuration guide
+- Added Sentry error tracking setup guide
+- Updated Production Checklist with security best practices
+- Enhanced Environment Variables table with all new options
+
+**Dependencies:**
+- Updated Vitest configuration for v4 compatibility
+- Addressed low-severity security advisories (documented)
+
+### v1.2.0
 Major update with advanced debugging and backup system:
 
 **Debug Console:**
@@ -1161,6 +1391,215 @@ Major reliability and performance improvements:
 - ✅ Error handling & logging
 - ✅ Session management
 - ✅ Daily quota controls
+
+---
+
+## 🧗 Development Challenges & Solutions
+
+This section documents significant technical challenges encountered during development and how they were resolved. Useful for understanding design decisions and troubleshooting similar issues.
+
+### Challenge 1: Dashboard Causing Rate Limiting Issues
+
+**Problem:** The dashboard was polling the API every 10 seconds, which triggered rate limiting and caused "Too Many Requests" errors. The `/api/debug/overview` endpoint was being called excessively.
+
+**Root Cause:**
+- Dashboard auto-refresh interval was too aggressive
+- The orchestrator's `getScrapingStatus()` was calling `detectGroupType()` for each group on every poll
+- This triggered session validation and Apify probes repeatedly
+
+**Solution:**
+- Changed `getScrapingStatus()` to read from cache only (no fresh detection)
+- Added batch fetching for group info to reduce database queries
+- Optimized dashboard polling to avoid unnecessary API calls
+
+**Files Modified:** `src/scraper/orchestrator.ts`, `src/routes/session.ts`
+
+---
+
+### Challenge 2: Author Photos Missing (53% of Posts)
+
+**Problem:** Author profile photos stopped appearing for many posts. Analysis showed 53% of posts were missing photos, correlating with missing author names.
+
+**Root Cause:**
+Facebook changed their DOM structure:
+- **Before:** `<img src="photo_url" alt="author">`
+- **After:** `<svg><image href="photo_url" /></svg>`
+
+The extractors were looking for `img` tags but Facebook switched to SVG images with `href` attributes.
+
+**Solution:**
+1. Updated photo extraction to handle SVG images:
+   ```typescript
+   // Strategy 1: SVG image elements
+   const svgImages = el.querySelectorAll('svg image');
+   for (const img of svgImages) {
+     const href = img.getAttribute('href') ||
+                  img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+     if (href && href.includes('scontent')) return href;
+   }
+   ```
+
+2. Implemented position-based photo matching for alternative extraction:
+   - Collect ALL profile photos on the page first
+   - Match photos to posts based on y-coordinate proximity (within 100px)
+
+3. Modified upsert logic to preserve existing photos:
+   ```typescript
+   // Only update author fields if we have new data
+   if (post.authorName) updateData.authorName = post.authorName;
+   if (post.authorPhoto) updateData.authorPhoto = post.authorPhoto;
+   ```
+
+**Result:** Photo coverage improved from 47% to 71.4%
+
+**Files Modified:** `src/scraper/extractors.ts`, `src/scraper/orchestrator.ts`
+
+---
+
+### Challenge 3: False "Memory Critical" Alerts
+
+**Problem:** The diagnostic system was showing "Memory Critical: 97%" even when the system was running fine.
+
+**Root Cause:**
+Node.js heap memory behavior was misunderstood:
+- Node.js uses V8's garbage collector which intentionally fills the heap before collecting
+- High heap percentage (80-97%) is **normal** and **expected**
+- The diagnostic was using heap percentage as a health indicator (incorrect)
+
+**Solution:**
+Changed memory monitoring from heap percentage to RSS (Resident Set Size):
+```typescript
+// OLD (incorrect):
+const usagePercent = (heapUsed / heapTotal) * 100;
+if (usagePercent > 95) { /* fail */ }
+
+// NEW (correct):
+const rssMB = Math.round(memUsage.rss / 1024 / 1024);
+if (rssMB > 1500) { /* fail - only if RSS exceeds 1.5GB */ }
+```
+
+**Key Learning:** Node.js memory management is different from traditional apps. High heap usage is a feature, not a bug.
+
+**Files Modified:** `src/debug/diagnostics.ts`
+
+---
+
+### Challenge 4: Prisma Studio Port Conflict
+
+**Problem:** Running `npx prisma studio` failed with "Address already in use" errors.
+
+**Root Cause:** Prisma Studio defaults to port 5555, but something was already using it (or confusion with port 4000).
+
+**Solution:** Use explicit port flag:
+```bash
+npx prisma studio --schema=src/database/schema.prisma --port 5556
+```
+
+---
+
+### Challenge 5: Classification Appearing Stuck
+
+**Problem:** User reported seeing many posts "waiting for classification" and suspected the classifier was broken.
+
+**Investigation:**
+1. Checked SystemLog for classification events
+2. Found regular entries: "Classified 10 posts", "Classified 5 posts"
+3. Classifier was actually working fine
+
+**Root Cause:** Console logging was minimal, making it seem like nothing was happening.
+
+**Solution:** Confirmed via database query that classification was processing correctly. No code changes needed - just needed better visibility (which the new Diagnostics system now provides).
+
+---
+
+### Challenge 6: Circuit Breaker Issues with Apify
+
+**Problem:** Apify was failing for Israeli history groups, triggering circuit breaker and blocking all Apify requests.
+
+**Root Cause:**
+- Facebook blocks Apify's scrapers for certain group types
+- Apify returns "Empty or private data" even for public groups
+- Circuit breaker correctly opened after repeated failures
+
+**Solution:**
+1. Skip Apify entirely for groups where it's known to fail
+2. Cache the working method per group to avoid re-probing
+3. Go directly to Playwright for groups where Apify doesn't work:
+   ```typescript
+   if (knownWorkingMethod === 'playwright') {
+     // Skip directly to Playwright
+   }
+   ```
+
+**Files Modified:** `src/scraper/orchestrator.ts`
+
+---
+
+### Challenge 7: Port Already In Use Errors
+
+**Problem:** Frequent "EADDRINUSE: address already in use :::4000" errors when starting the server.
+
+**Root Cause:** Previous server process didn't shut down cleanly, leaving the port bound.
+
+**Solution:** Kill orphaned processes before starting:
+```bash
+# Kill any process using port 4000
+lsof -ti:4000 | xargs kill -9
+
+# Or kill ts-node processes
+pkill -f "ts-node.*server"
+```
+
+**Tip:** Add to package.json scripts for convenience:
+```json
+"predev": "lsof -ti:4000 | xargs kill -9 2>/dev/null || true"
+```
+
+---
+
+### Challenge 8: SSE Streaming for Real-Time Diagnostics
+
+**Problem:** Need to show real-time progress as diagnostic tests run, not just final results.
+
+**Solution:** Implemented Server-Sent Events (SSE) for streaming:
+
+**Backend:**
+```typescript
+router.get('/api/debug/diagnostics/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+
+  await runFullDiagnostics((progress) => {
+    res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
+  });
+
+  res.write(`event: complete\ndata: ${JSON.stringify(result)}\n\n`);
+  res.end();
+});
+```
+
+**Frontend:**
+```typescript
+const eventSource = new EventSource('/api/debug/diagnostics/stream');
+eventSource.addEventListener('progress', (event) => {
+  setDiagnosticResult(JSON.parse(event.data));
+});
+```
+
+**Key Learning:** SSE is simpler than WebSockets for one-way server-to-client streaming.
+
+---
+
+### Summary of Technical Decisions
+
+| Challenge | Initial Approach | Final Solution |
+|-----------|------------------|----------------|
+| Rate limiting | Reduce polling interval | Cache-only reads, batch fetches |
+| Photo extraction | Look for `<img>` tags | Handle SVG `<image href="">`, position matching |
+| Memory monitoring | Heap percentage | RSS total with high threshold |
+| Classification visibility | Console logs | Full diagnostic system with UI |
+| Apify failures | Retry with circuit breaker | Cache working method, skip known failures |
+| Real-time updates | WebSocket | SSE (simpler for one-way streaming) |
 
 ---
 

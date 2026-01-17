@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
 import {
   Cog6ToothIcon,
@@ -13,6 +13,8 @@ import {
   XCircleIcon,
   KeyIcon,
   ExclamationTriangleIcon,
+  UserCircleIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 
 interface Settings {
@@ -20,6 +22,23 @@ interface Settings {
   messageLimit: number;
   baseTarasaUrl: string;
   emailConfigured: boolean;
+}
+
+interface SessionStatus {
+  loggedIn: boolean;
+  userId: string | null;
+  userName: string | null;
+  status: string;
+  lastChecked: string;
+  canAccessPrivateGroups: boolean;
+  requiresAction: boolean;
+  sessionHealth?: {
+    status: string;
+    lastChecked: string;
+    lastValid: string;
+    expiresAt: string | null;
+    errorMessage: string | null;
+  };
 }
 
 type TriggerType = 'scrape' | 'classification' | 'message';
@@ -31,6 +50,26 @@ const SettingsPage: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [triggering, setTriggering] = useState<TriggerType | null>(null);
   const [triggerResult, setTriggerResult] = useState<{ type: TriggerType; success: boolean; message: string } | null>(null);
+
+  // Session state
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [renewingSession, setRenewingSession] = useState(false);
+  const [sessionRenewResult, setSessionRenewResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const fetchSessionStatus = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/session/status');
+      if (res.ok) {
+        const data = await res.json();
+        setSessionStatus(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch session status:', err);
+    } finally {
+      setSessionLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -49,7 +88,38 @@ const SettingsPage: React.FC = () => {
       }
     };
     loadSettings();
-  }, []);
+    fetchSessionStatus();
+  }, [fetchSessionStatus]);
+
+  const handleRenewSession = async () => {
+    if (renewingSession) return;
+
+    setRenewingSession(true);
+    setSessionRenewResult(null);
+
+    try {
+      const res = await apiFetch('/api/session/renew', { method: 'POST' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setSessionRenewResult({ success: true, message: data.message });
+        // Refresh session status
+        await fetchSessionStatus();
+      } else {
+        setSessionRenewResult({
+          success: false,
+          message: data.hint || data.message || 'Session renewal failed',
+        });
+      }
+    } catch (err) {
+      setSessionRenewResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to renew session',
+      });
+    } finally {
+      setRenewingSession(false);
+    }
+  };
 
   const handleTrigger = async (type: TriggerType) => {
     if (!apiKey) {
@@ -235,6 +305,122 @@ const SettingsPage: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Facebook Session Section */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
+            <UserCircleIcon className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Facebook Session</h2>
+            <p className="text-sm text-slate-500">Manage your Facebook authentication</p>
+          </div>
+        </div>
+
+        {/* Session Status */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          {sessionLoading ? (
+            <div className="h-24 bg-slate-100 rounded-lg animate-pulse" />
+          ) : sessionStatus ? (
+            <>
+              {/* Current Status */}
+              <div className={`p-4 rounded-lg ${sessionStatus.loggedIn ? 'bg-emerald-50 border border-emerald-100' : 'bg-red-50 border border-red-100'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-500 mb-1">Session Status</p>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${sessionStatus.loggedIn ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                      <span className={`font-semibold ${sessionStatus.loggedIn ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {sessionStatus.loggedIn ? 'Active' : 'Expired'}
+                      </span>
+                    </div>
+                    {sessionStatus.userName && (
+                      <p className="text-sm text-slate-600 mt-1">{sessionStatus.userName}</p>
+                    )}
+                  </div>
+                  {sessionStatus.loggedIn ? (
+                    <ShieldCheckIcon className="w-8 h-8 text-emerald-500" />
+                  ) : (
+                    <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
+                  )}
+                </div>
+              </div>
+
+              {/* Session Details */}
+              <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                <p className="text-xs text-slate-500 mb-2">Session Details</p>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">User ID:</span>
+                    <span className="text-slate-700 font-mono text-xs">{sessionStatus.userId || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Last Checked:</span>
+                    <span className="text-slate-700 text-xs">
+                      {sessionStatus.lastChecked ? new Date(sessionStatus.lastChecked).toLocaleString() : 'Never'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Private Groups:</span>
+                    <span className={sessionStatus.canAccessPrivateGroups ? 'text-emerald-600' : 'text-amber-600'}>
+                      {sessionStatus.canAccessPrivateGroups ? 'Accessible' : 'Limited'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="p-4 bg-amber-50 rounded-lg">
+              <p className="text-amber-700">Unable to load session status</p>
+            </div>
+          )}
+        </div>
+
+        {/* Renew Result Message */}
+        {sessionRenewResult && (
+          <div className={`flex items-center gap-2 p-3 rounded-lg mb-5 ${
+            sessionRenewResult.success ? 'bg-emerald-50' : 'bg-red-50'
+          }`}>
+            {sessionRenewResult.success ? (
+              <CheckCircleIcon className="w-5 h-5 text-emerald-500" />
+            ) : (
+              <XCircleIcon className="w-5 h-5 text-red-500" />
+            )}
+            <span className={`text-sm ${sessionRenewResult.success ? 'text-emerald-700' : 'text-red-700'}`}>
+              {sessionRenewResult.message}
+            </span>
+          </div>
+        )}
+
+        {/* Renew Button */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleRenewSession}
+            disabled={renewingSession}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
+              renewingSession
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {renewingSession ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Renewing Session...
+              </>
+            ) : (
+              <>
+                <ArrowPathIcon className="w-4 h-4" />
+                Renew Session
+              </>
+            )}
+          </button>
+          <p className="text-xs text-slate-400">
+            Opens a browser to verify and refresh your Facebook login
+          </p>
         </div>
       </div>
 
