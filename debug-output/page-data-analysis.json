@@ -1,0 +1,641 @@
+{
+  "scriptData": [
+    {
+      "type": "application/json",
+      "preview": "{\"useTrustedTypes\":false,\"isTrustedTypesReportOnly\":false,\"routing_namespace\":\"fb_comet\",\"ghlss\":\"o1pM0k\",\"ghljssj\":true,\"sjsListenerNew\":true,\"ssr_throttle_suspense_fallbacks\":true,\"react_scheduler_e",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"u\":\"\\/ajax\\/qm\\/?__a=1&__user=100010396726536&__comet_req=15&jazoest=25650\",\"e\":\"7596335746649771227\",\"s\":\"XCometGroupDiscussionController\",\"w\":0,\"f\":\"NAftfnDR8vM4ogMrBhxm6Tz7bR9rDs5ccOYCQ_xeC5uYpZX",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{\"__hsdp\":\":9173,3128,2178,2297,2169,4084,3859,2179,8480,7442,1631,464,493,145,1507,282,240,221,276,12",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTagServerJS\",null,null,[[\"fb_cohort_stylex_v2:public_new:control\",\"comet_preloader_display_threads:7\",\"comet_preloader_deferred_threads:1\",\"comet_aa_coinflip:true\",\"should_use_bt_safe",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometSSRClientInjector\",\"ssrInit\",null,[{\"enabled\":true,\"cavalry_get_lid\":\"7596335746649771227\",\"success_status\":\"success\",\"disabled_status\":\"fail_ssr_disabled\",\"bad_preloaders_status\":\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_useCometAppNavigationProfilePictureUrlQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"xEURloo\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4iGCM4\\/yP\\/l\\/en_US-j\\/nlSklOx7NjY",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_useCometAppNavigationProfilePictureUrlQueryRelayPreloader_696b9b1d35ca95236031678\",{",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometSettingsBadgeQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometSettingsBadgeQueryRelayPreloader_696b9b1d35c4a6563189876\",{\"__bbox\":{\"complete\"",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometQuickPromotionInterstitialQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometQuickPromotionInterstitialQueryRelayPreloader_696b9b1d35cb65525093264\",{\"__bbox",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometLogoutHandlerQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometLogoutHandlerQueryRelayPreloader_696b9b1d35c9b0d84407361\",{\"__bbox\":{\"complete\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometAppNavigationTargetedTabBarContentInnerImplQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometAppNavigationTargetedTabBarContentInnerImplQueryRelayPreloader_696b9b1d4b77a125",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_ScreenTimeInit_AggregatedScreenTimeQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_ScreenTimeInit_AggregatedScreenTimeQueryRelayPreloader_696b9b1d3627f6701498946\",{\"__",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_696b9b1d66a948e46105359\",{\"__bbox",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_{N}_1\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_696b9b1d66a948e46105359\",{\"__bbox",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_MWChatBadgeCountQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_MWChatBadgeCountQueryRelayPreloader_696b9b1d35c737980892801\",{\"__bbox\":{\"complete\":t",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometNotificationsBadgeCountQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometNotificationsBadgeCountQueryRelayPreloader_696b9b1d35c851200067384\",{\"__bbox\":{",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_LSPlatformGraphQLLightspeedRequestQueryRelayPreloader_cm_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"A4Llb\\/H\":{\"type\":\"js\",\"src\":\"data:application\\/x-javascript; charset=utf-8;base64,Oy8qRkJfUEtHX0RFTElNKi8",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"emptyFunction\",\"thatReturns\",[\"RequireDeferredReference\"],[[{\"__dr\":\"LSExecuteFirstBlockForSyncTransaction\"},{\"__dr\":\"LSExecuteF",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_{N}_2\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"clpData\":{\"1743680\":{\"r\":25}},\"gkxData\":{\"24281\":{\"result\":false,\"hash\":null},\"24282\":{\"result\":false,\"hash\":null}},\"ixData\":{\"303091\":{\"sprited\":2,\"sp",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"define\":[[\"cr:13839\",[\"FBNucleusGlobeAmericasFilled20Icon.react\"],{\"__rc\":[\"FBNucleusGlobeAmericasFilled20Icon.react\",null]},-1],[\"cr:14006\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_GroupsCometDiscussionLayoutRootQueryRelayPreloader_{N}_3\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"emptyFunction\",\"thatReturns\",[\"RequireDeferredReference\"],[[{\"__dr\":\"GroupsCometColorExpandedWrapper.react\"},{\"__dr\":\"GroupsCome",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_LSPlatformGraphQLLightspeedRequestQueryRelayPreloader_inbox_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"tlK1mp2\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4ixCi4\\/yG\\/l\\/en_US-j\\/jYXJT58bjeR",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_WebWorkerV2HasteResponsePreloader_VideoPlayerNextgendashWorkerV2EntrypointWorkerBundle_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{\"__hsdp\":\":700\"}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"AsyncData\",\"resolve\",[],[\"adp_WebWorkerV2HasteResponsePreloader_VideoPlayerNextgendashWorkerV2EntrypointWorkerBundle_696b9b1d96a",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_WebWorkerV2HasteResponsePreloader_MAWMainWebWorkerV2Bundle_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"zanvSPr\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4\\/yX\\/r\\/esk6GqfG8GC.js\",\"c\":1,\"p\"",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"define\":[[\"cr:4562\",[\"MWChatBadgeCountUpdater.react\"],{\"__rc\":[\"MWChatBadgeCountUpdater.react\",null]},-1],[\"cr:665\",[\"MAWMainThreadLogger\"],",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_LSPlatformGraphQLLightspeedRequestQueryRelayPreloader_e2ee_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"gkxData\":{\"26379\":{\"result\":false,\"hash\":null}}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{\"__hsdp\":\":955,956,946,947,1008,1009,1007,827,1010,828,1780,625\"}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometSSRClientInjector\",\"onViewportGuessValidation\",null,[[{\"dimension\":\"width\",\"numPixels\":600,\"operation\":\"max\",\"result\":false}],{\"width_px\":1280,\"height_px\":720,\"guess_source\":\"cookie",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometSSRClientInjector\",\"onPayloadReceived\",null,[{\"fizzRootId\":\"ssrb_root_content\",\"id\":\"render_pass_0\",\"payloadType\":\"FIRST\",\"readyPreloaders\":[\"adp_CometSettingsBadgeQueryRelayPreload",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometGroupDiscussionRootSuccessQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"clpData\":{\"506\":{\"r\":1,\"s\":1},\"2955\":{\"r\":1,\"s\":1},\"629\":{\"r\":1,\"s\":1},\"1175\":{\"r\":1,\"s\":1},\"1759123\":{\"r\":1,\"s\":1}},\"gkxData\":{\"587\":{\"result\":false,\"",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"HASSiKH\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4iUAQ4\\/y9\\/l\\/en_US-j\\/tQy1phEl1BY",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"define\":[[\"cr:8607\",[\"useEmptyFunction\"],{\"__rc\":[\"useEmptyFunction\",null]},-1],[\"cr:11030\",[\"CometFeedInlineComposerWOYM.react\"],{\"__rc\":[\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometGroupRootQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"bxData\":{\"25350\":{\"uri\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/yV\\/r\\/EanIg_HqFDn.kf\"}},\"clpData\":{\"6051\":{\"r\":1,\"s\":1},\"6127\":{\"r\":1,\"s\":1},\"6131\":",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"E8Den7y\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4ioPO4\\/y6\\/l\\/en_US-j\\/sh2mbSB0bw6",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometGroupDiscussionRootSuccessQueryRelayPreloader_{N}_1\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"clpData\":{\"1743465\":{\"r\":1},\"166\":{\"r\":100,\"s\":1},\"433\":{\"r\":1},\"2315\":{\"r\":1},\"1744228\":{\"r\":1},\"2149\":{\"r\":1,\"s\":1},\"1052\":{\"r\":1},\"1736\":{\"r\":1,\"s\":",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"bM7zLiQ\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4iFmU4\\/yi\\/l\\/en_US-j\\/8vQm5M_ZLKI",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometGroupDiscussionRootSuccessQueryRelayPreloader_{N}_2\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"emptyFunction\",\"thatReturns\",[\"RequireDeferredReference\"],[[{\"__dr\":\"GroupsCometHighlightsSection.react\"},{\"__dr\":\"GroupsCometCo",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometGroupRootQueryRelayPreloader_{N}_1\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"lyXuMLS\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4\\/yg\\/r\\/m865T9FH7G4.js\",\"c\":1,\"p\"",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"GroupsCometEntityMenuLeftRailFooter_group$normalization.graphql\"],[\"GroupsCometEntityMenuLeftRailFooter.react\"],[\"emptyFunction\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometSSRClientInjector\",\"onViewportGuessValidation\",null,[[{\"dimension\":\"width\",\"numPixels\":1267,\"operation\":\"max\",\"result\":false},{\"dimension\":\"width\",\"numPixels\":2000,\"operation\":\"min\"",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometSSRClientInjector\",\"onPayloadReceived\",null,[{\"fizzRootId\":\"ssrb_root_content\",\"id\":\"render_pass_1\",\"payloadType\":\"LAST\",\"readyPreloaders\":[\"adp_CometGroupRootQueryRelayPreloader_69",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometSettingsDropdownTriggerQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometSettingsDropdownTriggerQueryRelayPreloader_696b9b1d362623428390943\",{\"__bbox\":{",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometActorGatewayHandlerQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometActorGatewayHandlerQueryRelayPreloader_696b9b1d361019985159316\",{\"__bbox\":{\"com",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometSearchBootstrapKeywordsDataSourceQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometSettingsDropdownListQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_CometSearchRecentDataSourceQueryRelayPreloader_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"RelayPrefetchedStreamCache\",\"next\",[],[\"adp_CometSearchRecentDataSourceQueryRelayPreloader_696b9b1d376b61170853759\",{\"__bbox\":{\"",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_WebWorkerV2HasteResponsePreloader_ZenonSignalingSharedWorkerV2Bundle_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"rsrcMap\":{\"LBqliQ3\":{\"type\":\"js\",\"src\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/v4icE_4\\/yN\\/l\\/en_US-j\\/hRYzmlDZ_rm",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"AsyncData\",\"resolve\",[],[\"adp_WebWorkerV2HasteResponsePreloader_ZenonSignalingSharedWorkerV2Bundle_696b9b2145fe48d00615922\",{\"da",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227\",\"adp_WebWorkerV2HasteResponsePreloader_RSTWebV2WorkerBundle_{N}\"]]]}",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"indexUpgrades\":{}}]]]}",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"ScheduledServerJS\",\"handle\",null,[{\"__bbox\":{\"require\":[[\"AsyncData\",\"resolve\",[],[\"adp_WebWorkerV2HasteResponsePreloader_RSTWebV2WorkerBundle_696b9b215a2544c93432553\",{\"data\":{\"__bbox\":",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"HasteSupportData\",\"handle\",null,[{\"bxData\":{\"273031\":{\"uri\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/yf\\/r\\/XyTteqB51ob.mp3\"},\"273032\":{\"uri\":\"https:\\/\\/static.xx.fbcdn.net\\/rsrc.php\\/y",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"Bootloader\",\"handlePayload\",null,[{\"consistency\":{\"rev\":1032136814},\"sotUpgrades\":[\"ge03lin\",\"vNp0ejw\",\"LBqliQ3\",\"u1eqaqT\",\"oRIwo9V\",\"A0RpUfn\",\"IXbIlYq\",\"Nbyksaq\"],\"indexUpgrades\":{\"__hs",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometQPLPayloadStore\",\"storePayloadMap\",null,[{\"7596335746649771227\":{\"css\\/c1l7zups388c8ocg.pkg,css\\/2a21ihyjts74g84c.pkg,css\\/f1psux0pi9s0o4co.pkg,css\\/bsa0dhp999w84wws.pkg,css\\/20cb3q",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplTimingsServerJS\",null,null,[\"7596335746649771227-server\",\"earlyFlushStart\",84]],[\"qplTimingsServerJS\",null,null,[\"7596335746649771227-server\",\"genRouteStart\",352]],[\"qplTimingsServerJ",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplAnnotationsIntServerJS\",null,null,[\"7596335746649771227-server\",\"haas_preloading\",1]],[\"qplAnnotationsIntServerJS\",null,null,[\"7596335746649771227-server\",\"is_crawler_ssr_html_only_mo",
+      "hasPostId": false
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"qplAnnotationsStringServerJS\",null,null,[\"7596335746649771227-server\",\"ssr_qpl_app_id\",\"2220391788200892\"]],[\"qplAnnotationsStringServerJS\",null,null,[\"7596335746649771227-server\",\"vw_gu",
+      "hasPostId": true
+    },
+    {
+      "type": "application/json",
+      "preview": "{\"require\":[[\"CometQPLPayloadStore\",\"storePayloadBytesSent\",null,[{\"htmlStart\":[154027,18053],\"tierOne\":[331990,63120],\"adp_useCometAppNavigationProfilePictureUrlQueryRelayPreloader_{N}\":[33059,5495],",
+      "hasPostId": false
+    }
+  ],
+  "windowVars": [
+    "requireLazy"
+  ],
+  "potentialIds": [
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "100010396726536",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "100010396726536",
+    "7596335746649771227",
+    "100010396726536",
+    "1606854132932955",
+    "7596335746649771227",
+    "7596335746649771227",
+    "1654282231298043",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "7596335746649771227",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "7596335746649771227",
+    "7596335746649771227",
+    "100010396726536",
+    "100010396726536",
+    "2220391788200892",
+    "7596335746649771227",
+    "2220391788200892",
+    "7596335746649771227",
+    "2220391788200892",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "1654282231298043",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "1654282231298043",
+    "633583491566585",
+    "633583491566585",
+    "1654282231298043",
+    "633583491566585",
+    "7596335746649771227",
+    "100010396726536",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "7596335746649771227",
+    "237545958433199",
+    "933089590074600",
+    "1715460468574774",
+    "136596023614231",
+    "1126420874516518",
+    "7596335746649771227",
+    "100010396726536",
+    "100010396726536",
+    "2220391788200892",
+    "2220391788200892",
+    "100010396726536",
+    "7596335746649771227",
+    "2220391788200892",
+    "2220391788200892",
+    "307542933446158",
+    "100010396726536",
+    "100010396726536",
+    "7596335746649771227",
+    "2220391788200892"
+  ],
+  "linkAnalysis": [
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=2298970977231422&set=pcb.2298971240564729&__cft__[0]=AZagN1vOCJ",
+      "postId": "AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqardlRaS9Al4BC3r4DaGqA96MajKFk0wXC48G67lmgCx8wIiH96kUTAufnHfKVISb9wtUVayxW7bIb6TgyRPhq7YUIovhum7tISnBThCE1MukLCvFN3S5fSYJvKHOcrdS7z9JD3ElK3vsqw1C-eKd6FfbgA-KE-M80pPvnHMIxURft10_SgnAFr5Rkr0WXvFIRdw"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=2298971060564747&set=pcb.2298971240564729&__cft__[0]=AZagN1vOCJ",
+      "postId": "AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqardlRaS9Al4BC3r4DaGqA96MajKFk0wXC48G67lmgCx8wIiH96kUTAufnHfKVISb9wtUVayxW7bIb6TgyRPhq7YUIovhum7tISnBThCE1MukLCvFN3S5fSYJvKHOcrdS7z9JD3ElK3vsqw1C-eKd6FfbgA-KE-M80pPvnHMIxURft10_SgnAFr5Rkr0WXvFIRdw"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=2298971040564749&set=pcb.2298971240564729&__cft__[0]=AZagN1vOCJ",
+      "postId": "AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqardlRaS9Al4BC3r4DaGqA96MajKFk0wXC48G67lmgCx8wIiH96kUTAufnHfKVISb9wtUVayxW7bIb6TgyRPhq7YUIovhum7tISnBThCE1MukLCvFN3S5fSYJvKHOcrdS7z9JD3ElK3vsqw1C-eKd6FfbgA-KE-M80pPvnHMIxURft10_SgnAFr5Rkr0WXvFIRdw"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=2298970997231420&set=pcb.2298971240564729&__cft__[0]=AZagN1vOCJ",
+      "postId": "AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqardlRaS9Al4BC3r4DaGqA96MajKFk0wXC48G67lmgCx8wIiH96kUTAufnHfKVISb9wtUVayxW7bIb6TgyRPhq7YUIovhum7tISnBThCE1MukLCvFN3S5fSYJvKHOcrdS7z9JD3ElK3vsqw1C-eKd6FfbgA-KE-M80pPvnHMIxURft10_SgnAFr5Rkr0WXvFIRdw"
+    },
+    {
+      "text": "יעקב בוזגלו",
+      "href": "https://www.facebook.com/y.qb.bwzglw.546924?__cft__[0]=AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqar",
+      "postId": "AZagN1vOCJSu6iLl4lVYAJLWCws4ejhOxTHxCpmSRKqardlRaS9Al4BC3r4DaGqA96MajKFk0wXC48G67lmgCx8wIiH96kUTAufnHfKVISb9wtUVayxW7bIb6TgyRPhq7YUIovhum7tISnBThCE1MukLCvFN3S5fSYJvKHOcrdS7z9JD3ElK3vsqw1C-eKd6FfbgA-KE-M80pPvnHMIxURft10_SgnAFr5Rkr0WXvFIRdw"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=10239926662169322&set=gm.24988697607429843&idorvanity=165428223",
+      "postId": "AZaqaH9vztk7q84__azOA-UIJFz0n-amH72gKfYgdfThYP3YKTKCQomthcIVziw_DkjLnAK90GTJDbBRIfIExvzRKQzXNji3f7Sh-Mhpip5oAEOwMB37nvsThdWnJJHPVkzPzXcNuS0m7T0Lhs1CEktHry63vNP8V62EZMIQJvkFlbx90qiOP0HLk7T4p-j15klU-TzGNfyPQ40gRH3GxXsQ"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=10239867557491742&set=gm.24946434868322784&idorvanity=165428223",
+      "postId": "AZbwOiuH55QVLXPJGfYXQbY1r-uqE1smP_TM4uAwzvs4iVIP22m7rql_KeweRutSWh49W3hSWa0Ci_IT3CbIFemzkZAKDj6zxKOuvLAJh3pePlhzVAZmZpYLlBI4cse_e1BBjvI30vKWwSW4DUj6geKu1Hb7tD3Mexq-ygqaKTyd7X2YlzEWME4zDy7usdNfEBUPCQGaL0mYVSKzsqBqhlNx"
+    },
+    {
+      "text": "(no text)",
+      "href": "https://www.facebook.com/photo/?fbid=1331751598593872&set=a.108240910944953&__cft__[0]=AZZBvEFw4uQpK",
+      "postId": "AZZBvEFw4uQpKRDOklW3EaEWz7MCBSJ6e-kEtR9v3uGuG12U09eAxYu17_0i2y9qhsBhYde0cgUT9Qyl2m_T30lWNgW_JRPR9HpmZE4jhOwxm6s_fU7uRKHM6kfn079lV4f0gC3MG9f5rtEPvKrpUJpL8f_McNX7QdR24-srtMcVKR6-Yss3GmgmoCB2N0o2LYTGx52xyYeCj0c5nMdYfzlrbGVJ1tUSuBS18IobakbLeQ"
+    },
+    {
+      "text": "Eldad Brin",
+      "href": "https://www.facebook.com/eldad.brin?__cft__[0]=AZZBvEFw4uQpKRDOklW3EaEWz7MCBSJ6e-kEtR9v3uGuG12U09eAx",
+      "postId": "AZZBvEFw4uQpKRDOklW3EaEWz7MCBSJ6e-kEtR9v3uGuG12U09eAxYu17_0i2y9qhsBhYde0cgUT9Qyl2m_T30lWNgW_JRPR9HpmZE4jhOwxm6s_fU7uRKHM6kfn079lV4f0gC3MG9f5rtEPvKrpUJpL8f_McNX7QdR24-srtMcVKR6-Yss3GmgmoCB2N0o2LYTGx52xyYeCj0c5nMdYfzlrbGVJ1tUSuBS18IobakbLeQ"
+    }
+  ]
+}

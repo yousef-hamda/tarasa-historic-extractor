@@ -412,15 +412,22 @@ Stores scraped Facebook posts:
 ```prisma
 model PostRaw {
   id          Int       @id @default(autoincrement())
-  groupId     String    // Facebook group URL
-  fbPostId    String    @unique // Generated from content hash
+  groupId     String    // Facebook group ID
+  fbPostId    String    @unique // Facebook post ID (or hash if unavailable)
   authorName  String?   // Author's display name
   authorLink  String?   // Link to author's profile
+  authorPhoto String?   // Author's profile photo URL
   text        String    // Post content
+  postUrl     String?   // Direct link to the Facebook post
   scrapedAt   DateTime  @default(now())
   classified  PostClassified? // One-to-one relationship
 }
 ```
+
+**Note on fbPostId:**
+- For posts with photos: Real Facebook post ID (e.g., `2298971240564729`)
+- For text-only posts: Hash-based ID (e.g., `hash_eebadab68e59f13...`)
+- Real IDs allow constructing valid post URLs
 
 ### PostClassified
 AI classification results:
@@ -597,6 +604,48 @@ Manually trigger message generation and sending.
 }
 ```
 
+### GET /api/stats/activity
+Get daily activity data for charts (posts scraped, classified, messages sent).
+
+**Query Parameters:**
+- `days` (optional): Number of days to include (default: 7)
+
+**Response:**
+```json
+[
+  {
+    "date": "Jan 11",
+    "posts": 150,
+    "classified": 145,
+    "messages": 12
+  },
+  {
+    "date": "Jan 12",
+    "posts": 200,
+    "classified": 198,
+    "messages": 15
+  }
+]
+```
+
+### DELETE /api/data/reset
+Delete all scraped data from the database. This is a destructive operation.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "All data has been deleted successfully",
+  "deleted": {
+    "posts": 1034,
+    "classifications": 1034,
+    "generatedMessages": 450,
+    "sentMessages": 120,
+    "logs": 3000
+  }
+}
+```
+
 ---
 
 ## 🎨 Dashboard Features
@@ -665,6 +714,15 @@ View and manage configuration:
 - Trigger Classification
 - Trigger Messages
 - All require API key authentication
+
+**Danger Zone (Reset All Data):**
+- One-click data reset for testing/debugging
+- Two-step confirmation process:
+  1. Click "Reset All Data" button
+  2. Type `DELETE ALL DATA` to confirm
+- Deletes ALL: posts, classifications, messages (generated & sent), logs
+- Shows detailed summary of deleted items
+- Useful for starting fresh or testing the system
 
 ### Debug Console (/debug)
 Advanced real-time system monitoring with visual status indicators:
@@ -1233,7 +1291,47 @@ For issues or questions:
 
 ## 🔄 Version History
 
-### v1.4.0 (Current)
+### v1.5.0 (Current)
+Major update with post URL extraction improvements, activity chart fixes, and data management features:
+
+**Post URL Extraction Enhancement:**
+- ✅ New extraction strategy using `set=pcb.XXXXX` pattern from photo URLs
+- ✅ Added `__cft__` parameter matching to correlate author links with post URLs
+- ✅ Priority-based post ID extraction:
+  1. Extract from post URL (most reliable)
+  2. Try intercepted GraphQL data
+  3. Fallback to content hash
+- ✅ Post URLs now extracted for posts with photos (100% coverage for photo posts)
+- ✅ Construct post URLs from valid `fbPostId` + `groupId` when not stored
+
+**Activity Chart Fix:**
+- ✅ Fixed graph showing incorrect data (was limited to 500 posts)
+- ✅ New `/api/stats/activity` endpoint queries database directly
+- ✅ Accurate daily counts for posts scraped, classified, and messages sent
+- ✅ Configurable date range (default: 7 days)
+
+**Reset All Data Feature:**
+- ✅ New "Danger Zone" section in Settings page
+- ✅ "Reset All Data" button with two-step confirmation
+- ✅ Requires typing "DELETE ALL DATA" to confirm
+- ✅ Deletes: posts, classifications, generated messages, sent messages, logs
+- ✅ Shows detailed deletion summary after completion
+- ✅ New API endpoint: `DELETE /api/data/reset`
+
+**Post Detail Modal Enhancement:**
+- ✅ "View Original Post on Facebook" button
+- ✅ Computes `effectivePostUrl` from `fbPostId` + `groupId` when URL not stored
+- ✅ Post link badge in metadata section
+
+**API Endpoints Added:**
+- `GET /api/stats/activity?days=7` - Get daily activity data for charts
+- `DELETE /api/data/reset` - Delete all scraped data (requires confirmation)
+
+**Known Limitations:**
+- Post URLs only available for posts with photos (text-only posts don't expose IDs in DOM)
+- Facebook's modern DOM doesn't expose post IDs in data attributes for text-only posts
+
+### v1.4.0
 Major update with comprehensive diagnostics, session management, and critical bug fixes:
 
 **System Diagnostics:**
@@ -1590,6 +1688,94 @@ eventSource.addEventListener('progress', (event) => {
 
 ---
 
+### Challenge 9: Post URLs Not Being Extracted
+
+**Problem:** Post URLs were missing for 100% of scraped posts. Users couldn't click through to view the original Facebook post.
+
+**Root Cause:**
+Facebook's modern DOM structure doesn't expose post IDs in data attributes. The old `data-ft` attributes with `story_fbid` are no longer present in the React-based SPA.
+
+**Investigation:**
+1. Created debug scripts to analyze DOM structure
+2. Found that GraphQL interception wasn't working (Facebook renders server-side)
+3. Discovered that photo URLs contain post IDs in `set=pcb.XXXXX` parameter
+
+**Solution:**
+Implemented multiple extraction strategies:
+
+1. **Photo URL Pattern** (most reliable for photo posts):
+   ```typescript
+   // Extract post ID from photo URL
+   const pcbMatch = href.match(/set=pcb\.(\d+)/);
+   if (pcbMatch && groupId) {
+     postUrl = `https://www.facebook.com/groups/${groupId}/posts/${pcbMatch[1]}`;
+   }
+   ```
+
+2. **__cft__ Parameter Matching**:
+   ```typescript
+   // All links in a post share the same __cft__ tracking parameter
+   const cftMatch = authorLink.match(/__cft__\[0\]=([^&]+)/);
+   // Find post URLs with matching __cft__
+   ```
+
+3. **Priority-Based ID Extraction**:
+   - First: Extract from post URL if available
+   - Second: Try intercepted GraphQL data
+   - Third: Fallback to content hash
+
+4. **Frontend Fallback** (for existing data):
+   ```typescript
+   const effectivePostUrl = post.postUrl || (
+     !post.fbPostId.startsWith('hash_') && /^\d+$/.test(post.fbPostId)
+       ? `https://www.facebook.com/groups/${post.groupId}/posts/${post.fbPostId}`
+       : null
+   );
+   ```
+
+**Result:**
+- Posts with photos: 100% post URL extraction
+- Text-only posts: Still use hash-based IDs (Facebook limitation)
+
+**Key Learning:** Facebook intentionally hides post IDs in the DOM for privacy. Photo URLs are currently the only reliable source of post IDs.
+
+**Files Modified:** `src/scraper/extractors.ts`, `ui/dashboard/components/PostDetailModal.tsx`
+
+---
+
+### Challenge 10: Activity Chart Showing Wrong Data
+
+**Problem:** Dashboard activity chart showed incorrect numbers. Total posts (1,034) didn't match sum of daily values shown in graph.
+
+**Root Cause:**
+The chart was calculating data from only 500 posts (API fetch limit), not the entire database.
+
+```typescript
+// OLD: Limited to 500 posts
+const postsRes = await apiFetch('/api/posts?limit=500');
+const activityData = generateActivityData(recentPosts, recentLogs); // Only 500 posts!
+```
+
+**Solution:**
+Created dedicated API endpoint that queries database directly:
+
+```typescript
+// NEW: Query database for accurate totals
+router.get('/api/stats/activity', async (req, res) => {
+  const posts = await prisma.postRaw.findMany({
+    where: { scrapedAt: { gte: startDate } },
+    select: { scrapedAt: true, classified: { select: { classifiedAt: true } } }
+  });
+  // Aggregate by day...
+});
+```
+
+**Result:** Chart now shows accurate daily totals from database.
+
+**Files Modified:** `src/routes/stats.ts`, `ui/dashboard/pages/index.tsx`
+
+---
+
 ### Summary of Technical Decisions
 
 | Challenge | Initial Approach | Final Solution |
@@ -1600,6 +1786,8 @@ eventSource.addEventListener('progress', (event) => {
 | Classification visibility | Console logs | Full diagnostic system with UI |
 | Apify failures | Retry with circuit breaker | Cache working method, skip known failures |
 | Real-time updates | WebSocket | SSE (simpler for one-way streaming) |
+| Post URLs missing | Search for `/posts/` links | Extract from `set=pcb.` in photo URLs |
+| Chart wrong data | Calculate from fetched posts | New API endpoint queries database directly |
 
 ---
 

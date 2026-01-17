@@ -7,6 +7,7 @@ import {
   expandAllSeeMoreButtons,
   extractFullTextFromContainer,
   getInterceptedFullText,
+  getInterceptedPostId,
   cleanExtractedText,
   setupPostInterception,
   clearInterceptedCache,
@@ -1072,6 +1073,11 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
     // Each unique post ID should only appear once
     const postUrlMap = new Map<string, { url: string; y: number; used: boolean }>();
 
+    // Extract group ID from current URL for constructing post URLs
+    const groupIdMatch = window.location.pathname.match(/\/groups\/(\d+)/);
+    const groupId = groupIdMatch ? groupIdMatch[1] : '';
+
+    // Strategy A: Direct post links
     const allPostLinks = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"]');
     for (const link of allPostLinks) {
       const href = link.getAttribute('href') || '';
@@ -1097,6 +1103,27 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       const existing = postUrlMap.get(postId);
       if (!existing || rect.top < existing.y) {
         postUrlMap.set(postId, { url: cleanUrl, y: rect.top, used: false });
+      }
+    }
+
+    // Strategy B: Extract post IDs from photo URLs (set=pcb.XXXXXXX pattern)
+    // This is valuable because photo posts have the post ID in the photo URL
+    const photoLinks = feed.querySelectorAll('a[href*="set=pcb."]');
+    for (const link of photoLinks) {
+      const href = link.getAttribute('href') || '';
+      const rect = link.getBoundingClientRect();
+
+      // Extract post ID from set=pcb.XXXXXXX
+      const pcbMatch = href.match(/set=pcb\.(\d+)/);
+      if (pcbMatch && groupId) {
+        const postId = pcbMatch[1];
+
+        // Check if we already have this post ID
+        if (!postUrlMap.has(postId)) {
+          // Construct the post URL
+          const postUrl = `https://www.facebook.com/groups/${groupId}/posts/${postId}`;
+          postUrlMap.set(postId, { url: postUrl, y: rect.top, used: false });
+        }
       }
     }
 
@@ -1517,7 +1544,22 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
         }
       }
 
-      // Strategy 4: Use postUrlMap to find closest UNUSED URL by proximity
+      // Strategy 4: Extract post ID from photo URLs in this container (set=pcb.XXXXX)
+      // Photo posts have the post ID in the photo URL's set parameter
+      if (!postUrl && groupId) {
+        const photoLinksInContainer = el.querySelectorAll('a[href*="set=pcb."]');
+        for (const link of photoLinksInContainer) {
+          const href = link.getAttribute('href') || '';
+          const pcbMatch = href.match(/set=pcb\.(\d+)/);
+          if (pcbMatch) {
+            const postId = pcbMatch[1];
+            postUrl = `https://www.facebook.com/groups/${groupId}/posts/${postId}`;
+            break;
+          }
+        }
+      }
+
+      // Strategy 5: Use postUrlMap to find closest UNUSED URL by proximity
       // Only match if URL is reasonably close (within 150px) and not yet used
       if (!postUrl) {
         let closestEntry: { postId: string; entry: { url: string; y: number; used: boolean } } | null = null;
@@ -1562,8 +1604,34 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
     if (seenTexts.has(textHash)) continue;
     seenTexts.add(textHash);
 
-    // Generate post ID from content
-    const postId = `hash_${generateContentHash(postData.text, postData.authorLink || undefined)}`;
+    // Try to get REAL post ID from multiple sources:
+    // 1. From the post URL (most reliable - extracted from DOM)
+    // 2. From intercepted GraphQL data
+    // 3. Fallback to content hash
+    let postId: string = '';
+
+    // Priority 1: Extract from post URL (e.g., /posts/1234567890)
+    if (postData.postUrl) {
+      const urlPostIdMatch = postData.postUrl.match(/\/posts\/(\d+)/);
+      if (urlPostIdMatch) {
+        postId = urlPostIdMatch[1];
+        logger.debug(`Extracted post ID from URL: ${postId}`);
+      }
+    }
+
+    // Priority 2: Try intercepted GraphQL data
+    if (!postId) {
+      const interceptedId = getInterceptedPostId(postData.text);
+      if (interceptedId) {
+        postId = interceptedId;
+        logger.debug(`Found intercepted post ID: ${postId}`);
+      }
+    }
+
+    // Priority 3: Fallback to content hash
+    if (!postId) {
+      postId = `hash_${generateContentHash(postData.text, postData.authorLink || undefined)}`;
+    }
 
     // Normalize author link
     const authorLink = postData.authorLink ? normalizeAuthorLink(postData.authorLink) : undefined;
@@ -1849,8 +1917,31 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
     if (seenTexts.has(textHash)) continue;
     seenTexts.add(textHash);
 
-    // Generate post ID from content
-    const postId = `hash_${generateContentHash(postData.text, postData.authorLink || undefined)}`;
+    // Try to get REAL post ID from multiple sources:
+    let postId: string = '';
+
+    // Priority 1: Extract from post URL
+    if (postData.postUrl) {
+      const urlPostIdMatch = postData.postUrl.match(/\/posts\/(\d+)/);
+      if (urlPostIdMatch) {
+        postId = urlPostIdMatch[1];
+        logger.debug(`Extracted post ID from URL: ${postId}`);
+      }
+    }
+
+    // Priority 2: Try intercepted GraphQL data
+    if (!postId) {
+      const interceptedId = getInterceptedPostId(postData.text);
+      if (interceptedId) {
+        postId = interceptedId;
+        logger.debug(`Found intercepted post ID: ${postId}`);
+      }
+    }
+
+    // Priority 3: Fallback to content hash
+    if (!postId) {
+      postId = `hash_${generateContentHash(postData.text, postData.authorLink || undefined)}`;
+    }
 
     // Normalize author link
     const authorLink = postData.authorLink ? normalizeAuthorLink(postData.authorLink) : undefined;

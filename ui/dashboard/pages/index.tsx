@@ -126,54 +126,22 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const generateActivityData = (posts: Post[], logs: SystemLog[]): ActivityData[] => {
-    const days: Record<string, ActivityData> = {};
-    const today = new Date();
-
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      days[dateStr] = { date: dateStr, posts: 0, classified: 0, messages: 0 };
-    }
-
-    posts.forEach((post) => {
-      const postDate = new Date(post.scrapedAt);
-      const dateStr = postDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (days[dateStr]) {
-        days[dateStr].posts++;
-        if (post.classified) {
-          days[dateStr].classified++;
-        }
-      }
-    });
-
-    logs.forEach((log) => {
-      if (log.type === 'message') {
-        const logDate = new Date(log.createdAt);
-        const dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        if (days[dateStr]) {
-          days[dateStr].messages++;
-        }
-      }
-    });
-
-    return Object.values(days);
-  };
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, healthRes, postsRes, logsRes] = await Promise.all([
+      const [statsRes, healthRes, postsRes, logsRes, activityRes] = await Promise.all([
         apiFetch('/api/stats'),
         apiFetch('/api/health'),
         apiFetch('/api/posts?limit=500'),
         apiFetch('/api/logs?limit=500'),
+        apiFetch('/api/stats/activity?days=7'),
       ]);
 
       let stats: Stats | null = null;
       let health: HealthStatus | null = null;
       let recentPosts: Post[] = [];
       let recentLogs: SystemLog[] = [];
+      let activityData: ActivityData[] = [];
 
       if (statsRes.ok) stats = await statsRes.json();
       if (healthRes.ok) health = await healthRes.json();
@@ -185,6 +153,9 @@ const Dashboard: React.FC = () => {
         const logsData = await logsRes.json();
         recentLogs = logsData.data || [];
       }
+      if (activityRes.ok) {
+        activityData = await activityRes.json();
+      }
 
       const confidenceData = { low: 0, medium: 0, high: 0 };
       recentPosts.forEach((post) => {
@@ -195,8 +166,6 @@ const Dashboard: React.FC = () => {
           else confidenceData.low++;
         }
       });
-
-      const activityData = generateActivityData(recentPosts, recentLogs);
 
       setData({ stats, health, recentPosts, recentLogs, confidenceData, activityData });
       setError(null);

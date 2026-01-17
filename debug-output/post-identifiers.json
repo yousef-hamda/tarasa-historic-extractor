@@ -1,0 +1,44 @@
+{
+  "posts": [
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "foundIdentifiers": [],
+      "allDataAttributes": [
+        {
+          "attr": "data-virtualized",
+          "value": "false"
+        }
+      ],
+      "allHrefs": []
+    },
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "foundIdentifiers": [
+        {
+          "type": "post_reference",
+          "value": "story_message",
+          "source": "data-ad-rendering-role on DIV"
+        }
+      ],
+      "allDataAttributes": [
+        {
+          "attr": "data-ad-comet-preview",
+          "value": "message"
+        },
+        {
+          "attr": "data-ad-preview",
+          "value": "message"
+        },
+        {
+          "attr": "data-ad-rendering-role",
+          "value": "story_message"
+        },
+        {
+          "attr": "data-virtualized",
+          "value": "false"
+        }
+      ],
+      "allHrefs": []
+    }
+  ]
+}

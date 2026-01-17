@@ -15,6 +15,7 @@ import {
   ExclamationTriangleIcon,
   UserCircleIcon,
   ShieldCheckIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 interface Settings {
@@ -56,6 +57,12 @@ const SettingsPage: React.FC = () => {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [renewingSession, setRenewingSession] = useState(false);
   const [sessionRenewResult, setSessionRenewResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Reset data state
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
+  const [resetResult, setResetResult] = useState<{ success: boolean; message: string; deleted?: Record<string, number> } | null>(null);
 
   const fetchSessionStatus = useCallback(async () => {
     try {
@@ -118,6 +125,43 @@ const SettingsPage: React.FC = () => {
       });
     } finally {
       setRenewingSession(false);
+    }
+  };
+
+  const handleResetData = async () => {
+    if (resetConfirmText !== 'DELETE ALL DATA') {
+      setResetResult({ success: false, message: 'Please type "DELETE ALL DATA" to confirm' });
+      return;
+    }
+
+    setResetting(true);
+    setResetResult(null);
+
+    try {
+      const res = await apiFetch('/api/data/reset', { method: 'DELETE' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setResetResult({
+          success: true,
+          message: data.message,
+          deleted: data.deleted,
+        });
+        setShowResetConfirm(false);
+        setResetConfirmText('');
+      } else {
+        setResetResult({
+          success: false,
+          message: data.message || 'Failed to reset data',
+        });
+      }
+    } catch (err) {
+      setResetResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to reset data',
+      });
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -507,6 +551,118 @@ const SettingsPage: React.FC = () => {
             )}
             {triggering === 'message' ? 'Sending...' : 'Trigger Messages'}
           </button>
+        </div>
+      </div>
+
+      {/* Danger Zone - Reset Data */}
+      <div className="bg-white border border-red-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center">
+            <TrashIcon className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-red-900">Danger Zone</h2>
+            <p className="text-sm text-red-600">Irreversible actions - proceed with caution</p>
+          </div>
+        </div>
+
+        {/* Reset Result Message */}
+        {resetResult && (
+          <div className={`flex items-start gap-2 p-4 rounded-lg mb-5 ${
+            resetResult.success ? 'bg-emerald-50' : 'bg-red-50'
+          }`}>
+            {resetResult.success ? (
+              <CheckCircleIcon className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+            ) : (
+              <XCircleIcon className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            )}
+            <div>
+              <span className={`text-sm font-medium ${resetResult.success ? 'text-emerald-700' : 'text-red-700'}`}>
+                {resetResult.message}
+              </span>
+              {resetResult.deleted && (
+                <div className="mt-2 text-xs text-emerald-600 space-y-1">
+                  <p>• {resetResult.deleted.posts} posts deleted</p>
+                  <p>• {resetResult.deleted.classifications} classifications deleted</p>
+                  <p>• {resetResult.deleted.generatedMessages} generated messages deleted</p>
+                  <p>• {resetResult.deleted.sentMessages} sent messages deleted</p>
+                  <p>• {resetResult.deleted.logs} logs deleted</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Reset Data Section */}
+        <div className="p-4 bg-red-50 rounded-lg border border-red-100">
+          <h3 className="font-semibold text-red-900 mb-2">Reset All Data</h3>
+          <p className="text-sm text-red-700 mb-4">
+            This will permanently delete all scraped posts, AI classifications, generated messages,
+            sent messages, and system logs. This action cannot be undone.
+          </p>
+
+          {!showResetConfirm ? (
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
+            >
+              <TrashIcon className="w-4 h-4" />
+              Reset All Data
+            </button>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-4 bg-white rounded-lg border-2 border-red-300">
+                <p className="text-sm font-medium text-red-900 mb-3">
+                  ⚠️ Are you absolutely sure? This will delete ALL data!
+                </p>
+                <p className="text-sm text-red-700 mb-3">
+                  Type <strong className="font-mono bg-red-100 px-1 rounded">DELETE ALL DATA</strong> to confirm:
+                </p>
+                <input
+                  type="text"
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="Type here to confirm..."
+                  className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  disabled={resetting}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleResetData}
+                  disabled={resetting || resetConfirmText !== 'DELETE ALL DATA'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    resetConfirmText === 'DELETE ALL DATA' && !resetting
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {resetting ? (
+                    <>
+                      <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <TrashIcon className="w-4 h-4" />
+                      Yes, Delete Everything
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowResetConfirm(false);
+                    setResetConfirmText('');
+                  }}
+                  disabled={resetting}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
