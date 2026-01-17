@@ -1,0 +1,26 @@
+{
+  "capturedPosts": [],
+  "rawResponseCount": 7,
+  "sampleResponses": [
+    {
+      "url": "https://www.facebook.com/api/graphql/",
+      "dataPreview": "for (;;);{\"__ar\":1,\"error\":1357054,\"errorSummary\":\"Your Request Couldn't be Processed\",\"errorDescription\":\"There was a problem with this request. We're working on getting it fixed as soon as we can.\",\"isNotCritical\":1,\"rid\":\"AZdRo0txnTrgP3chd5kjeAC\",\"payload\":null,\"lid\":\"7596335342977647894\"}"
+    },
+    {
+      "url": "https://www.facebook.com/api/graphql/",
+      "dataPreview": "for (;;);{\"__ar\":1,\"error\":1357054,\"errorSummary\":\"Your Request Couldn't be Processed\",\"errorDescription\":\"There was a problem with this request. We're working on getting it fixed as soon as we can.\",\"isNotCritical\":1,\"rid\":\"Avc79J3nOCEPNYwzbUuF6HS\",\"payload\":null,\"lid\":\"7596335343674524904\"}"
+    },
+    {
+      "url": "https://www.facebook.com/api/graphql/",
+      "dataPreview": "for (;;);{\"__ar\":1,\"error\":1357054,\"errorSummary\":\"Your Request Couldn't be Processed\",\"errorDescription\":\"There was a problem with this request. We're working on getting it fixed as soon as we can.\",\"isNotCritical\":1,\"rid\":\"AUo6FHKDmVS3GquqZMHld9D\",\"payload\":null,\"lid\":\"7596335341898100987\"}"
+    },
+    {
+      "url": "https://www.facebook.com/api/graphql/",
+      "dataPreview": "for (;;);{\"__ar\":1,\"error\":1357054,\"errorSummary\":\"Your Request Couldn't be Processed\",\"errorDescription\":\"There was a problem with this request. We're working on getting it fixed as soon as we can.\",\"isNotCritical\":1,\"rid\":\"A0AOKAmycrovBZMQE5unIcZ\",\"payload\":null,\"lid\":\"7596335346631292866\"}"
+    },
+    {
+      "url": "https://www.facebook.com/api/graphql/",
+      "dataPreview": "for (;;);{\"__ar\":1,\"error\":1357054,\"errorSummary\":\"Your Request Couldn't be Processed\",\"errorDescription\":\"There was a problem with this request. We're working on getting it fixed as soon as we can.\",\"isNotCritical\":1,\"rid\":\"AOAyZXH9kChOo7UBcZjg8SQ\",\"payload\":null,\"lid\":\"7596335403295827010\"}"
+    }
+  ]
+}

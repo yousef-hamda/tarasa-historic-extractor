@@ -95,6 +95,41 @@ const extractPostsFromGraphQL = (responseText: string): InterceptedPost[] => {
 };
 
 /**
+ * Extract post ID from an object, checking multiple possible field names
+ */
+const extractPostIdFromObj = (obj: any): string => {
+  // Check various fields where Facebook stores post IDs
+  const idFields = [
+    'id',
+    'post_id',
+    'story_id',
+    'feedback_id',
+    'top_level_post_id',
+    'mf_story_key',
+    'story_fbid',
+    'legacy_story_hideable_id',
+    'shareable_id',
+  ];
+
+  for (const field of idFields) {
+    if (obj[field]) {
+      const value = String(obj[field]);
+      // Valid if it's a long numeric ID or pfbid format
+      if (value.match(/^\d{10,}$/) || value.startsWith('pfbid')) {
+        return value;
+      }
+    }
+  }
+
+  // Check nested objects
+  if (obj.feedback?.id) return obj.feedback.id;
+  if (obj.story?.id) return obj.story.id;
+  if (obj.post?.id) return obj.post.id;
+
+  return '';
+};
+
+/**
  * Recursively search for post content in GraphQL response
  */
 const findPostContent = (obj: any, posts: InterceptedPost[], depth = 0): void => {
@@ -107,15 +142,20 @@ const findPostContent = (obj: any, posts: InterceptedPost[], depth = 0): void =>
     if (obj[field] && typeof obj[field] === 'object' && obj[field].text) {
       const fullText = obj[field].text;
       if (typeof fullText === 'string' && fullText.length > 30) {
+        const postId = extractPostIdFromObj(obj);
         posts.push({
-          postId: obj.id || obj.post_id || obj.story_id || '',
+          postId,
           fullText: fullText,
           authorName: extractAuthorFromObj(obj),
         });
+        if (postId) {
+          logger.debug(`[FullText] Captured post ID ${postId} with text: ${fullText.substring(0, 50)}...`);
+        }
       }
     } else if (obj[field] && typeof obj[field] === 'string' && obj[field].length > 50) {
+      const postId = extractPostIdFromObj(obj);
       posts.push({
-        postId: obj.id || obj.post_id || '',
+        postId,
         fullText: obj[field],
         authorName: extractAuthorFromObj(obj),
       });
@@ -124,8 +164,9 @@ const findPostContent = (obj: any, posts: InterceptedPost[], depth = 0): void =>
 
   // Also check for comet_sections which often contain post data
   if (obj.comet_sections?.content?.story?.message?.text) {
+    const postId = extractPostIdFromObj(obj) || extractPostIdFromObj(obj.comet_sections?.content?.story || {});
     posts.push({
-      postId: obj.id || '',
+      postId,
       fullText: obj.comet_sections.content.story.message.text,
     });
   }
@@ -171,6 +212,37 @@ export const getInterceptedFullText = (truncatedText: string): string | null => 
   }
 
   return null;
+};
+
+/**
+ * Get intercepted post ID that matches the given text
+ * This is crucial for constructing post URLs when the DOM doesn't expose IDs
+ */
+export const getInterceptedPostId = (text: string): string | null => {
+  if (!text || text.length < 30) return null;
+
+  // Try to match by the beginning of the text
+  const searchKey = text.substring(0, 50).toLowerCase().trim();
+
+  for (const [key, post] of interceptedPosts) {
+    // Check if the text matches
+    if (key.startsWith(searchKey.substring(0, 30)) || searchKey.startsWith(key.substring(0, 30))) {
+      // Return the post ID if it looks valid (numeric or pfbid format)
+      if (post.postId && (post.postId.match(/^\d{10,}$/) || post.postId.startsWith('pfbid'))) {
+        logger.debug(`[FullText] Found intercepted post ID: ${post.postId}`);
+        return post.postId;
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Get all intercepted posts (for debugging)
+ */
+export const getAllInterceptedPosts = (): Map<string, InterceptedPost> => {
+  return new Map(interceptedPosts);
 };
 
 /**

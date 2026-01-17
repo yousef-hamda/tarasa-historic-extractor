@@ -1,0 +1,651 @@
+{
+  "loggedInUser": {
+    "name": null,
+    "id": null,
+    "photoUrl": null
+  },
+  "allProfileLinks": [
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100088353446508/",
+      "userId": "100088353446508",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100088269892800/",
+      "userId": "100088269892800",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100085634646030/",
+      "userId": "100085634646030",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100084435413666/",
+      "userId": "100084435413666",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100084053839896/",
+      "userId": "100084053839896",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100083284477638/",
+      "userId": "100083284477638",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100083029094655/",
+      "userId": "100083029094655",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100075413215071/",
+      "userId": "100075413215071",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100074617886359/",
+      "userId": "100074617886359",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100073023885384/",
+      "userId": "100073023885384",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100071217963424/",
+      "userId": "100071217963424",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100070121944938/",
+      "userId": "100070121944938",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100070001181562/",
+      "userId": "100070001181562",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100068558525570/",
+      "userId": "100068558525570",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100068159480199/",
+      "userId": "100068159480199",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100065340495407/",
+      "userId": "100065340495407",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100065082822110/",
+      "userId": "100065082822110",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100064651373439/",
+      "userId": "100064651373439",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100064098678576/",
+      "userId": "100064098678576",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100063929643776/",
+      "userId": "100063929643776",
+      "location": "header",
+      "y": -4475,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "Profile",
+      "href": "/groups/1654282231298043/user/100010396726536/",
+      "userId": "100010396726536",
+      "location": "header",
+      "y": -4328,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": true
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZZxcJhuVZD5gYNBGnxBCK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": -761,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZZxcJhuVZD5gYNBGnxBCK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": -761,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZZxcJhuVZD5gYNBGnxBCK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": -761,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZZxcJhuVZD5gYNBGnxBCK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": -124,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "יד יצחק בן-צבי",
+      "href": "/groups/1654282231298043/user/100064881244303/?__cft__[0]=AZZxcJhuVZD5gYNBGnxBCK",
+      "userId": "100064881244303",
+      "location": "feed",
+      "y": -61,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 144,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 144,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 144,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 607,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "יד יצחק בן-צבי",
+      "href": "/groups/1654282231298043/user/100064881244303/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100064881244303",
+      "location": "feed",
+      "y": 650,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100013488001012/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-",
+      "userId": "100013488001012",
+      "location": "feed",
+      "y": 835,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eli Moallem",
+      "href": "/groups/1654282231298043/user/100013488001012/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-",
+      "userId": "100013488001012",
+      "location": "feed",
+      "y": 835,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eli Moallem",
+      "href": "/groups/1654282231298043/user/100013488001012/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-",
+      "userId": "100013488001012",
+      "location": "feed",
+      "y": 835,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Sergey Barak",
+      "href": "/groups/1654282231298043/user/1021997115/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-O7O77",
+      "userId": "1021997115",
+      "location": "feed",
+      "y": 883,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Sergey Barak",
+      "href": "/groups/1654282231298043/user/1021997115/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-O7O77",
+      "userId": "1021997115",
+      "location": "feed",
+      "y": 1375,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/1053342798/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-O7O77",
+      "userId": "1053342798",
+      "location": "feed",
+      "y": 1613,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Orna Kovel-Goldstein",
+      "href": "/groups/1654282231298043/user/1053342798/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-O7O77",
+      "userId": "1053342798",
+      "location": "feed",
+      "y": 1619,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100042454861369/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-",
+      "userId": "100042454861369",
+      "location": "feed",
+      "y": 1713,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Pnina Pinto Leibovich",
+      "href": "/groups/1654282231298043/user/100042454861369/?__cft__[0]=AZZWqBUBM-ozu-NosBkFJ-",
+      "userId": "100042454861369",
+      "location": "feed",
+      "y": 1719,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZYjVSEsaEmvZzOGzs4fAo",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 1887,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZYjVSEsaEmvZzOGzs4fAo",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 1887,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZYjVSEsaEmvZzOGzs4fAo",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 1887,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZYjVSEsaEmvZzOGzs4fAo",
+      "userId": "100052771329882",
+      "location": "feed",
+      "y": 2533,
+      "isInFeed": true,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "other",
+      "y": 416,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": false
+    },
+    {
+      "name": "Eldad Brin",
+      "href": "/groups/1654282231298043/user/100052771329882/?__cft__[0]=AZaXafDzU5TvV3PSaYuvTK",
+      "userId": "100052771329882",
+      "location": "other",
+      "y": 420,
+      "isInFeed": false,
+      "isInSidebar": false,
+      "isInHeader": false
+    }
+  ],
+  "textElementsWithNearbyProfiles": [
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "textY": -81,
+      "nearbyProfiles": [
+        {
+          "name": "יד יצחק בן-צבי",
+          "userId": "100064881244303",
+          "distance": 20,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": -43,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        }
+      ]
+    },
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "textY": -81,
+      "nearbyProfiles": [
+        {
+          "name": "יד יצחק בן-צבי",
+          "userId": "100064881244303",
+          "distance": 20,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": -43,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": 225,
+          "direction": "BELOW"
+        }
+      ]
+    },
+    {
+      "textPreview": "ערב השקה מרגש לספר 'דירה בבירה', בצריף המיתולוגי ש",
+      "textY": 650,
+      "nearbyProfiles": [
+        {
+          "name": "יד יצחק בן-צבי",
+          "userId": "100064881244303",
+          "distance": 0,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": -43,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        }
+      ]
+    },
+    {
+      "textPreview": "ערב השקה מרגש לספר 'דירה בבירה', בצריף המיתולוגי ש",
+      "textY": 650,
+      "nearbyProfiles": [
+        {
+          "name": "יד יצחק בן-צבי",
+          "userId": "100064881244303",
+          "distance": 0,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eldad Brin",
+          "userId": "100052771329882",
+          "distance": -43,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": 185,
+          "direction": "BELOW"
+        }
+      ]
+    },
+    {
+      "textPreview": "ציור של בלוק 101 ברחוב בר-יוחאי בקטמון ט' של הצייר",
+      "textY": 883,
+      "nearbyProfiles": [
+        {
+          "name": "Sergey Barak",
+          "userId": "1021997115",
+          "distance": 0,
+          "direction": "BELOW"
+        },
+        {
+          "name": "",
+          "userId": "100013488001012",
+          "distance": -48,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": -48,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "Eli Moallem",
+          "userId": "100013488001012",
+          "distance": -48,
+          "direction": "ABOVE"
+        },
+        {
+          "name": "יד יצחק בן-צבי",
+          "userId": "100064881244303",
+          "distance": -233,
+          "direction": "ABOVE"
+        }
+      ]
+    }
+  ]
+}

@@ -89,6 +89,7 @@ const LogItem: React.FC<{ log: SystemLog }> = ({ log }) => {
     classify: { bg: 'bg-slate-100', text: 'text-slate-700', icon: SparklesIcon },
     message: { bg: 'bg-emerald-50', text: 'text-emerald-700', icon: ChatBubbleLeftRightIcon },
     system: { bg: 'bg-slate-100', text: 'text-slate-700', icon: CpuChipIcon },
+    auth: { bg: 'bg-blue-50', text: 'text-blue-700', icon: CpuChipIcon },
   }[log.type] || { bg: 'bg-slate-100', text: 'text-slate-700', icon: DocumentTextIcon };
 
   const Icon = typeConfig.icon;

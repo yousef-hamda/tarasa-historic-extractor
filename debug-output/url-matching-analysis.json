@@ -1,0 +1,105 @@
+{
+  "totalPostLinks": 2,
+  "totalTextElements": 10,
+  "postLinks": [
+    {
+      "y": 1687,
+      "text": "19w",
+      "postId": "24598375829795358",
+      "isComment": true
+    },
+    {
+      "y": 1787,
+      "text": "19w",
+      "postId": "24598375829795358",
+      "isComment": true
+    }
+  ],
+  "matches": [
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "textY": -81,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "לפני המון שנים - כן, גם במונחים ירושלמים - יצא מדר",
+      "textY": -81,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "ערב השקה מרגש לספר 'דירה בבירה', בצריף המיתולוגי ש",
+      "textY": 650,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "ערב השקה מרגש לספר 'דירה בבירה', בצריף המיתולוגי ש",
+      "textY": 650,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "ציור של בלוק 101 ברחוב בר-יוחאי בקטמון ט' של הצייר",
+      "textY": 883,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "ירושלים, רחוב פת פינת בר יוחאי. אחד הימים הבהירים ",
+      "textY": 1418,
+      "nearbyLinks": [
+        {
+          "href": "https://www.facebook.com/groups/1654282231298043/posts/24598375829795358/?comment_id=245986702530992",
+          "text": "19w",
+          "y": 1686.765625,
+          "distance": 269,
+          "isComment": true,
+          "postId": "24598375829795358"
+        }
+      ]
+    },
+    {
+      "textPreview": "ירושלים, רחוב פת פינת בר יוחאי. אחד הימים הבהירים ",
+      "textY": 1418,
+      "nearbyLinks": [
+        {
+          "href": "https://www.facebook.com/groups/1654282231298043/posts/24598375829795358/?comment_id=245986702530992",
+          "text": "19w",
+          "y": 1686.765625,
+          "distance": 269,
+          "isComment": true,
+          "postId": "24598375829795358"
+        }
+      ]
+    },
+    {
+      "textPreview": "אירוע מעניין, חינמי ורלוונטי לחברי קבוצה זו ביד יצ",
+      "textY": 1935,
+      "nearbyLinks": [
+        {
+          "href": "https://www.facebook.com/groups/1654282231298043/posts/24598375829795358/?comment_id=245998544329808",
+          "text": "19w",
+          "y": 1786.8125,
+          "distance": -148,
+          "isComment": true,
+          "postId": "24598375829795358"
+        },
+        {
+          "href": "https://www.facebook.com/groups/1654282231298043/posts/24598375829795358/?comment_id=245986702530992",
+          "text": "19w",
+          "y": 1686.765625,
+          "distance": -248,
+          "isComment": true,
+          "postId": "24598375829795358"
+        }
+      ]
+    },
+    {
+      "textPreview": "ב-4.9.25 (בעוד עשרה ימים) - השקה חגיגית ביד יצחק ב",
+      "textY": 2576,
+      "nearbyLinks": []
+    },
+    {
+      "textPreview": "ב-4.9.25 (בעוד עשרה ימים) - השקה חגיגית ביד יצחק ב",
+      "textY": 2576,
+      "nearbyLinks": []
+    }
+  ]
+}

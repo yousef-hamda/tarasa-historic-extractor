@@ -23,6 +23,18 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
 
   const confidence = post.classified?.confidence ?? 0;
 
+  // Compute effective post URL:
+  // 1. Use postUrl if available
+  // 2. Otherwise, construct from fbPostId and groupId if fbPostId is a valid Facebook ID (not hash-based)
+  const effectivePostUrl = post.postUrl || (
+    post.fbPostId &&
+    post.groupId &&
+    !post.fbPostId.startsWith('hash_') &&
+    /^\d+$/.test(post.fbPostId)
+      ? `https://www.facebook.com/groups/${post.groupId}/posts/${post.fbPostId}`
+      : null
+  );
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Post Details" size="xl">
       <div className="px-6 pb-6 space-y-6">
@@ -73,10 +85,10 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
         </div>
 
         {/* View Original Post Button */}
-        {post.postUrl && (
+        {effectivePostUrl && (
           <div className="flex justify-center">
             <a
-              href={post.postUrl}
+              href={effectivePostUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm"
@@ -171,9 +183,9 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
           <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
             Group: {post.groupId || 'N/A'}
           </span>
-          {post.postUrl && (
+          {effectivePostUrl && (
             <a
-              href={post.postUrl}
+              href={effectivePostUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="px-2 py-1 text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 rounded inline-flex items-center gap-1 transition-colors"
