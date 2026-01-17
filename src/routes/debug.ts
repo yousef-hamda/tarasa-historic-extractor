@@ -10,6 +10,7 @@ import { getErrorLogs, getErrorStats, resolveError, clearResolvedErrors, trackEr
 import { getSelfHealingStatus, getHealthIssues, getHealingActions, getCircuitBreakers, runHealingChecks, resolveHealthIssue, startSelfHealing, stopSelfHealing } from '../debug/selfHealing';
 import { getConnectedClients } from '../debug/websocket';
 import { getEventHistory } from '../debug/eventEmitter';
+import { runFullDiagnostics, getLastDiagnosticResult, setLastDiagnosticResult, DiagnosticResult } from '../debug/diagnostics';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -312,6 +313,81 @@ router.get('/api/debug/stress-test', (req: Request, res: Response) => {
     reasons: stress.reasons,
     metrics: collectMetrics(),
   });
+});
+
+/**
+ * GET /api/debug/diagnostics
+ * Get last diagnostic result
+ */
+router.get('/api/debug/diagnostics', (req: Request, res: Response) => {
+  const lastResult = getLastDiagnosticResult();
+  res.json({
+    hasResult: !!lastResult,
+    result: lastResult,
+  });
+});
+
+/**
+ * GET /api/debug/diagnostics/stream
+ * Run full diagnostics with Server-Sent Events for real-time progress
+ */
+router.get('/api/debug/diagnostics/stream', async (req: Request, res: Response) => {
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+
+  // Send initial connection event
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected' })}\n\n`);
+
+  let lastResult: DiagnosticResult | null = null;
+
+  try {
+    // Run diagnostics with progress callback
+    const result = await runFullDiagnostics((progress) => {
+      lastResult = progress;
+      // Send progress update
+      res.write(`event: progress\ndata: ${JSON.stringify(progress)}\n\n`);
+    });
+
+    // Store result for future retrieval
+    setLastDiagnosticResult(result);
+
+    // Send completion event
+    res.write(`event: complete\ndata: ${JSON.stringify(result)}\n\n`);
+  } catch (error) {
+    logger.error('Diagnostics stream error', { error: (error as Error).message });
+
+    // Send error event
+    res.write(`event: error\ndata: ${JSON.stringify({
+      error: (error as Error).message,
+      partialResult: lastResult
+    })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+/**
+ * POST /api/debug/diagnostics/run
+ * Run full diagnostics (non-streaming version)
+ */
+router.post('/api/debug/diagnostics/run', async (req: Request, res: Response) => {
+  try {
+    const result = await runFullDiagnostics((progress) => {
+      // Progress callback - not used in non-streaming version
+    });
+
+    setLastDiagnosticResult(result);
+    res.json(result);
+  } catch (error) {
+    logger.error('Diagnostics run error', { error: (error as Error).message });
+    res.status(500).json({
+      error: 'Diagnostics failed',
+      details: (error as Error).message
+    });
+  }
 });
 
 export default router;

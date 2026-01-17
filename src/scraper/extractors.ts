@@ -712,65 +712,83 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
     }
 
     // Extract author photo with multiple strategies
+    // NOTE: Facebook now uses SVG <image> elements with href attribute for profile photos
     let authorPhoto: string | undefined;
     try {
-      // Strategy 1: Find profile photo via aria-label link (most reliable)
-      const photoStrategies = [
-        'a[aria-label] img[src*="scontent"]',
-        'a[aria-label] image[*|href*="scontent"]',
-        'a[href*="facebook.com/"] img[src*="scontent"]',
-        'svg image[*|href*="scontent"]',
-        'img[src*="scontent"][alt]',
-        'a[role="link"] img[src*="fbcdn"]',
-      ];
-
-      for (const selector of photoStrategies) {
-        if (authorPhoto) break;
-        try {
-          const photoEl = await container.$(selector);
-          if (photoEl) {
-            // Try both src and xlink:href
-            let src = await photoEl.getAttribute('src');
-            if (!src) {
-              src = await photoEl.getAttribute('href');
-            }
-            if (!src) {
-              src = await photoEl.evaluate((el) => {
-                return el.getAttribute('xlink:href') ||
-                       el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
-                       (el as HTMLImageElement).src;
-              });
-            }
-            if (src && (src.includes('scontent') || src.includes('fbcdn'))) {
-              authorPhoto = src;
-              logger.debug(`Container ${i + 1}: Found photo with selector: ${selector}`);
+      // Strategy 1: Use page.evaluate for comprehensive SVG image search
+      // This is the most reliable as Facebook uses SVG images now
+      authorPhoto = await container.evaluate((el) => {
+        // First, look for SVG images (Facebook's current profile photo structure)
+        const svgImages = el.querySelectorAll('svg image');
+        for (const img of svgImages) {
+          const rect = img.getBoundingClientRect();
+          const containerRect = el.getBoundingClientRect();
+          // Only consider images near the top (profile photos are in the header)
+          if (rect.top - containerRect.top < 150) {
+            // Facebook uses 'href' attribute now (not xlink:href)
+            const href = img.getAttribute('href') ||
+                        img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                        img.getAttribute('xlink:href');
+            if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
+              return href;
             }
           }
-        } catch {
-          // Try next selector
         }
+
+        // Fallback: Look for regular img elements
+        const images = el.querySelectorAll('img');
+        for (const img of images) {
+          const rect = img.getBoundingClientRect();
+          const containerRect = el.getBoundingClientRect();
+          if (rect.top - containerRect.top < 150) {
+            const src = img.getAttribute('src');
+            if (src && (src.includes('scontent') || src.includes('fbcdn'))) {
+              return src;
+            }
+          }
+        }
+
+        return undefined;
+      });
+
+      if (authorPhoto) {
+        logger.debug(`Container ${i + 1}: Found photo via evaluate`);
       }
 
-      // Strategy 2: Use page.evaluate for deeper search
+      // Strategy 2: Try specific selectors as fallback
       if (!authorPhoto) {
-        authorPhoto = await container.evaluate((el) => {
-          // Find images in the header area (first 200px)
-          const images = el.querySelectorAll('img, image');
-          for (const img of images) {
-            const rect = img.getBoundingClientRect();
-            const containerRect = el.getBoundingClientRect();
-            // Only consider images near the top (profile photos)
-            if (rect.top - containerRect.top < 100) {
-              const src = img.getAttribute('src') ||
-                         img.getAttribute('href') ||
-                         img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+        const photoSelectors = [
+          'svg image[href*="scontent"]',
+          'svg image[href*="fbcdn"]',
+          'a[href*="/user/"] svg image',
+          'a[href*="profile.php"] svg image',
+          'img[src*="scontent"]',
+          'img[src*="fbcdn"]',
+        ];
+
+        for (const selector of photoSelectors) {
+          if (authorPhoto) break;
+          try {
+            const photoEl = await container.$(selector);
+            if (photoEl) {
+              let src = await photoEl.getAttribute('href');
+              if (!src) src = await photoEl.getAttribute('src');
+              if (!src) {
+                src = await photoEl.evaluate((el) => {
+                  return el.getAttribute('href') ||
+                         el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                         (el as HTMLImageElement).src;
+                });
+              }
               if (src && (src.includes('scontent') || src.includes('fbcdn'))) {
-                return src;
+                authorPhoto = src;
+                logger.debug(`Container ${i + 1}: Found photo with selector: ${selector}`);
               }
             }
+          } catch {
+            // Try next selector
           }
-          return undefined;
-        });
+        }
       }
     } catch (e) {
       logger.debug(`Container ${i + 1}: Photo extraction failed: ${(e as Error).message}`);
@@ -799,20 +817,101 @@ export const extractPosts = async (page: Page): Promise<ScrapedPost[]> => {
 /**
  * Alternative post extraction for groups with non-standard DOM structure
  * Used when role="article" containers are empty or missing
+ *
+ * This method uses a two-phase approach:
+ * 1. First, collect ALL profile photos on the page with their y-positions
+ * 2. Then, for each post text, find the nearest profile photo ABOVE it
  */
 const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
   logger.info('Using alternative extraction method (div[dir="auto"])...');
   const posts: ScrapedPost[] = [];
   const seenTexts = new Set<string>();
 
-  // Find all div[dir="auto"] with substantial text that looks like post content
+  // Two-phase extraction for better photo matching
   const postTexts = await page.evaluate(() => {
     const results: Array<{
       text: string;
       authorName: string | null;
       authorLink: string | null;
+      authorPhoto: string | null;
     }> = [];
 
+    // PHASE 1: Collect ALL profile photos on the page with their positions
+    const profilePhotos: Array<{
+      y: number;
+      photo: string;
+      link: string | null;
+      name: string | null;
+    }> = [];
+
+    // Find all profile links that contain SVG images (Facebook's current structure)
+    const profileLinks = document.querySelectorAll('a[href*="/user/"], a[href*="profile.php"], a[href*="/people/"]');
+    for (const link of profileLinks) {
+      const svgImage = link.querySelector('svg image');
+      if (svgImage) {
+        const href = svgImage.getAttribute('href') ||
+                    svgImage.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                    svgImage.getAttribute('xlink:href');
+        if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
+          const rect = link.getBoundingClientRect();
+          const linkHref = link.getAttribute('href') || '';
+          const name = (link as HTMLElement).innerText?.trim() ||
+                      link.getAttribute('aria-label') || null;
+          profilePhotos.push({
+            y: rect.top,
+            photo: href,
+            link: linkHref,
+            name: name && name.length > 1 && name.length < 50 ? name : null
+          });
+        }
+      }
+      // Also check for regular img inside profile links
+      const img = link.querySelector('img[src*="scontent"], img[src*="fbcdn"]');
+      if (img && !link.querySelector('svg image')) {
+        const src = img.getAttribute('src');
+        if (src) {
+          const rect = link.getBoundingClientRect();
+          const linkHref = link.getAttribute('href') || '';
+          const name = (link as HTMLElement).innerText?.trim() ||
+                      link.getAttribute('aria-label') || null;
+          profilePhotos.push({
+            y: rect.top,
+            photo: src,
+            link: linkHref,
+            name: name && name.length > 1 && name.length < 50 ? name : null
+          });
+        }
+      }
+    }
+
+    // Also scan for any SVG images that might not be in profile links
+    const allSvgImages = document.querySelectorAll('svg image');
+    for (const svgImg of allSvgImages) {
+      const href = svgImg.getAttribute('href') ||
+                  svgImg.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                  svgImg.getAttribute('xlink:href');
+      if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
+        // Check if we already have this photo
+        if (!profilePhotos.some(p => p.photo === href)) {
+          const rect = svgImg.getBoundingClientRect();
+          // Try to find parent link
+          let parentLink = svgImg.closest('a');
+          let linkHref = parentLink ? parentLink.getAttribute('href') : null;
+          let name = parentLink ? (parentLink.getAttribute('aria-label') || null) : null;
+          profilePhotos.push({
+            y: rect.top,
+            photo: href,
+            link: linkHref,
+            name: name
+          });
+        }
+      }
+    }
+
+    // Sort photos by y position
+    profilePhotos.sort((a, b) => a.y - b.y);
+
+    // PHASE 2: Find all post text content
     const dirAutoDivs = document.querySelectorAll('div[dir="auto"]');
 
     for (const div of dirAutoDivs) {
@@ -837,40 +936,62 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
 
       if (cleanedText.length < 40) continue;
 
-      // Try to find author info from nearby elements
+      // Get the y position of this text
+      const divRect = div.getBoundingClientRect();
+      const divY = divRect.top;
+
+      // Find the nearest profile photo ABOVE this text (within 300px)
       let authorName: string | null = null;
       let authorLink: string | null = null;
+      let authorPhoto: string | null = null;
 
-      // Look for author in parent elements
-      let parent = div.parentElement;
-      for (let i = 0; i < 10 && parent; i++) {
-        // Look for links to profiles
-        const links = parent.querySelectorAll('a[href*="facebook.com"]');
-        for (const link of links) {
-          const href = link.getAttribute('href') || '';
-          // Check if it's a profile link
-          if (href.includes('/user/') || href.includes('profile.php') ||
-              href.includes('/people/') || href.match(/facebook\.com\/[a-zA-Z0-9.]+\/?$/)) {
-            if (!authorLink) {
+      // Find the closest photo above the text
+      let closestPhoto = null;
+      let closestDistance = Infinity;
+      for (const photo of profilePhotos) {
+        // Photo must be above the text (photo.y < divY)
+        // And within 300px distance
+        const distance = divY - photo.y;
+        if (distance > 0 && distance < 300 && distance < closestDistance) {
+          closestDistance = distance;
+          closestPhoto = photo;
+        }
+      }
+
+      if (closestPhoto) {
+        authorPhoto = closestPhoto.photo;
+        authorLink = closestPhoto.link;
+        authorName = closestPhoto.name;
+      }
+
+      // If no photo found via position matching, fall back to ancestor search
+      if (!authorLink) {
+        let parent = div.parentElement;
+        for (let i = 0; i < 10 && parent; i++) {
+          const links = parent.querySelectorAll('a[href*="facebook.com"]');
+          for (const link of links) {
+            const href = link.getAttribute('href') || '';
+            if (href.includes('/user/') || href.includes('profile.php') ||
+                href.includes('/people/') || href.match(/facebook\.com\/[a-zA-Z0-9.]+\/?$/)) {
               authorLink = href;
-              // Get name from link text or aria-label
               const name = (link as HTMLElement).innerText?.trim() ||
                           link.getAttribute('aria-label') || null;
               if (name && name.length > 1 && name.length < 50) {
                 authorName = name;
               }
+              break;
             }
-            break;
           }
+          if (authorLink) break;
+          parent = parent.parentElement;
         }
-        if (authorLink) break;
-        parent = parent.parentElement;
       }
 
       results.push({
         text: cleanedText,
         authorName,
-        authorLink
+        authorLink,
+        authorPhoto
       });
 
       // Limit results
@@ -898,7 +1019,7 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
       fbPostId: postId,
       authorName: postData.authorName || undefined,
       authorLink,
-      authorPhoto: undefined, // Not extracted in alternative method
+      authorPhoto: postData.authorPhoto || undefined,
       text: postData.text,
     });
   }

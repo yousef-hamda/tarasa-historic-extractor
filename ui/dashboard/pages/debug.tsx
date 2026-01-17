@@ -15,6 +15,14 @@ import {
   ChartBarIcon,
   SignalIcon,
   BeakerIcon,
+  PlayIcon,
+  SparklesIcon,
+  CircleStackIcon,
+  KeyIcon,
+  CloudIcon,
+  GlobeAltIcon,
+  Cog6ToothIcon,
+  DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 interface SystemMetrics {
@@ -74,6 +82,32 @@ interface CircuitBreaker {
   state: 'closed' | 'open' | 'half_open';
   failures: number;
   successes: number;
+}
+
+interface DiagnosticTest {
+  id: string;
+  name: string;
+  category: 'database' | 'auth' | 'services' | 'scraping' | 'ai' | 'system';
+  description: string;
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'fixed' | 'skipped';
+  message?: string;
+  duration?: number;
+  autoFixable: boolean;
+  fixAttempted?: boolean;
+  fixResult?: string;
+}
+
+interface DiagnosticResult {
+  id: string;
+  startedAt: string;
+  completedAt?: string;
+  totalTests: number;
+  passed: number;
+  failed: number;
+  fixed: number;
+  skipped: number;
+  tests: DiagnosticTest[];
+  overallStatus: 'running' | 'healthy' | 'degraded' | 'critical';
 }
 
 interface DebugOverview {
@@ -286,9 +320,12 @@ export default function DebugPage() {
   const [healingActions, setHealingActions] = useState<HealingAction[]>([]);
   const [circuitBreakers, setCircuitBreakers] = useState<CircuitBreaker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'errors' | 'healing'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'errors' | 'healing' | 'diagnostics'>('overview');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
+  const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+  const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchOverview = useCallback(async () => {
     try {
@@ -429,6 +466,72 @@ export default function DebugPage() {
     }
   };
 
+  const runDiagnostics = () => {
+    if (isDiagnosticRunning) return;
+
+    // Close any existing event source
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setIsDiagnosticRunning(true);
+    setDiagnosticResult(null);
+
+    // Create EventSource for SSE
+    const eventSource = new EventSource(`http://${window.location.hostname}:4000/api/debug/diagnostics/stream`);
+    eventSourceRef.current = eventSource;
+
+    eventSource.addEventListener('progress', (event) => {
+      const data = JSON.parse(event.data);
+      setDiagnosticResult(data);
+    });
+
+    eventSource.addEventListener('complete', (event) => {
+      const data = JSON.parse(event.data);
+      setDiagnosticResult(data);
+      setIsDiagnosticRunning(false);
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('error', (event) => {
+      console.error('Diagnostic SSE error:', event);
+      setIsDiagnosticRunning(false);
+      eventSource.close();
+    });
+
+    eventSource.onerror = () => {
+      setIsDiagnosticRunning(false);
+      eventSource.close();
+    };
+  };
+
+  // Cleanup event source on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  // Fetch last diagnostic result on mount
+  useEffect(() => {
+    const fetchLastDiagnostic = async () => {
+      try {
+        const res = await apiFetch('/api/debug/diagnostics');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.hasResult) {
+            setDiagnosticResult(data.result);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch diagnostic result:', err);
+      }
+    };
+    fetchLastDiagnostic();
+  }, []);
+
   if (loading && !overview) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -531,6 +634,12 @@ export default function DebugPage() {
           onClick={() => setActiveTab('healing')}
           icon={ShieldCheckIcon}
           label="Self-Healing"
+        />
+        <TabButton
+          active={activeTab === 'diagnostics'}
+          onClick={() => setActiveTab('diagnostics')}
+          icon={SparklesIcon}
+          label="Diagnostics"
         />
       </div>
 
@@ -871,6 +980,266 @@ export default function DebugPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Diagnostics Tab */}
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-6">
+          {/* Run Diagnostics Hero Section */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-8">
+            {/* Animated background effect */}
+            <div className="absolute inset-0 opacity-20">
+              <div className="absolute top-0 left-0 w-72 h-72 bg-emerald-500 rounded-full blur-3xl animate-pulse" />
+              <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex-1 text-center md:text-left">
+                <div className="flex items-center gap-3 justify-center md:justify-start mb-3">
+                  <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
+                    <SparklesIcon className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">System Diagnostics</h2>
+                </div>
+                <p className="text-slate-300 max-w-lg">
+                  Run comprehensive tests across all system components. Auto-fix capable issues are repaired automatically during the scan.
+                </p>
+              </div>
+
+              <button
+                onClick={runDiagnostics}
+                disabled={isDiagnosticRunning}
+                className={`group relative flex items-center gap-3 px-8 py-4 rounded-xl font-semibold text-lg transition-all transform hover:scale-105 ${
+                  isDiagnosticRunning
+                    ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50'
+                }`}
+              >
+                {isDiagnosticRunning ? (
+                  <>
+                    <ArrowPathIcon className="w-6 h-6 animate-spin" />
+                    Running Tests...
+                  </>
+                ) : (
+                  <>
+                    <PlayIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                    Run Full Diagnostics
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Overall Status Indicator */}
+            {diagnosticResult && (
+              <div className="relative z-10 mt-6 pt-6 border-t border-white/10">
+                <div className="flex flex-wrap items-center justify-center gap-6">
+                  <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
+                    diagnosticResult.overallStatus === 'healthy' ? 'bg-emerald-500/20 text-emerald-400' :
+                    diagnosticResult.overallStatus === 'degraded' ? 'bg-amber-500/20 text-amber-400' :
+                    diagnosticResult.overallStatus === 'critical' ? 'bg-red-500/20 text-red-400' :
+                    'bg-slate-500/20 text-slate-400'
+                  }`}>
+                    {diagnosticResult.overallStatus === 'healthy' && <CheckCircleIcon className="w-5 h-5" />}
+                    {diagnosticResult.overallStatus === 'degraded' && <ExclamationTriangleIcon className="w-5 h-5" />}
+                    {diagnosticResult.overallStatus === 'critical' && <XCircleIcon className="w-5 h-5" />}
+                    {diagnosticResult.overallStatus === 'running' && <ArrowPathIcon className="w-5 h-5 animate-spin" />}
+                    <span className="font-semibold capitalize">{diagnosticResult.overallStatus}</span>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-emerald-400">
+                      <CheckCircleIcon className="w-4 h-4 inline mr-1" />
+                      {diagnosticResult.passed} Passed
+                    </span>
+                    {diagnosticResult.fixed > 0 && (
+                      <span className="text-blue-400">
+                        <WrenchScrewdriverIcon className="w-4 h-4 inline mr-1" />
+                        {diagnosticResult.fixed} Fixed
+                      </span>
+                    )}
+                    {diagnosticResult.failed > 0 && (
+                      <span className="text-red-400">
+                        <XCircleIcon className="w-4 h-4 inline mr-1" />
+                        {diagnosticResult.failed} Failed
+                      </span>
+                    )}
+                    {diagnosticResult.skipped > 0 && (
+                      <span className="text-slate-400">
+                        {diagnosticResult.skipped} Skipped
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Diagnostic Test Results Grid */}
+          {diagnosticResult && diagnosticResult.tests.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {diagnosticResult.tests.map((test, index) => {
+                const getCategoryIcon = (category: string) => {
+                  switch (category) {
+                    case 'database': return CircleStackIcon;
+                    case 'auth': return KeyIcon;
+                    case 'services': return CloudIcon;
+                    case 'scraping': return GlobeAltIcon;
+                    case 'ai': return SparklesIcon;
+                    case 'system': return Cog6ToothIcon;
+                    default: return BeakerIcon;
+                  }
+                };
+
+                const CategoryIcon = getCategoryIcon(test.category);
+
+                return (
+                  <div
+                    key={test.id}
+                    className={`relative overflow-hidden bg-white border rounded-xl p-5 transition-all duration-500 ${
+                      test.status === 'running' ? 'border-blue-300 shadow-lg shadow-blue-100 animate-pulse' :
+                      test.status === 'passed' ? 'border-emerald-200 hover:border-emerald-300' :
+                      test.status === 'fixed' ? 'border-blue-200 hover:border-blue-300' :
+                      test.status === 'failed' ? 'border-red-200 hover:border-red-300' :
+                      test.status === 'skipped' ? 'border-slate-200' :
+                      'border-slate-200'
+                    }`}
+                    style={{
+                      animationDelay: `${index * 50}ms`,
+                    }}
+                  >
+                    {/* Status Progress Bar */}
+                    <div className={`absolute top-0 left-0 right-0 h-1 transition-all ${
+                      test.status === 'running' ? 'bg-blue-500' :
+                      test.status === 'passed' ? 'bg-emerald-500' :
+                      test.status === 'fixed' ? 'bg-blue-500' :
+                      test.status === 'failed' ? 'bg-red-500' :
+                      test.status === 'skipped' ? 'bg-slate-300' :
+                      'bg-slate-200'
+                    }`} />
+
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                          test.status === 'running' ? 'bg-blue-50 text-blue-600' :
+                          test.status === 'passed' ? 'bg-emerald-50 text-emerald-600' :
+                          test.status === 'fixed' ? 'bg-blue-50 text-blue-600' :
+                          test.status === 'failed' ? 'bg-red-50 text-red-600' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          <CategoryIcon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-slate-900">{test.name}</h4>
+                          <p className="text-xs text-slate-400 capitalize">{test.category}</p>
+                        </div>
+                      </div>
+
+                      {/* Status Icon */}
+                      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                        test.status === 'running' ? 'bg-blue-100' :
+                        test.status === 'passed' ? 'bg-emerald-100' :
+                        test.status === 'fixed' ? 'bg-blue-100' :
+                        test.status === 'failed' ? 'bg-red-100' :
+                        test.status === 'skipped' ? 'bg-slate-100' :
+                        'bg-slate-100'
+                      }`}>
+                        {test.status === 'running' && (
+                          <ArrowPathIcon className="w-4 h-4 text-blue-600 animate-spin" />
+                        )}
+                        {test.status === 'passed' && (
+                          <CheckCircleIcon className="w-5 h-5 text-emerald-600" />
+                        )}
+                        {test.status === 'fixed' && (
+                          <WrenchScrewdriverIcon className="w-4 h-4 text-blue-600" />
+                        )}
+                        {test.status === 'failed' && (
+                          <XCircleIcon className="w-5 h-5 text-red-600" />
+                        )}
+                        {test.status === 'skipped' && (
+                          <div className="w-2 h-2 rounded-full bg-slate-400" />
+                        )}
+                        {test.status === 'pending' && (
+                          <ClockIcon className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-slate-500 mb-3">{test.description}</p>
+
+                    {/* Result Message */}
+                    {test.message && (
+                      <div className={`text-sm p-3 rounded-lg ${
+                        test.status === 'passed' ? 'bg-emerald-50 text-emerald-700' :
+                        test.status === 'fixed' ? 'bg-blue-50 text-blue-700' :
+                        test.status === 'failed' ? 'bg-red-50 text-red-700' :
+                        test.status === 'skipped' ? 'bg-slate-50 text-slate-600' :
+                        'bg-slate-50 text-slate-600'
+                      }`}>
+                        {test.message}
+                      </div>
+                    )}
+
+                    {/* Fix Result */}
+                    {test.fixAttempted && test.fixResult && (
+                      <div className="mt-2 text-xs p-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-100">
+                        <span className="font-medium">Auto-fix: </span>{test.fixResult}
+                      </div>
+                    )}
+
+                    {/* Duration */}
+                    {test.duration !== undefined && (
+                      <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <ClockIcon className="w-3 h-3" />
+                          {test.duration}ms
+                        </span>
+                        {test.autoFixable && (
+                          <span className="flex items-center gap-1 text-blue-500">
+                            <WrenchScrewdriverIcon className="w-3 h-3" />
+                            Auto-fixable
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!diagnosticResult && (
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center">
+                  <DocumentMagnifyingGlassIcon className="w-10 h-10 text-slate-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">No Diagnostics Run Yet</h3>
+                  <p className="text-slate-500 mt-1 max-w-md">
+                    Click the "Run Full Diagnostics" button above to start a comprehensive system health check.
+                    Tests will run automatically and any fixable issues will be repaired.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Last Run Info */}
+          {diagnosticResult && diagnosticResult.completedAt && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 text-slate-500">
+                  <ClockIcon className="w-4 h-4" />
+                  <span>Last run: {new Date(diagnosticResult.completedAt).toLocaleString()}</span>
+                </div>
+                <div className="text-slate-400 font-mono text-xs">
+                  ID: {diagnosticResult.id}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -31,21 +31,29 @@ export const createRateLimiter = (options: RateLimitOptions) => {
   const { windowMs, maxRequests, message = 'Too many requests, please try again later' } = options;
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = req.ip || req.socket.remoteAddress || 'unknown';
-    const now = Date.now();
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-    let record = store.get(key);
+    // Skip rate limiting for localhost in development mode
+    const isLocalhost = clientIp === '::1' || clientIp === '127.0.0.1' || clientIp === '::ffff:127.0.0.1';
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+
+    if (isLocalhost && isDevelopment) {
+      return next();
+    }
+
+    const now = Date.now();
+    let record = store.get(clientIp);
 
     if (!record || record.resetTime < now) {
       record = { count: 1, resetTime: now + windowMs };
-      store.set(key, record);
+      store.set(clientIp, record);
       return next();
     }
 
     record.count++;
 
     if (record.count > maxRequests) {
-      logger.warn(`Rate limit exceeded for ${key} on ${req.method} ${req.path}`);
+      logger.warn(`Rate limit exceeded for ${clientIp} on ${req.method} ${req.path}`);
       res.setHeader('Retry-After', Math.ceil((record.resetTime - now) / 1000));
       return res.status(429).json({ error: 'Too Many Requests', message });
     }

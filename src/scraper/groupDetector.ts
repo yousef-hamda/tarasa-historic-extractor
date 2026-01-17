@@ -7,9 +7,9 @@
 
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
-import { isApifyConfigured, scrapeGroupWithApify } from './apifyScraper';
 import { isSessionValid } from '../session/sessionManager';
 import { GroupType, AccessMethod } from '@prisma/client';
+// Note: Apify imports removed - Facebook blocks Apify for most groups
 
 export interface GroupDetectionResult {
   groupId: string;
@@ -97,108 +97,52 @@ export const detectGroupType = async (groupId: string): Promise<GroupDetectionRe
     }
   }
 
-  // Track if Apify failed due to circuit breaker or other reasons
-  let apifyFailed = false;
-  let apifyError = '';
-
-  // Try Apify to detect if public
-  if (isApifyConfigured()) {
-    try {
-      logger.info(`Probing group ${groupId} with Apify...`);
-      const posts = await scrapeGroupWithApify(groupId, 5); // Just get 5 posts to test
-
-      if (posts.length > 0) {
-        // Group is public - Apify can access it
-        logger.info(`Group ${groupId} is PUBLIC (Apify returned ${posts.length} posts)`);
-        await updateGroupCache(groupId, {
-          groupType: 'public',
-          accessMethod: 'apify',
-          isAccessible: true,
-          errorMessage: null,
-        });
-
-        return {
-          groupId,
-          groupType: 'public',
-          accessMethod: 'apify',
-          isAccessible: true,
-          errorMessage: null,
-        };
-      } else {
-        // No posts returned - could be private OR empty group
-        // Don't assume private yet
-        logger.info(`Group ${groupId} - Apify returned 0 posts, needs verification`);
-      }
-    } catch (error) {
-      apifyFailed = true;
-      apifyError = (error as Error).message;
-      logger.warn(`Apify probe failed for ${groupId}: ${apifyError}`);
-    }
-  } else {
-    // Apify not configured - we can't determine if public or private
-    apifyFailed = true;
-    apifyError = 'Apify not configured';
-  }
+  // APIFY DISABLED: Facebook blocks Apify for most groups, returning "Empty or private data"
+  // errors even for PUBLIC groups. We skip Apify probing entirely and rely on Playwright
+  // to detect group type from the actual page content.
+  //
+  // The Playwright scraper now detects group type by checking for "Public group" or
+  // "Private group" text on the page, which is 100% accurate.
+  logger.debug(`Skipping Apify probe for ${groupId} - Facebook blocks Apify for most groups`);
 
   // Check if we have a valid session for Playwright
   const hasSession = await isSessionValid();
 
   if (hasSession) {
-    // We have a session - the group is accessible via Playwright
-    // Don't assume it's private - it might be public but Apify failed
-    const groupType = apifyFailed && apifyError.includes('circuit breaker')
-      ? 'unknown'  // Keep as unknown if we couldn't determine due to circuit breaker
-      : 'private'; // Otherwise likely private since Apify couldn't get posts
-
+    // We have a valid session - Playwright can access the group
+    // The actual group type (public/private) will be detected by Playwright
+    // when it scrapes the page and reads the "Public group" or "Private group" text
     await updateGroupCache(groupId, {
-      groupType: groupType as GroupType,
+      groupType: 'unknown', // Will be updated by Playwright when it scrapes
       accessMethod: 'playwright',
       isAccessible: true,
-      errorMessage: apifyFailed ? `Will use Playwright (${apifyError})` : null,
+      errorMessage: null, // No errors - we have a working method
     });
 
     return {
       groupId,
-      groupType: groupType as GroupType,
+      groupType: 'unknown',
       accessMethod: 'playwright',
       isAccessible: true,
       errorMessage: null,
     };
   } else {
-    // No session - check if we should mark as inaccessible
-    // Only mark as inaccessible if we know Apify also failed definitively
-    if (apifyFailed && !apifyError.includes('circuit breaker')) {
-      await updateGroupCache(groupId, {
-        groupType: 'unknown',
-        accessMethod: 'none',
-        isAccessible: false,
-        errorMessage: 'No valid Facebook session. Please login with: npx ts-node src/scripts/facebook-login.ts',
-      });
+    // No valid session - need to login first
+    const noSessionMessage = 'No valid Facebook session. Please login with: npx ts-node src/scripts/facebook-login.ts';
 
-      return {
-        groupId,
-        groupType: 'unknown',
-        accessMethod: 'none',
-        isAccessible: false,
-        errorMessage: 'No valid Facebook session. Please login with: npx ts-node src/scripts/facebook-login.ts',
-      };
-    }
-
-    // If Apify failed due to circuit breaker, don't mark as inaccessible yet
-    // The group might be public and will work once circuit breaker resets
     await updateGroupCache(groupId, {
       groupType: 'unknown',
       accessMethod: 'none',
-      isAccessible: true, // Assume accessible - circuit breaker is temporary
-      errorMessage: apifyError || 'Status unknown - will retry',
+      isAccessible: false,
+      errorMessage: noSessionMessage,
     });
 
     return {
       groupId,
       groupType: 'unknown',
       accessMethod: 'none',
-      isAccessible: true, // Optimistic - don't show as inaccessible due to temporary issues
-      errorMessage: apifyError || 'Status unknown - will retry',
+      isAccessible: false,
+      errorMessage: noSessionMessage,
     };
   }
 };
@@ -212,10 +156,11 @@ export const getRecommendedAccessMethod = async (
   const detection = await detectGroupType(groupId);
 
   if (detection.groupType === 'public') {
+    // Note: Apify is blocked by Facebook, so we use Playwright for all groups
     return {
-      method: 'apify',
-      isAccessible: true,
-      reason: 'Public group - using Apify for fast, reliable scraping',
+      method: 'playwright',
+      isAccessible: await isSessionValid(),
+      reason: 'Public group - using Playwright (Apify blocked by Facebook)',
     };
   }
 
@@ -235,11 +180,11 @@ export const getRecommendedAccessMethod = async (
     }
   }
 
-  // Unknown type - try Apify first
+  // Unknown type - use Playwright (Apify is blocked by Facebook)
   return {
-    method: isApifyConfigured() ? 'apify' : 'playwright',
-    isAccessible: isApifyConfigured() || (await isSessionValid()),
-    reason: 'Unknown group type - will probe to determine access method',
+    method: 'playwright',
+    isAccessible: await isSessionValid(),
+    reason: 'Unknown group type - using Playwright to detect and scrape',
   };
 };
 
@@ -290,6 +235,7 @@ export const getGroupsWithAccessInfo = async (): Promise<
 
 /**
  * Mark a group as successfully scraped
+ * IMPORTANT: Always clears errorMessage - a successful scrape means no error
  */
 export const markGroupScraped = async (
   groupId: string,
@@ -299,8 +245,9 @@ export const markGroupScraped = async (
     accessMethod: method,
     lastScraped: new Date(),
     isAccessible: true,
-    errorMessage: null,
+    errorMessage: null,  // Always clear - success means no error
   });
+  logger.debug(`Group ${groupId} marked as successfully scraped via ${method}`);
 };
 
 /**

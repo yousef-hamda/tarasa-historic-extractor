@@ -105,6 +105,20 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         throw new Error(`Navigation failed: ${(navError as Error).message}`);
       }
 
+      // Check for "Content isn't available" error (group deleted, restricted, or not accessible)
+      const contentNotAvailable = await page.evaluate(() => {
+        const pageText = document.body.innerText || '';
+        return pageText.includes("Content isn't available") ||
+               pageText.includes('Content is not available') ||
+               pageText.includes('This content is no longer available') ||
+               pageText.includes('Sorry, this content isn');
+      });
+
+      if (contentNotAvailable) {
+        logger.error(`[Playwright] Group ${groupId} shows "Content isn't available" - group may be deleted or restricted`);
+        throw new Error('Content isn\'t available - group may be deleted, restricted, or you are not a member');
+      }
+
       // Wait for feed to appear FIRST (most important element)
       logger.info('[Playwright] Waiting for feed container...');
       try {
@@ -149,41 +163,81 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         }
       }
 
-      // Extract group name and update cache
+      // Extract group name AND group type (public/private) from page
       try {
-        const groupName = await page.evaluate(() => {
-          // Try multiple selectors for group name
-          const selectors = [
+        const groupInfo = await page.evaluate(() => {
+          let groupName: string | null = null;
+          let groupType: 'public' | 'private' | 'unknown' = 'unknown';
+
+          // Extract group name
+          const nameSelectors = [
             'h1 a[href*="/groups/"]',
             'h1 span',
             'div[role="main"] h1',
             'a[aria-label][href*="/groups/"]',
           ];
-          for (const selector of selectors) {
+          for (const selector of nameSelectors) {
             const el = document.querySelector(selector);
             if (el && el.textContent) {
               const name = el.textContent.trim();
               if (name.length > 2 && name.length < 100) {
-                return name;
+                groupName = name;
+                break;
               }
             }
           }
           // Fallback to page title
-          const title = document.title;
-          if (title && !title.includes('Facebook')) {
-            return title.split('|')[0].trim();
+          if (!groupName) {
+            const title = document.title;
+            if (title && !title.includes('Facebook')) {
+              groupName = title.split('|')[0].trim();
+            }
           }
-          return null;
+
+          // DETECT GROUP TYPE from page content
+          // Look for "Public group" or "Private group" text indicators
+          const pageText = document.body.innerText || '';
+
+          // Check for explicit public/private indicators
+          if (pageText.includes('Public group') ||
+              pageText.includes('Public ·') ||
+              pageText.includes('Anyone can see who') ||
+              pageText.includes('Anyone can find this group')) {
+            groupType = 'public';
+          } else if (pageText.includes('Private group') ||
+                     pageText.includes('Private ·') ||
+                     pageText.includes('Only members can see who') ||
+                     pageText.includes('Only members can find this group')) {
+            groupType = 'private';
+          }
+
+          // Also check for specific elements that indicate privacy
+          const privacyElements = document.querySelectorAll('[aria-label*="Public"], [aria-label*="Private"]');
+          privacyElements.forEach(el => {
+            const label = el.getAttribute('aria-label') || '';
+            if (label.includes('Public')) groupType = 'public';
+            if (label.includes('Private')) groupType = 'private';
+          });
+
+          return { groupName, groupType };
         });
 
-        if (groupName) {
-          logger.info(`[Playwright] Group name: ${groupName}`);
-          // Update group info in database
-          const { updateGroupCache } = await import('./groupDetector');
-          await updateGroupCache(groupId, { groupName });
+        if (groupInfo.groupName) {
+          logger.info(`[Playwright] Group name: ${groupInfo.groupName}`);
         }
+        logger.info(`[Playwright] Detected group type: ${groupInfo.groupType}`);
+
+        // Update group info in database with ACTUAL group type from page
+        const { updateGroupCache } = await import('./groupDetector');
+        await updateGroupCache(groupId, {
+          groupName: groupInfo.groupName,
+          groupType: groupInfo.groupType as 'public' | 'private' | 'unknown',
+          accessMethod: 'playwright',
+          isAccessible: true,
+          errorMessage: null // Clear any previous errors
+        });
       } catch (e) {
-        logger.debug(`[Playwright] Could not extract group name: ${(e as Error).message}`);
+        logger.debug(`[Playwright] Could not extract group info: ${(e as Error).message}`);
       }
 
       // OPTIMIZED: Faster scrolling with larger increments and shorter waits

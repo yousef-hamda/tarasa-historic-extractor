@@ -165,4 +165,24 @@ export const openaiCircuitBreaker = new CircuitBreaker({
   halfOpenRequests: 3,
 });
 
+/**
+ * Reset all circuit breakers to CLOSED state
+ * Useful after fixing issues that caused failures
+ */
+export function resetAllCircuitBreakers(): void {
+  apifyCircuitBreaker.reset();
+  openaiCircuitBreaker.reset();
+  logger.info('All circuit breakers have been reset');
+}
+
+/**
+ * Get status of all circuit breakers
+ */
+export function getCircuitBreakerStatus(): Record<string, { state: string; isOpen: boolean }> {
+  return {
+    apify: { state: apifyCircuitBreaker.getState(), isOpen: apifyCircuitBreaker.isOpen() },
+    openai: { state: openaiCircuitBreaker.getState(), isOpen: openaiCircuitBreaker.isOpen() },
+  };
+}
+
 export default CircuitBreaker;

@@ -1,0 +1,164 @@
+# ===========================================
+# Tarasa Historic Extractor - Docker Compose
+# ===========================================
+# Development and production stack with:
+# - Application server
+# - PostgreSQL database
+# - Redis cache/queue
+# - Dashboard (Next.js)
+
+version: '3.8'
+
+services:
+  # ===========================================
+  # PostgreSQL Database
+  # ===========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: tarasa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tarasa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tarasa_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-tarasa_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tarasa} -d ${POSTGRES_DB:-tarasa_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tarasa-network
+
+  # ===========================================
+  # Redis Cache & Queue
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: tarasa-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tarasa-network
+
+  # ===========================================
+  # Main Application
+  # ===========================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tarasa-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tarasa}:${POSTGRES_PASSWORD:-tarasa_secret}@postgres:5432/${POSTGRES_DB:-tarasa_db}
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-tarasa}:${POSTGRES_PASSWORD:-tarasa_secret}@postgres:5432/${POSTGRES_DB:-tarasa_db}
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # Application
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      HEADLESS: "true"
+
+      # Facebook credentials (from .env)
+      FB_EMAIL: ${FB_EMAIL}
+      FB_PASSWORD: ${FB_PASSWORD}
+
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CLASSIFIER_MODEL: ${OPENAI_CLASSIFIER_MODEL:-gpt-4o-mini}
+      OPENAI_GENERATOR_MODEL: ${OPENAI_GENERATOR_MODEL:-gpt-4o-mini}
+
+      # Groups and limits
+      GROUP_IDS: ${GROUP_IDS}
+      MAX_MESSAGES_PER_DAY: ${MAX_MESSAGES_PER_DAY:-20}
+
+      # Security
+      API_KEY: ${API_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+
+      # Optional services
+      APIFY_TOKEN: ${APIFY_TOKEN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SYSTEM_EMAIL_ALERT: ${SYSTEM_EMAIL_ALERT:-}
+      SYSTEM_EMAIL_PASSWORD: ${SYSTEM_EMAIL_PASSWORD:-}
+
+      # Tarasa
+      BASE_TARASA_URL: ${BASE_TARASA_URL:-https://tarasa.me/he/premium/5d5252bf574a2100368f9833}
+    volumes:
+      - browser_data:/app/browser-data
+      - logs_data:/app/logs
+      - backups_data:/app/backups
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - tarasa-network
+
+  # ===========================================
+  # Dashboard (Next.js) - Development Only
+  # ===========================================
+  dashboard:
+    build:
+      context: ./ui/dashboard
+      dockerfile: Dockerfile
+    container_name: tarasa-dashboard
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      NEXT_PUBLIC_API_URL: http://app:4000
+      NODE_ENV: ${NODE_ENV:-production}
+    ports:
+      - "3000:3000"
+    networks:
+      - tarasa-network
+    profiles:
+      - with-dashboard
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  tarasa-network:
+    driver: bridge
+
+# ===========================================
+# Volumes
+# ===========================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  browser_data:
+    driver: local
+  logs_data:
+    driver: local
+  backups_data:
+    driver: local
