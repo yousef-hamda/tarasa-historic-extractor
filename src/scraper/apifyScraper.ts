@@ -86,6 +86,7 @@ export interface NormalizedPost {
   authorLink: string | null;
   authorPhoto: string | null;
   text: string;
+  postUrl: string | null;  // Direct link to the Facebook post
 }
 
 /**
@@ -269,10 +270,17 @@ const normalizePost = (post: ApifyFacebookPost, groupId: string): NormalizedPost
     (post as Record<string, unknown>).profilePic as string ||
     null;
 
+  // Extract post URL - try multiple possible field names
+  let postUrl: string | null = post.url || post.postUrl || null;
+  // If no URL found, construct it from groupId and postId
+  if (!postUrl && postId) {
+    postUrl = `https://www.facebook.com/groups/${groupId}/posts/${postId}`;
+  }
+
   // Clean the text from "See more" artifacts
   const cleanedText = cleanPostText(postText);
 
-  logger.debug(`Normalized post ${postId}: author=${authorName}, textLen=${cleanedText.length}`);
+  logger.debug(`Normalized post ${postId}: author=${authorName}, textLen=${cleanedText.length}, url=${postUrl}`);
 
   return {
     fbPostId: postId,
@@ -281,6 +289,7 @@ const normalizePost = (post: ApifyFacebookPost, groupId: string): NormalizedPost
     authorLink,
     authorPhoto,
     text: cleanedText,
+    postUrl,
   };
 };
 

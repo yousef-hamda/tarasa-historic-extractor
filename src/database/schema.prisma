@@ -17,6 +17,7 @@ model PostRaw {
   text        String
   scrapedAt   DateTime           @default(now())
   authorPhoto String?
+  postUrl     String?            // Direct link to the Facebook post
   generated   MessageGenerated[]
   messages    MessageSent[]
   classified  PostClassified?
