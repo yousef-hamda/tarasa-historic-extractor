@@ -1244,97 +1244,138 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       const el = container;
 
       // === EXTRACT AUTHOR INFO ===
+      // CRITICAL: The author is ALWAYS at the TOP of the post, with a profile photo
+      // Mentioned users/pages appear IN or BELOW the text - we must NOT pick those up!
+      // Strategy: Find the TOP-MOST profile photo in the container - that's the author
       let authorName: string | null = null;
       let authorLink: string | null = null;
       let authorPhoto: string | null = null;
 
-      // Strategy 1: Find profile link with aria-label (most reliable for author name)
-      const profileLinks = el.querySelectorAll('a[aria-label][href*="/user/"], a[aria-label][href*="profile.php"]');
-      for (const link of profileLinks) {
-        const ariaLabel = link.getAttribute('aria-label');
-        const href = link.getAttribute('href') || '';
+      const textY = textItem.y;
+      // elRect is available if needed for relative positioning
 
-        // Check if this looks like an author name (not a button label)
-        if (ariaLabel && ariaLabel.length > 1 && ariaLabel.length < 60 &&
-            !ariaLabel.includes('Like') && !ariaLabel.includes('Comment') &&
-            !ariaLabel.includes('Share') && !ariaLabel.includes('Actions') &&
-            !ariaLabel.includes('More') && !ariaLabel.includes('Write')) {
-          authorName = ariaLabel;
-          authorLink = href;
-          break;
+      // STRATEGY 1: Find ALL profile photos and take the TOP-MOST one
+      // The author's photo is always at the very top of the post
+      const photoInfos: Array<{
+        y: number;
+        photo: string;
+        link: string | null;
+        name: string | null;
+      }> = [];
+
+      const svgImages = el.querySelectorAll('svg image');
+      for (const img of svgImages) {
+        const href = img.getAttribute('href') ||
+                    img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+                    img.getAttribute('xlink:href');
+
+        if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
+          const rect = img.getBoundingClientRect();
+
+          // Find parent link
+          let link: string | null = null;
+          let name: string | null = null;
+          let parent = img.parentElement;
+          for (let i = 0; i < 5 && parent; i++) {
+            if (parent.tagName === 'A') {
+              const parentHref = parent.getAttribute('href') || '';
+              if (parentHref.includes('/user/') || parentHref.includes('profile.php')) {
+                link = parentHref;
+                name = parent.getAttribute('aria-label');
+                break;
+              }
+            }
+            parent = parent.parentElement;
+          }
+
+          photoInfos.push({
+            y: rect.top,
+            photo: href,
+            link,
+            name
+          });
         }
       }
 
-      // Strategy 2: Look in h2/h3/h4 headers for author name
+      // Sort by Y position (top to bottom) and take the TOP-MOST
+      photoInfos.sort((a, b) => a.y - b.y);
+
+      if (photoInfos.length > 0) {
+        const topPhoto = photoInfos[0];
+        // Only use if it has a valid profile link (the author's photo always has one)
+        if (topPhoto.link) {
+          authorPhoto = topPhoto.photo;
+          authorLink = topPhoto.link;
+          authorName = topPhoto.name;
+        }
+      }
+
+      // STRATEGY 2: If no photo found, look for profile link ABOVE the text
+      // The author link is always ABOVE the post text (negative Y difference)
+      if (!authorLink) {
+        const profileLinks = el.querySelectorAll('a[aria-label][href*="/user/"], a[aria-label][href*="profile.php"]');
+        const linkInfos: Array<{ y: number; link: string; name: string }> = [];
+
+        for (const link of profileLinks) {
+          const rect = link.getBoundingClientRect();
+          const ariaLabel = link.getAttribute('aria-label');
+          const href = link.getAttribute('href') || '';
+
+          // Only consider links ABOVE the text
+          if (rect.top < textY && ariaLabel && ariaLabel.length > 1 && ariaLabel.length < 60 &&
+              !ariaLabel.includes('Like') && !ariaLabel.includes('Comment') &&
+              !ariaLabel.includes('Share') && !ariaLabel.includes('Actions')) {
+            linkInfos.push({
+              y: rect.top,
+              link: href,
+              name: ariaLabel
+            });
+          }
+        }
+
+        // Take the TOP-MOST profile link (author is at top)
+        linkInfos.sort((a, b) => a.y - b.y);
+        if (linkInfos.length > 0) {
+          authorLink = linkInfos[0].link;
+          authorName = linkInfos[0].name;
+        }
+      }
+
+      // STRATEGY 3: Look in h2/h3/h4 headers for author name (they're always at top)
       if (!authorName) {
         const headerLinks = el.querySelectorAll('h2 a[href*="/user/"], h3 a[href*="/user/"], h4 a[href*="/user/"], h2 a[href*="profile.php"], h3 a[href*="profile.php"]');
         for (const link of headerLinks) {
-          const text = (link as HTMLElement).innerText?.trim();
-          const href = link.getAttribute('href') || '';
-          if (text && text.length > 1 && text.length < 60) {
-            authorName = text;
-            authorLink = href;
-            break;
-          }
-        }
-      }
-
-      // Strategy 3: Find any user link in the header area (top 200px)
-      if (!authorLink) {
-        const allUserLinks = el.querySelectorAll('a[href*="/user/"], a[href*="profile.php"]');
-        for (const link of allUserLinks) {
           const rect = link.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          // Only consider links near the top of the post container
-          if (rect.top - elRect.top < 150) {
+          // Header is always above text
+          if (rect.top < textY) {
+            const text = (link as HTMLElement).innerText?.trim();
             const href = link.getAttribute('href') || '';
-            if (!authorLink && href.includes('/user/')) {
-              authorLink = href;
-              // Try to get name from aria-label or text
-              const ariaLabel = link.getAttribute('aria-label');
-              const text = (link as HTMLElement).innerText?.trim();
-              if (ariaLabel && ariaLabel.length > 1 && ariaLabel.length < 60) {
-                authorName = ariaLabel;
-              } else if (text && text.length > 1 && text.length < 60) {
-                authorName = text;
-              }
+            if (text && text.length > 1 && text.length < 60) {
+              authorName = text;
+              if (!authorLink) authorLink = href;
               break;
             }
           }
         }
       }
 
-      // === EXTRACT AUTHOR PHOTO ===
-      // Strategy 1: SVG images (Facebook's current profile photo structure)
-      const svgImages = el.querySelectorAll('svg image');
-      for (const img of svgImages) {
-        const rect = img.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        // Only consider images near the top (profile photos)
-        if (rect.top - elRect.top < 150) {
-          const href = img.getAttribute('href') ||
-                      img.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
-                      img.getAttribute('xlink:href');
-          if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
-            authorPhoto = href;
-            break;
-          }
-        }
-      }
-
-      // Strategy 2: Regular img elements
+      // STRATEGY 4: If still no photo, look for regular img at top of container
       if (!authorPhoto) {
         const images = el.querySelectorAll('img[src*="scontent"], img[src*="fbcdn"]');
+        let topImg: { y: number; src: string } | null = null;
+
         for (const img of images) {
           const rect = img.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          if (rect.top - elRect.top < 150) {
-            const src = img.getAttribute('src');
-            if (src) {
-              authorPhoto = src;
-              break;
+          const src = img.getAttribute('src');
+          if (src && rect.top < textY) {
+            if (!topImg || rect.top < topImg.y) {
+              topImg = { y: rect.top, src };
             }
           }
+        }
+
+        if (topImg) {
+          authorPhoto = topImg.src;
         }
       }
 
@@ -1357,7 +1398,7 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       // Use the pre-collected postUrlMap to find the closest unused URL
       // This ensures each unique URL is only assigned to ONE post
       let postUrl: string | null = null;
-      const textY = textItem.y;
+      // textY is already defined above from textItem.y
 
       // Strategy 1: Search in immediate container first (most reliable if found)
       const permalinkPatterns = [
@@ -1640,16 +1681,20 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
       let authorLink: string | null = null;
       let authorPhoto: string | null = null;
 
-      // Find the closest photo above the text
+      // Find the closest photo ABOVE the text (author photo is always above)
+      // IMPORTANT: Only match photos that are above the text, not below
       let closestPhoto = null;
       let closestDistance = Infinity;
       for (const photo of profilePhotos) {
-        // Photo must be above the text (photo.y < divY)
-        // And within 300px distance
+        // Photo MUST be above the text (photo.y < divY)
+        // And within 150px distance (tighter threshold to avoid wrong matches)
         const distance = divY - photo.y;
-        if (distance > 0 && distance < 300 && distance < closestDistance) {
-          closestDistance = distance;
-          closestPhoto = photo;
+        if (distance > 0 && distance < 150 && distance < closestDistance) {
+          // Verify this photo has a valid profile link (not just any image)
+          if (photo.link && (photo.link.includes('/user/') || photo.link.includes('profile.php'))) {
+            closestDistance = distance;
+            closestPhoto = photo;
+          }
         }
       }
 
@@ -1659,22 +1704,31 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
         authorName = closestPhoto.name;
       }
 
-      // If no photo found via position matching, fall back to ancestor search
+      // FALLBACK: Only search for author in PARENT elements if they're ABOVE the text
+      // This prevents picking up mentioned users in the post content
       if (!authorLink) {
         let parent = div.parentElement;
-        for (let i = 0; i < 10 && parent; i++) {
-          const links = parent.querySelectorAll('a[href*="facebook.com"]');
-          for (const link of links) {
-            const href = link.getAttribute('href') || '';
-            if (href.includes('/user/') || href.includes('profile.php') ||
-                href.includes('/people/') || href.match(/facebook\.com\/[a-zA-Z0-9.]+\/?$/)) {
-              authorLink = href;
-              const name = (link as HTMLElement).innerText?.trim() ||
-                          link.getAttribute('aria-label') || null;
+        for (let i = 0; i < 5 && parent; i++) {
+          // Only search if parent is above the text position
+          const parentRect = parent.getBoundingClientRect();
+          if (parentRect.top >= divY) {
+            parent = parent.parentElement;
+            continue; // Skip elements at or below text position
+          }
+
+          // Look for profile photo links (not just any profile link)
+          const photoLinks = parent.querySelectorAll('a[href*="/user/"] svg image, a[href*="profile.php"] svg image');
+          for (const photoImg of photoLinks) {
+            const link = photoImg.closest('a');
+            if (link) {
+              const href = link.getAttribute('href') || '';
+              const name = link.getAttribute('aria-label') ||
+                          (link as HTMLElement).innerText?.trim() || null;
               if (name && name.length > 1 && name.length < 50) {
                 authorName = name;
+                authorLink = href;
+                break;
               }
-              break;
             }
           }
           if (authorLink) break;
