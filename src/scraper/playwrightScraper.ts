@@ -15,6 +15,11 @@ import { extractPosts } from './extractors';
 import { createFacebookContext, saveCookies, getCookieHealth } from '../facebook/session';
 import { NormalizedPost } from './apifyScraper';
 import { browserPool } from '../utils/browserPool';
+import {
+  setupPostInterception,
+  expandAllSeeMoreButtons,
+  clearInterceptedCache,
+} from './fullTextExtractor';
 
 // Maximum retries for browser operations
 const MAX_BROWSER_RETRIES = 2;
@@ -97,6 +102,16 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       // OPTIMIZED: Use shorter default timeout (15s instead of 90s)
       page.setDefaultTimeout(15000);
 
+      // ENHANCED: Setup GraphQL interception to capture full post text
+      // This intercepts Facebook's API responses which contain the complete post content
+      logger.info('[Playwright] Setting up network interception for full text capture...');
+      try {
+        clearInterceptedCache(); // Clear any previous cache
+        await setupPostInterception(page);
+      } catch (interceptError) {
+        logger.warn(`[Playwright] Could not setup interception: ${(interceptError as Error).message}`);
+      }
+
       // Navigate to group with error handling
       try {
         await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -134,12 +149,81 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         }
       }
 
-      // Quick popup dismissal (non-blocking, don't wait)
-      page.$$('[aria-label="Close"], button:has-text("Not now")').then(async (buttons) => {
-        for (const btn of buttons.slice(0, 2)) {
-          btn.click().catch((e) => logger.debug(`[Playwright] Popup dismiss click failed: ${e.message}`));
+      // Dismiss popups and dialogs FIRST before any content checks
+      logger.info('[Playwright] Dismissing any popups/dialogs...');
+      try {
+        // Look for close buttons on dialogs
+        const closeSelectors = [
+          '[aria-label="Close"]',
+          'button:has-text("Not now")',
+          'button:has-text("Close")',
+          '[aria-label="Dismiss"]',
+          'div[role="dialog"] [aria-label="Close"]'
+        ];
+        for (const selector of closeSelectors) {
+          const buttons = await page.$$(selector);
+          for (const btn of buttons.slice(0, 2)) {
+            try {
+              await btn.click();
+              await sleep(500);
+              logger.info(`[Playwright] Dismissed popup with ${selector}`);
+            } catch {}
+          }
         }
-      }).catch((e) => logger.debug(`[Playwright] Popup dismissal skipped: ${e.message}`));
+      } catch (e) {
+        logger.debug(`[Playwright] Popup dismissal: ${(e as Error).message}`);
+      }
+
+      // Try to navigate to Discussion tab to ensure we see the full feed
+      try {
+        const discussionTab = await page.$('a:has-text("Discussion")');
+        if (discussionTab) {
+          await discussionTab.click();
+          await sleep(3000);  // Longer wait for content to load
+          logger.info('[Playwright] Clicked Discussion tab');
+        }
+      } catch (e) {
+        logger.debug(`[Playwright] Discussion tab: ${(e as Error).message}`);
+      }
+
+      // Wait for feed content to load after navigation
+      await page.waitForTimeout(2000);
+
+      // Scroll to top to ensure we're at the start of the feed
+      await page.evaluate('window.scrollTo(0, 0)');
+      await sleep(1000);
+
+      // NOW wait for actual content to load after Discussion tab click
+      logger.info('[Playwright] Waiting for post content to load...');
+      const maxWaitAttempts = 15;
+      for (let attempt = 0; attempt < maxWaitAttempts; attempt++) {
+        const contentCheck = await page.evaluate(() => {
+          const feed = document.querySelector('div[role="feed"]');
+          if (!feed) return { hasContent: false };
+
+          const dirAutoDivs = document.querySelectorAll('div[dir="auto"]');
+          let substantialCount = 0;
+          for (const div of dirAutoDivs) {
+            const text = (div as HTMLElement).innerText || '';
+            if (text.length > 100 && !text.includes('Loading')) {
+              substantialCount++;
+            }
+          }
+
+          return {
+            hasContent: substantialCount >= 2,
+            substantialCount
+          };
+        });
+
+        if (contentCheck.hasContent) {
+          logger.info(`[Playwright] Found ${contentCheck.substantialCount} substantial text elements`);
+          break;
+        }
+
+        await page.evaluate('window.scrollBy(0, 300)');
+        await sleep(1000);
+      }
 
       // Check if we need to join the group (quick check)
       const needsToJoin = await page.evaluate(() => {
@@ -240,23 +324,30 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         logger.debug(`[Playwright] Could not extract group info: ${(e as Error).message}`);
       }
 
-      // OPTIMIZED: Faster scrolling with larger increments and shorter waits
+      // Scroll to load posts - more scrolling for better coverage
       logger.info('[Playwright] Scrolling to load posts...');
-      const scrollIterations = 6;
+      const scrollIterations = 10;  // Increased from 6
       for (let i = 0; i < scrollIterations; i++) {
         await page.evaluate('window.scrollBy(0, 1500)');
-        await sleep(800); // Fixed short delay instead of random
+        await sleep(1000);  // Slightly longer wait for content to load
 
-        // Check article count every other scroll
-        if (i % 2 === 0) {
-          const articleCount = await page.evaluate(() =>
-            document.querySelectorAll('div[role="article"]').length
-          );
-          logger.info(`[Playwright] Scroll ${i + 1}/${scrollIterations}, articles: ${articleCount}`);
+        // Check content every few scrolls
+        if (i % 3 === 0) {
+          const contentCheck = await page.evaluate(() => {
+            // Count text elements with substantial content (our extraction target)
+            const dirAutoDivs = document.querySelectorAll('div[dir="auto"]');
+            let substantialText = 0;
+            for (const div of dirAutoDivs) {
+              const text = (div as HTMLElement).innerText || '';
+              if (text.length > 100) substantialText++;
+            }
+            return { substantialText };
+          });
+          logger.info(`[Playwright] Scroll ${i + 1}/${scrollIterations}, text elements: ${contentCheck.substantialText}`);
 
-          // If we have enough articles, stop scrolling
-          if (articleCount >= 15) {
-            logger.info('[Playwright] Sufficient articles loaded, stopping scroll');
+          // If we have enough content, stop scrolling
+          if (contentCheck.substantialText >= 20) {
+            logger.info('[Playwright] Sufficient content loaded, stopping scroll');
             break;
           }
         }
@@ -265,8 +356,22 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       // OPTIMIZED: Reduced settle time from 2-3s to 1s
       await sleep(1000);
 
-      // Extract posts
-      let posts = await extractPosts(page);
+      // ENHANCED: Expand all "See more" buttons BEFORE extraction
+      // This is critical for getting full text from truncated posts
+      logger.info('[Playwright] Expanding all "See more" buttons for full text...');
+      try {
+        const expandedCount = await expandAllSeeMoreButtons(page);
+        if (expandedCount > 0) {
+          logger.info(`[Playwright] Successfully expanded ${expandedCount} "See more" buttons`);
+          // Wait for content to fully render
+          await sleep(1000);
+        }
+      } catch (expandError) {
+        logger.warn(`[Playwright] "See more" expansion error: ${(expandError as Error).message}`);
+      }
+
+      // Extract posts (now with enhanced full-text support)
+      let posts = await extractPosts(page, context);
       logger.info(`[Playwright] First extraction: ${posts.length} posts`);
 
       // If few posts found, quick extra scroll
@@ -277,21 +382,33 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
           await sleep(600);
         }
         await sleep(800);
-        posts = await extractPosts(page);
+        // Expand "See more" again after scrolling
+        await expandAllSeeMoreButtons(page).catch(() => {});
+        await sleep(500);
+        posts = await extractPosts(page, context);
         logger.info(`[Playwright] Second extraction: ${posts.length} posts`);
       }
 
       logger.info(`[Playwright] Extracted ${posts.length} posts from group ${groupId}`);
 
       // Convert to NormalizedPost format
-      const normalizedPosts: NormalizedPost[] = posts.map(post => ({
-        fbPostId: post.fbPostId,
-        groupId: groupId,
-        authorName: post.authorName || null,
-        authorLink: post.authorLink || null,
-        authorPhoto: post.authorPhoto || null,
-        text: post.text,
-      }));
+      const normalizedPosts: NormalizedPost[] = posts.map(post => {
+        // Construct post URL if not extracted, using groupId and fbPostId
+        let postUrl = post.postUrl || null;
+        if (!postUrl && post.fbPostId && !post.fbPostId.startsWith('hash_')) {
+          postUrl = `https://www.facebook.com/groups/${groupId}/posts/${post.fbPostId}`;
+        }
+
+        return {
+          fbPostId: post.fbPostId,
+          groupId: groupId,
+          authorName: post.authorName || null,
+          authorLink: post.authorLink || null,
+          authorPhoto: post.authorPhoto || null,
+          text: post.text,
+          postUrl,
+        };
+      });
 
       // Save cookies and close browser
       try {

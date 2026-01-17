@@ -18,6 +18,7 @@ export interface Post {
   authorPhoto?: string;
   text: string;
   scrapedAt: string;
+  postUrl?: string;  // Direct link to the Facebook post
   classified?: PostClassification;
 }
 

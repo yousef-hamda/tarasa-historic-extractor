@@ -18,6 +18,7 @@ import {
   SparklesIcon,
   ClockIcon,
   ExclamationTriangleIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 
 interface PaginationState {
@@ -407,16 +408,30 @@ const PostsPage: React.FC = () => {
 
                     {/* Actions */}
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openPostDetail(post);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                      >
-                        <EyeIcon className="h-4 w-4" />
-                        View
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openPostDetail(post);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                        >
+                          <EyeIcon className="h-4 w-4" />
+                          View
+                        </button>
+                        {post.postUrl && (
+                          <a
+                            href={post.postUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                            title="Open on Facebook"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

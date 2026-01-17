@@ -26,6 +26,7 @@
     "test:unit:ui": "vitest --ui",
     "fb:login": "ts-node src/scripts/facebook-login.ts",
     "session:check": "ts-node src/scripts/check-session.ts",
+    "test:fulltext": "ts-node src/scripts/test-full-text.ts",
     "dashboard:dev": "npm run --workspace=tarasa-dashboard dev",
     "dashboard:build": "npm run --workspace=tarasa-dashboard build"
   },

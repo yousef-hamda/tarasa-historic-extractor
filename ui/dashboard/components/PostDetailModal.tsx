@@ -9,6 +9,7 @@ import {
   CalendarIcon,
   SparklesIcon,
   ChatBubbleLeftRightIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 
 interface PostDetailModalProps {
@@ -70,6 +71,21 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
             </div>
           </div>
         </div>
+
+        {/* View Original Post Button */}
+        {post.postUrl && (
+          <div className="flex justify-center">
+            <a
+              href={post.postUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-sm"
+            >
+              <ArrowTopRightOnSquareIcon className="h-5 w-5" />
+              View Original Post on Facebook
+            </a>
+          </div>
+        )}
 
         {/* Post Content */}
         <div className="space-y-2">
@@ -155,6 +171,17 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
           <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">
             Group: {post.groupId || 'N/A'}
           </span>
+          {post.postUrl && (
+            <a
+              href={post.postUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 rounded inline-flex items-center gap-1 transition-colors"
+            >
+              <LinkIcon className="h-3 w-3" />
+              Post Link
+            </a>
+          )}
         </div>
       </div>
     </Modal>

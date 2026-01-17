@@ -35,6 +35,7 @@ interface MBasicPost {
   authorName: string | null;
   authorLink: string | null;
   text: string;
+  postUrl: string | null;
 }
 
 /**
@@ -237,40 +238,101 @@ const normalizeAuthorLink = (href: string): string | null => {
 };
 
 /**
- * Extract post text from HTML
+ * Extract "See More" link from post HTML if text is truncated
+ */
+const extractSeeMoreLink = (postHtml: string): string | null => {
+  // MBasic uses various patterns for "See More" links
+  // Pattern 1: <a href="...">See More</a> or similar text
+  const seeMorePatterns = [
+    /href="([^"]+)"[^>]*>\s*See [Mm]ore\s*</i,
+    /href="([^"]+)"[^>]*>\s*\.\.\.more\s*</i,
+    /href="([^"]+)"[^>]*>\s*ראה עוד\s*</i,  // Hebrew
+    /href="([^"]+)"[^>]*>\s*عرض المزيد\s*</i, // Arabic
+    /<a[^>]*href="([^"]*story\.php[^"]*)"[^>]*>.*<\/a>/i,
+  ];
+
+  for (const pattern of seeMorePatterns) {
+    const match = postHtml.match(pattern);
+    if (match && match[1]) {
+      return match[1].replace(/&amp;/g, '&');
+    }
+  }
+
+  // Check if text appears truncated (ends with ...)
+  if (postHtml.includes('...') || postHtml.includes('…')) {
+    // Try to find any link that might lead to full post
+    const storyLinkMatch = postHtml.match(/href="([^"]*(?:story\.php|permalink)[^"]*)"/i);
+    if (storyLinkMatch) {
+      return storyLinkMatch[1].replace(/&amp;/g, '&');
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Extract post text from HTML - ENHANCED with full text support
  */
 const extractPostText = (postHtml: string): string | null => {
+  let text = '';
+
   // MBasic post text is usually in a <p> or <div> after the story header
   // Pattern 1: <div class="... story_body_container ..."><p>text</p></div>
   const storyBodyMatch = postHtml.match(/class="[^"]*story_body[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
   if (storyBodyMatch) {
-    return cleanHtmlText(storyBodyMatch[1]);
+    text = cleanHtmlText(storyBodyMatch[1]);
   }
 
   // Pattern 2: <p> tags with significant content
-  const paragraphs = postHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/gi);
-  if (paragraphs) {
-    for (const p of paragraphs) {
-      const textMatch = p.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-      if (textMatch) {
-        const text = cleanHtmlText(textMatch[1]);
-        if (text && text.length > 20) {
-          return text;
+  if (!text || text.length < 20) {
+    const paragraphs = postHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/gi);
+    if (paragraphs) {
+      for (const p of paragraphs) {
+        const textMatch = p.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+        if (textMatch) {
+          const candidate = cleanHtmlText(textMatch[1]);
+          if (candidate && candidate.length > text.length) {
+            text = candidate;
+          }
         }
       }
     }
   }
 
   // Pattern 3: data-ft containing content
-  const contentDivMatch = postHtml.match(/<div[^>]*data-ft[^>]*>([\s\S]*?)<\/div>/i);
-  if (contentDivMatch) {
-    const text = cleanHtmlText(contentDivMatch[1]);
-    if (text && text.length > 20) {
-      return text;
+  if (!text || text.length < 20) {
+    const contentDivMatch = postHtml.match(/<div[^>]*data-ft[^>]*>([\s\S]*?)<\/div>/i);
+    if (contentDivMatch) {
+      const candidate = cleanHtmlText(contentDivMatch[1]);
+      if (candidate && candidate.length > text.length) {
+        text = candidate;
+      }
     }
   }
 
-  return null;
+  // Pattern 4: Look for all text content in the post body
+  if (!text || text.length < 20) {
+    // Find the main content area and get all text
+    const mainContentMatch = postHtml.match(/<div[^>]*class="[^"]*(?:_5pbx|_2vj0|story)[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    if (mainContentMatch) {
+      const candidate = cleanHtmlText(mainContentMatch[1]);
+      if (candidate && candidate.length > text.length) {
+        text = candidate;
+      }
+    }
+  }
+
+  // Clean up any truncation artifacts
+  if (text) {
+    text = text
+      .replace(/\s*See [Mm]ore\s*$/i, '')
+      .replace(/\s*\.\.\.more\s*$/i, '')
+      .replace(/\s*ראה עוד\s*$/i, '')
+      .replace(/\s*عرض المزيد\s*$/i, '')
+      .trim();
+  }
+
+  return text || null;
 };
 
 /**
@@ -297,6 +359,83 @@ const cleanHtmlText = (html: string): string => {
 };
 
 /**
+ * Fetch full post text from a "See More" link
+ * MBasic's "See More" links go to a page with the full post content
+ */
+const fetchFullPostText = async (client: AxiosInstance, seeMoreUrl: string): Promise<string | null> => {
+  try {
+    // Handle relative URLs
+    const fullUrl = seeMoreUrl.startsWith('/') ? seeMoreUrl : `/${seeMoreUrl}`;
+
+    logger.debug(`[MBasic] Fetching full text from: ${fullUrl}`);
+    const response = await client.get(fullUrl);
+
+    if (response.status !== 200) {
+      return null;
+    }
+
+    const html = response.data as string;
+
+    // On the full post page, the text is usually in a cleaner format
+    // Try multiple extraction patterns
+
+    // Pattern 1: Story body container
+    let text = '';
+    const storyBodyMatch = html.match(/class="[^"]*story_body[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    if (storyBodyMatch) {
+      text = cleanHtmlText(storyBodyMatch[1]);
+    }
+
+    // Pattern 2: Main post content area
+    if (!text || text.length < 30) {
+      const mainMatch = html.match(/<div[^>]*class="[^"]*_5pbx[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      if (mainMatch) {
+        const candidate = cleanHtmlText(mainMatch[1]);
+        if (candidate.length > text.length) {
+          text = candidate;
+        }
+      }
+    }
+
+    // Pattern 3: Post message content
+    if (!text || text.length < 30) {
+      const messageMatch = html.match(/<div[^>]*id="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+      if (messageMatch) {
+        const candidate = cleanHtmlText(messageMatch[1]);
+        if (candidate.length > text.length) {
+          text = candidate;
+        }
+      }
+    }
+
+    // Pattern 4: Get all paragraph content
+    if (!text || text.length < 30) {
+      const paragraphs = html.match(/<p[^>]*>([\s\S]*?)<\/p>/gi) || [];
+      let allParagraphs = '';
+      for (const p of paragraphs) {
+        const pText = cleanHtmlText(p);
+        if (pText && pText.length > 10) {
+          allParagraphs += pText + '\n';
+        }
+      }
+      if (allParagraphs.length > text.length) {
+        text = allParagraphs.trim();
+      }
+    }
+
+    if (text && text.length > 30) {
+      logger.debug(`[MBasic] Got full text: ${text.length} chars`);
+      return text;
+    }
+
+    return null;
+  } catch (error) {
+    logger.debug(`[MBasic] Failed to fetch full text: ${(error as Error).message}`);
+    return null;
+  }
+};
+
+/**
  * Extract permalink from post HTML
  */
 const extractPermalink = (postHtml: string): string | null => {
@@ -318,8 +457,13 @@ const extractPermalink = (postHtml: string): string | null => {
 /**
  * Parse posts from MBasic group page HTML
  * Handles both true mbasic HTML and redirected modern Facebook HTML
+ * ENHANCED: Now supports fetching full text from "See More" links
  */
-const parseGroupPosts = (html: string, groupId: string): MBasicPost[] => {
+const parseGroupPosts = async (
+  html: string,
+  groupId: string,
+  client?: AxiosInstance | null
+): Promise<MBasicPost[]> => {
   const posts: MBasicPost[] = [];
 
   // Detect if we got modern Facebook HTML (redirect happened)
@@ -368,7 +512,7 @@ const parseGroupPosts = (html: string, groupId: string): MBasicPost[] => {
   for (const postHtml of allMatches) {
     try {
       const permalink = extractPermalink(postHtml);
-      const text = extractPostText(postHtml);
+      let text = extractPostText(postHtml);
 
       if (!text || text.length < 20) {
         continue;
@@ -376,6 +520,40 @@ const parseGroupPosts = (html: string, groupId: string): MBasicPost[] => {
 
       const authorName = extractAuthorName(postHtml);
       const authorLink = extractAuthorLink(postHtml);
+
+      // ENHANCED: Check if text appears truncated and fetch full text
+      const isTruncated = text.endsWith('...') ||
+                          text.endsWith('…') ||
+                          text.includes('See more') ||
+                          text.includes('ראה עוד') ||
+                          text.includes('عرض المزيد');
+
+      if (isTruncated && client) {
+        const seeMoreLink = extractSeeMoreLink(postHtml);
+        if (seeMoreLink) {
+          logger.debug(`[MBasic] Text appears truncated, fetching full text...`);
+          const fullText = await fetchFullPostText(client, seeMoreLink);
+          if (fullText && fullText.length > text.length) {
+            logger.info(`[MBasic] Got full text: ${text.length} -> ${fullText.length} chars`);
+            text = fullText;
+          }
+        } else if (permalink) {
+          // Try using permalink as fallback
+          logger.debug(`[MBasic] Trying permalink for full text...`);
+          const fullText = await fetchFullPostText(client, permalink);
+          if (fullText && fullText.length > text.length) {
+            logger.info(`[MBasic] Got full text from permalink: ${text.length} -> ${fullText.length} chars`);
+            text = fullText;
+          }
+        }
+      }
+
+      // Clean up any remaining truncation artifacts
+      text = text
+        .replace(/\s*See [Mm]ore\s*$/i, '')
+        .replace(/\s*\.\.\.more\s*$/i, '')
+        .replace(/…\s*$/i, '')
+        .trim();
 
       let fbPostId = extractPostId(postHtml, permalink);
       if (!fbPostId) {
@@ -388,11 +566,22 @@ const parseGroupPosts = (html: string, groupId: string): MBasicPost[] => {
       }
       seenIds.add(fbPostId);
 
+      // Construct post URL from permalink or groupId/postId
+      let postUrl: string | null = null;
+      if (permalink) {
+        postUrl = permalink.startsWith('/') ? `https://mbasic.facebook.com${permalink}` : permalink;
+        // Convert mbasic URL to regular Facebook URL for better compatibility
+        postUrl = postUrl.replace('mbasic.facebook.com', 'www.facebook.com');
+      } else if (fbPostId && !fbPostId.startsWith('mbasic_')) {
+        postUrl = `https://www.facebook.com/groups/${groupId}/posts/${fbPostId}`;
+      }
+
       posts.push({
         fbPostId,
         authorName,
         authorLink,
         text,
+        postUrl,
       });
 
     } catch (error) {
@@ -488,8 +677,8 @@ export const scrapeGroupWithMBasic = async (groupId: string): Promise<Normalized
       return [];
     }
 
-    // Parse posts from the HTML
-    const posts = parseGroupPosts(html, groupId);
+    // Parse posts from the HTML (ENHANCED: now fetches full text for truncated posts)
+    const posts = await parseGroupPosts(html, groupId, client);
     logger.info(`[MBasic] Parsed ${posts.length} posts from initial page`);
 
     // If we got few posts, try to load more by following "See More Posts" link
@@ -502,7 +691,7 @@ export const scrapeGroupWithMBasic = async (groupId: string): Promise<Normalized
           const moreResponse = await client.get(moreUrl);
 
           if (moreResponse.status === 200) {
-            const morePosts = parseGroupPosts(moreResponse.data as string, groupId);
+            const morePosts = await parseGroupPosts(moreResponse.data as string, groupId, client);
             logger.info(`[MBasic] Parsed ${morePosts.length} additional posts`);
 
             // Add new posts (avoiding duplicates)
@@ -527,6 +716,7 @@ export const scrapeGroupWithMBasic = async (groupId: string): Promise<Normalized
       authorLink: post.authorLink,
       authorPhoto: null, // MBasic doesn't provide high-quality profile photos easily
       text: post.text,
+      postUrl: post.postUrl,
     }));
 
     logger.info(`[MBasic] Successfully scraped ${normalizedPosts.length} posts from group ${groupId}`);

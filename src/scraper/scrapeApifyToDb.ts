@@ -39,6 +39,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         authorLink: post.authorLink,
         authorPhoto: post.authorPhoto,
         text: post.text,
+        postUrl: post.postUrl,
         scrapedAt: new Date(),
       },
       create: {
@@ -48,6 +49,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         authorLink: post.authorLink,
         authorPhoto: post.authorPhoto,
         text: post.text,
+        postUrl: post.postUrl,
         scrapedAt: new Date(),
       },
     });
