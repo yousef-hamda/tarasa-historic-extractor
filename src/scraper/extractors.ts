@@ -1484,7 +1484,40 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
         }
       }
 
-      // Strategy 3: Use postUrlMap to find closest UNUSED URL by proximity
+      // Strategy 3: Match by __cft__ parameter
+      // All links within a Facebook post share the same __cft__ tracking parameter
+      // Extract __cft__ from author link, then find post URLs with matching __cft__
+      if (!postUrl && authorLink) {
+        const cftMatch = authorLink.match(/__cft__\[0\]=([^&]+)/);
+        if (cftMatch) {
+          const authorCft = cftMatch[1];
+
+          // Search ALL post URLs in the feed with matching __cft__
+          const allPostLinks = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]');
+          for (const link of allPostLinks) {
+            const href = link.getAttribute('href') || '';
+            const linkCftMatch = href.match(/__cft__\[0\]=([^&]+)/);
+
+            if (linkCftMatch && linkCftMatch[1] === authorCft) {
+              // Found matching __cft__ - this post URL belongs to this post
+              let cleanUrl = href.startsWith('/') ? `https://www.facebook.com${href}` : href;
+              try {
+                const url = new URL(cleanUrl, 'https://www.facebook.com');
+                url.searchParams.delete('comment_id');
+                url.searchParams.delete('reply_comment_id');
+                url.searchParams.delete('__cft__[0]');
+                url.searchParams.delete('__tn__');
+                cleanUrl = url.toString();
+              } catch {}
+
+              postUrl = cleanUrl;
+              break;
+            }
+          }
+        }
+      }
+
+      // Strategy 4: Use postUrlMap to find closest UNUSED URL by proximity
       // Only match if URL is reasonably close (within 150px) and not yet used
       if (!postUrl) {
         let closestEntry: { postId: string; entry: { url: string; y: number; used: boolean } } | null = null;
