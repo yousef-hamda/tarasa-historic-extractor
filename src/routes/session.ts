@@ -9,7 +9,7 @@ import { getSessionStatus, checkAndUpdateSession } from '../session/sessionManag
 import { loadSessionHealth } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
-import { refreshFacebookSession } from '../facebook/session';
+import { refreshFacebookSession, interactiveSessionRenewal } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 
@@ -99,50 +99,67 @@ router.get('/api/session/groups', async (_req: Request, res: Response) => {
 /**
  * POST /api/session/renew
  * Manually trigger a Facebook session renewal
- * This will open a browser, verify/refresh the login, and save new cookies
+ * Opens a VISIBLE browser window for manual login (5 minute timeout)
  */
 router.post(
   '/api/session/renew',
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
     try {
-      logger.info('[Session] Manual session renewal triggered');
-      await logSystemEvent('auth', 'Manual session renewal triggered from dashboard');
+      logger.info('[Session] Interactive session renewal triggered from dashboard');
+      await logSystemEvent('auth', 'Interactive session renewal triggered - opening browser window');
 
-      // Run the session refresh
-      await refreshFacebookSession();
+      // Use interactive renewal which opens a VISIBLE browser
+      // User has 5 minutes to complete login
+      const result = await interactiveSessionRenewal(300000); // 5 minutes
 
-      // Get updated status
-      const health = await checkAndUpdateSession();
+      if (result.success) {
+        logger.info(`[Session] Interactive renewal successful for user ${result.userId}`);
 
-      logger.info('[Session] Session renewal completed successfully');
-      await logSystemEvent('auth', 'Manual session renewal completed successfully');
+        // Get the full session status
+        const health = await checkAndUpdateSession();
 
-      res.json({
-        success: true,
-        message: 'Facebook session renewed successfully',
-        session: {
-          status: health.status,
-          userId: health.userId,
-          userName: health.userName,
-          lastChecked: health.lastChecked,
-          canAccessPrivateGroups: health.canAccessPrivateGroups,
-        },
-      });
+        res.json({
+          success: true,
+          message: 'Facebook session renewed successfully! You can close this notification.',
+          session: {
+            status: health.status,
+            userId: result.userId || health.userId,
+            userName: health.userName,
+            lastChecked: health.lastChecked,
+            canAccessPrivateGroups: health.canAccessPrivateGroups,
+          },
+        });
+      } else {
+        logger.warn(`[Session] Interactive renewal failed: ${result.error}`);
+
+        // Get current session state
+        const health = await checkAndUpdateSession();
+
+        res.status(400).json({
+          success: false,
+          error: 'Session renewal failed',
+          message: result.error || 'Unable to complete login',
+          hint: result.error?.includes('timed out')
+            ? 'Please try again and complete the login within 5 minutes.'
+            : 'A browser window opened but login was not completed. Please try again.',
+          session: {
+            status: health.status,
+            userId: health.userId,
+            lastChecked: health.lastChecked,
+          },
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`[Session] Session renewal failed: ${message}`);
-      await logSystemEvent('error', `Manual session renewal failed: ${message}`);
+      logger.error(`[Session] Interactive renewal error: ${message}`);
+      await logSystemEvent('error', `Interactive session renewal failed: ${message}`);
 
       res.status(500).json({
         success: false,
         error: 'Session renewal failed',
         message,
-        hint: message.includes('Two-factor')
-          ? 'Two-factor authentication is required. Please log in manually.'
-          : message.includes('Captcha')
-          ? 'Facebook is showing a captcha. Please log in manually.'
-          : 'Check if Facebook credentials are correct in environment variables.',
+        hint: 'An error occurred while opening the browser. Please try running: npm run fb:login',
       });
     }
   }

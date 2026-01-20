@@ -7,7 +7,7 @@ An intelligent, fully automated system that discovers historical stories on Face
 This project automates the entire workflow of:
 1. **Scraping** Facebook groups for posts containing historical content
 2. **Classifying** posts using AI (OpenAI GPT) to identify historic stories
-3. **Generating** personalized English messages for post authors
+3. **Generating** personalized multilingual messages for post authors (in the same language as their post)
 4. **Sending** messages automatically via Facebook Messenger
 5. **Monitoring** all activities through a real-time dashboard
 
@@ -42,92 +42,172 @@ The system runs completely autonomously with scheduled cron jobs and includes ro
 
 ```
 tarasa-historic-extractor/
-├── src/
-│   ├── ai/
-│   │   ├── classifier.ts          # AI-powered post classification
-│   │   └── generator.ts           # English message generation
-│   ├── config/
+├── src/                           # Backend TypeScript source
+│   ├── ai/                        # AI classification & message generation
+│   │   ├── classifier.ts          # OpenAI-based post classification
+│   │   ├── generator.ts           # Personalized multilingual message generation
+│   │   └── structuredClassifier.ts # Alternative structured output classifier
+│   ├── backup/                    # Database backup system
+│   │   ├── backupManager.ts       # Full/incremental backup logic
+│   │   └── index.ts               # Module exports
+│   ├── config/                    # Configuration modules
+│   │   ├── constants.ts           # Timeouts, delays, quotas, batch sizes
 │   │   ├── cookies.json           # Facebook session cookies (auto-generated)
-│   │   └── playwright.config.ts   # Browser automation settings
-│   ├── cron/
-│   │   ├── scrape-cron.ts        # Scheduled scraping (every 10 min)
-│   │   ├── classify-cron.ts      # Scheduled classification (every 3 min)
-│   │   ├── message-cron.ts       # Scheduled messaging (every 5 min)
-│   │   ├── login-refresh.ts      # Daily session refresh
-│   │   └── index.ts              # Cron job registration
+│   │   ├── env.ts                 # Environment validation with Zod
+│   │   ├── playwright.config.ts   # Browser automation settings
+│   │   ├── redis.ts               # Redis connection management
+│   │   └── sentry.ts              # Sentry error tracking initialization
+│   ├── cron/                      # Scheduled cron jobs
+│   │   ├── index.ts               # Cron job registration & session init
+│   │   ├── scrape-cron.ts         # Every 10 minutes
+│   │   ├── classify-cron.ts       # Every 3 minutes
+│   │   ├── message-cron.ts        # Every 5 minutes
+│   │   ├── login-refresh.ts       # Daily session refresh
+│   │   ├── session-check-cron.ts  # Session health monitoring
+│   │   └── backup-cron.ts         # Daily backups at midnight
 │   ├── database/
-│   │   ├── schema.prisma         # Database schema
-│   │   ├── prisma.ts             # Prisma client instance
-│   │   └── migrations/           # Database migrations
+│   │   ├── schema.prisma          # Prisma database schema
+│   │   ├── prisma.ts              # Prisma client instance
+│   │   └── migrations/            # Database migrations
+│   │       ├── 0001_init/
+│   │       ├── 0002_enum_alignment/
+│   │       ├── 20260101_add_session_and_group_tracking/
+│   │       ├── 20260112_add_author_photo/
+│   │       ├── 20260113_add_message_deduplication/
+│   │       └── 20260113_add_mbasic_access_method/
+│   ├── debug/                     # Real-time monitoring & diagnostics
+│   │   ├── diagnostics.ts         # 11 automated system health tests
+│   │   ├── errorTracker.ts        # Error categorization & deduplication
+│   │   ├── eventEmitter.ts        # Central event bus
+│   │   ├── metricsCollector.ts    # CPU, memory, heap monitoring
+│   │   ├── queryProfiler.ts       # Database query profiling
+│   │   ├── requestTracker.ts      # HTTP request profiling
+│   │   ├── selfHealing.ts         # Auto-recovery engine
+│   │   ├── websocket.ts           # Real-time WebSocket server
+│   │   ├── index.ts               # Debug module exports
+│   │   └── types.ts               # Type definitions
 │   ├── facebook/
-│   │   └── session.ts            # Facebook login & session management
+│   │   └── session.ts             # Facebook login, cookies, session mgmt
 │   ├── messenger/
-│   │   └── messenger.ts          # Messenger bot for sending messages
-│   ├── routes/
-│   │   ├── posts.ts              # Posts API endpoints
-│   │   ├── messages.ts           # Messages API endpoints
-│   │   ├── logs.ts               # System logs endpoint
-│   │   ├── health.ts             # Health check endpoint
-│   │   ├── session.ts            # Session status & renewal endpoints
-│   │   └── debug.ts              # Debug & diagnostics endpoints
-│   ├── scraper/
-│   │   ├── scraper.ts            # Facebook group scraper
-│   │   └── extractors.ts         # Post data extraction logic
-│   ├── utils/
-│   │   ├── logger.ts             # Winston logger configuration
-│   │   ├── delays.ts             # Human-like delay utilities
-│   │   ├── selectors.ts          # Facebook DOM selectors
-│   │   ├── alerts.ts             # Email alert system
-│   │   ├── systemLog.ts          # Database logging utilities
-│   │   ├── openaiRetry.ts        # OpenAI API retry logic
-│   │   ├── circuitBreaker.ts     # Circuit breaker for external services
-│   │   └── browserPool.ts        # Browser instance pool manager
+│   │   └── messenger.ts           # Messenger bot for automated messaging
+│   ├── middleware/                # Express middleware
+│   │   ├── apiAuth.ts             # API key authentication
+│   │   ├── errorHandler.ts        # Global error handler
+│   │   ├── rateLimiter.ts         # Rate limiting with Redis fallback
+│   │   └── security.ts            # Security headers, CORS, sanitization
+│   ├── queues/
+│   │   └── jobQueue.ts            # BullMQ job queue management
+│   ├── routes/                    # API endpoint handlers
+│   │   ├── backup.ts              # Backup management API
+│   │   ├── debug.ts               # Debug console endpoints
+│   │   ├── groups.ts              # Group management endpoints
+│   │   ├── health.ts              # Health check endpoint
+│   │   ├── logs.ts                # System logs endpoint
+│   │   ├── messages.ts            # Message queue endpoints
+│   │   ├── posts.ts               # Posts API endpoints
+│   │   ├── session.ts             # Session management endpoints
+│   │   └── stats.ts               # Activity statistics endpoints
+│   ├── scraper/                   # Facebook scraping logic
+│   │   ├── extractors.ts          # Post data extraction (7 strategies)
+│   │   ├── fullTextExtractor.ts   # Full text & "See more" expansion
+│   │   ├── apifyScraper.ts        # Apify-based scraper for public groups
+│   │   ├── mbasicScraper.ts       # m.facebook.com plain HTML scraper
+│   │   ├── playwrightScraper.ts   # Playwright browser automation scraper
+│   │   ├── groupDetector.ts       # Group type detection (public/private)
+│   │   ├── orchestrator.ts        # Smart scraper method selector
+│   │   ├── scrapeApifyToDb.ts     # Apify integration & storage
+│   │   ├── stealthBrowser.ts      # Browser stealth mode config
+│   │   └── scraper.ts             # Legacy main scraper entry point
+│   ├── scripts/                   # Utility scripts
+│   │   ├── facebook-login.ts      # Manual login & cookie save
+│   │   ├── facebook-auto-login.ts # Automated login helper
+│   │   ├── check-stats.ts         # Stats checker script
+│   │   ├── test-scrapers.ts       # Scraper testing script
+│   │   ├── cleanup-orphans.ts     # Cleanup orphaned records
+│   │   ├── smoke-tests.ts         # Smoke tests
+│   │   └── debug-*.ts             # Various debug scripts
 │   ├── session/
-│   │   ├── sessionHealth.ts      # Session health tracking
-│   │   └── sessionManager.ts     # Session initialization & validation
-│   ├── debug/
-│   │   ├── index.ts              # Debug module exports
-│   │   ├── types.ts              # Type definitions
-│   │   ├── metricsCollector.ts   # CPU, memory, event loop monitoring
-│   │   ├── requestTracker.ts     # HTTP request profiling
-│   │   ├── errorTracker.ts       # Error tracking & categorization
-│   │   ├── selfHealing.ts        # Auto-recovery engine
-│   │   ├── websocket.ts          # Real-time WebSocket server
-│   │   ├── queryProfiler.ts      # Database query profiling
-│   │   ├── eventEmitter.ts       # Central event bus
-│   │   └── diagnostics.ts        # Comprehensive system diagnostics with auto-fix
-│   ├── backup/
-│   │   ├── index.ts              # Backup module exports
-│   │   └── backupManager.ts      # Full/incremental backup system
-│   └── server.ts                 # Express server entry point
-├── ui/
+│   │   ├── sessionManager.ts      # Session initialization & validation
+│   │   └── sessionHealth.ts       # Session health tracking
+│   ├── types/
+│   │   └── global.d.ts            # Global type definitions
+│   ├── utils/                     # Utility functions
+│   │   ├── alerts.ts              # Email alert system
+│   │   ├── browserPool.ts         # Browser instance pool manager
+│   │   ├── circuitBreaker.ts      # Circuit breaker pattern
+│   │   ├── cronLock.ts            # Cron job locking (prevent overlap)
+│   │   ├── delays.ts              # Human-like delay functions
+│   │   ├── logger.ts              # Winston logger configuration
+│   │   ├── openaiHelpers.ts       # OpenAI response helpers
+│   │   ├── openaiRetry.ts         # OpenAI API retry logic
+│   │   ├── quota.ts               # Message quota tracking
+│   │   ├── retry.ts               # Retry with backoff utilities
+│   │   ├── selectors.ts           # Facebook DOM selectors
+│   │   ├── systemLog.ts           # Database logging utilities
+│   │   └── validation.ts          # Input validation helpers
+│   ├── validation/
+│   │   └── schemas.ts             # Zod validation schemas
+│   └── server.ts                  # Express server entry point
+├── ui/                            # Frontend - Next.js Dashboard
 │   └── dashboard/
-│       ├── components/
-│       │   ├── Card.tsx          # Statistics card component
-│       │   ├── Table.tsx         # Reusable table component
-│       │   ├── Layout.tsx        # Navigation layout wrapper
-│       │   └── SystemStatusIndicator.tsx  # Animated system status display
-│       ├── pages/
-│       │   ├── _app.tsx          # Next.js app wrapper
-│       │   ├── index.tsx         # Dashboard home page
-│       │   ├── posts.tsx         # Posts management page
-│       │   ├── messages.tsx      # Messages queue & history
-│       │   ├── logs.tsx          # System logs viewer
-│       │   ├── settings.tsx      # Configuration page
-│       │   ├── debug.tsx         # Debug console & monitoring
-│       │   └── backup.tsx        # Backup management page
+│       ├── components/            # React components
+│       │   ├── Card.tsx           # Statistics card
+│       │   ├── Layout.tsx         # Navigation wrapper
+│       │   ├── Modal.tsx          # Modal dialog
+│       │   ├── Pagination.tsx     # Table pagination
+│       │   ├── PostDetailModal.tsx # Post detail viewer
+│       │   ├── StatusBadge.tsx    # Status badge
+│       │   ├── SystemFlowDiagram.tsx # Visual flow diagram
+│       │   ├── SystemStatusCard.tsx
+│       │   ├── SystemStatusIndicator.tsx # Animated status indicator
+│       │   ├── Table.tsx          # Reusable table component
+│       │   ├── TriggerButton.tsx  # Manual trigger buttons
+│       │   ├── ErrorBoundary.tsx  # Error boundary
+│       │   ├── GroupStatusTable.tsx # Group status display
+│       │   ├── Skeleton.tsx       # Loading skeleton
+│       │   └── charts/            # Chart components
+│       │       ├── ActivityChart.tsx      # Daily activity line chart
+│       │       ├── ConfidenceDistribution.tsx # Confidence bar chart
+│       │       └── ClassificationPieChart.tsx # Historic vs non-historic
+│       ├── hooks/                 # Custom React hooks
+│       ├── pages/                 # Next.js pages
+│       │   ├── _app.tsx           # App wrapper
+│       │   ├── _error.tsx         # Error page
+│       │   ├── index.tsx          # Dashboard home
+│       │   ├── posts.tsx          # Posts management page
+│       │   ├── messages.tsx       # Message queue & history
+│       │   ├── logs.tsx           # System logs viewer
+│       │   ├── settings.tsx       # Configuration page
+│       │   ├── debug.tsx          # Debug console
+│       │   ├── backup.tsx         # Backup manager
+│       │   ├── groups.tsx         # Group management
+│       │   └── admin.tsx          # Admin page
 │       ├── styles/
-│       │   └── globals.css       # Global styles with Tailwind
-│       ├── next.config.mjs       # Next.js configuration
-│       ├── tailwind.config.js    # Tailwind CSS configuration
-│       ├── postcss.config.js     # PostCSS configuration
-│       └── package.json          # Dashboard dependencies
-├── .env                          # Environment variables (create from .env.example)
-├── .env.example                  # Environment variables template
-├── .gitignore                    # Git ignore rules
-├── package.json                  # Root project dependencies
-├── tsconfig.json                 # TypeScript configuration
-└── README.md                     # This file
+│       │   └── globals.css        # Global Tailwind styles
+│       ├── types/                 # TypeScript types
+│       ├── utils/                 # Utility functions
+│       │   ├── api.ts             # API fetch wrapper
+│       │   └── formatters.ts      # Data formatters
+│       ├── next.config.mjs        # Next.js configuration
+│       ├── tailwind.config.js     # Tailwind CSS config
+│       ├── postcss.config.js      # PostCSS config
+│       └── package.json           # Dashboard dependencies
+├── tests/                         # Test suite
+│   ├── setup.ts                   # Global test setup
+│   ├── validation.test.ts         # Schema validation tests
+│   └── security.test.ts           # Security middleware tests
+├── docs/                          # Documentation
+├── .env                           # Environment variables (gitignored)
+├── .env.example                   # Environment variables template
+├── .gitignore                     # Git ignore rules
+├── docker-compose.yml             # Docker Compose configuration
+├── Dockerfile                     # Docker build file
+├── package.json                   # Root dependencies
+├── tsconfig.json                  # TypeScript config
+├── vitest.config.ts               # Vitest test config
+├── tailwind.config.js             # Tailwind config
+├── postcss.config.js              # PostCSS config
+└── README.md                      # This file
 ```
 
 ---
@@ -317,29 +397,105 @@ Now open your browser and navigate to:
 - **Dashboard:** http://localhost:3000
 - **API:** http://localhost:4000/api/health
 
+#### Optional: Prisma Studio (Database Viewer)
+
+```bash
+npx prisma studio --schema=src/database/schema.prisma --port 5556
+```
+
+Opens a visual database browser at http://localhost:5556
+
+### Quick Reference Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start API server in development mode |
+| `npm run build` | Build for production |
+| `npm start` | Start production server |
+| `npm run scrape` | Manually trigger scraping |
+| `npm run classify` | Manually trigger classification |
+| `npm run generate` | Generate messages |
+| `npm run message` | Send queued messages |
+| `npm run fb:login` | Interactive Facebook login |
+| `npm run session:check` | Check session status |
+| `npm run cleanup:orphans` | Clean orphaned database records |
+| `npm run smoke` | Run smoke tests |
+| `npm run test:unit` | Run unit tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run prisma:generate` | Regenerate Prisma client |
+| `npm run prisma:migrate` | Run pending migrations |
+
 ---
 
 ## 🔄 How It Works
 
 ### 1. Scraping Process (Every 10 Minutes)
 
-The scraper automatically:
-1. Logs into Facebook using saved cookies (or credentials if first time)
-2. Navigates to each configured group
-3. Scrolls to load posts
-4. Extracts post data:
-   - Post text content
-   - Author name
-   - Author profile link
-   - Generated unique ID (based on content hash)
-5. Saves posts to database (avoiding duplicates)
-6. Updates session cookies
+The system uses an intelligent **Multi-Scraper Architecture** with automatic method selection:
+
+```
+Orchestrator (scrapeGroup)
+    ↓
+Check Cached Method for Group
+    ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Try Scraping Methods (in priority order):                   │
+│ 1. Known Working Method (skip detection if cached)          │
+│ 2. MBasic Scraper (plain HTML, fastest)                     │
+│ 3. Apify Scraper (public groups, circuit-breaker protected) │
+│ 4. Playwright Scraper (authenticated, for private groups)   │
+└─────────────────────────────────────────────────────────────┘
+    ↓
+Extract Posts Using Multi-Strategy Extractor (7 strategies)
+    ↓
+Upsert to Database (update if exists, create if new)
+```
+
+#### Scraper Methods Comparison
+
+| Method | Use Case | Speed | Reliability | Requires Auth |
+|--------|----------|-------|-------------|---------------|
+| **MBasic** | Public groups | Very Fast | Medium | No |
+| **Apify** | Public groups | Fast | High | No (via Apify API) |
+| **Playwright** | Private groups | Slow | High | Yes |
+
+The orchestrator:
+1. Checks if a working method is cached for the group
+2. Tries MBasic first (fastest, plain HTML parsing of m.facebook.com)
+3. Falls back to Apify if MBasic fails (circuit-breaker protected)
+4. Uses Playwright as final fallback (authenticated browser automation)
+5. Caches the working method to skip detection on future scrapes
+
+#### 7-Strategy Post Extraction
+
+The extractor uses multiple fallback strategies to maximize data extraction:
+
+| Strategy | Description | Reliability |
+|----------|-------------|-------------|
+| 1. Photo URL Pattern | Extract post ID from `set=pcb.XXXXX` in photo URLs | Highest (photo posts) |
+| 2. __cft__ Matching | Correlate author links with post URLs via tracking params | High |
+| 3. GraphQL Interception | Capture network requests during page load | Medium |
+| 4. Data Attributes | Parse `data-ft` and similar Facebook attributes | Medium |
+| 5. Author Link Patterns | Infer post ID from author profile link structure | Medium |
+| 6. Post Container Analysis | Parse DOM structure for implicit IDs | Low |
+| 7. Content Hash Fallback | SHA-256 hash of content + author for uniqueness | Always works |
+
+#### Data Extracted Per Post
+
+- **Post ID**: Real Facebook ID or content hash
+- **Post Text**: Full content with "See more" expanded
+- **Post URL**: Direct link to the Facebook post (when available)
+- **Author Name**: From profile link text
+- **Author Link**: Profile URL with 7 extraction strategies
+- **Author Photo**: SVG `<image href="">` or `<img src="">` with position-based matching
+- **Group ID**: Source group identifier
 
 **Selectors Used:**
 - Post containers: `div[role="article"]`
 - Post text: `div[data-ad-comet-preview]`, `div[dir="auto"]`
-- Author name: `strong a`
-- Author link: `strong a[href*="facebook.com"]`
+- Author name: `strong a`, `h2 a`, `h3 a`, `h4 a`
+- Author link: 7 different extraction strategies
+- Author photo: SVG `<image>` elements, position-based matching
 
 ### 2. Classification Process (Every 3 Minutes)
 
@@ -364,17 +520,34 @@ The classifier:
 
 ### 3. Message Generation (Every 5 Minutes)
 
-For valid historic posts:
-1. Generates personalized English message using OpenAI
-2. Creates pre-filled Tarasa submission link with post data
-3. Stores message in queue (`MessageGenerated` table)
-4. Ensures message is unique and natural (not AI-sounding)
+For valid historic posts (confidence ≥ 75%):
+1. Detects the language of the original post
+2. Generates personalized message **in the same language** using OpenAI
+3. Creates pre-filled Tarasa submission link with post data
+4. Stores message in queue (`MessageGenerated` table)
+5. Validates message quality and naturalness
 
-**Message Structure:**
-- Compliment to the author
-- Explanation of Tarasa's mission
-- Encouragement to submit story
-- Pre-filled link for easy submission
+**Multilingual Support:**
+- Hebrew (עברית)
+- Arabic (العربية)
+- English
+- Any language detected in the original post
+
+**Message Generation Rules:**
+- Write in the **SAME LANGUAGE** as the original post
+- Address author by first name warmly
+- Compliment specific content they shared
+- Introduce Tarasa platform mission
+- Include pre-filled submission link
+- Keep human-like (3-5 short sentences)
+- No repetitive emojis or formal phrases
+
+**Pre-filled Submission Link:**
+```
+https://tarasa.me/...?refPost=POST_ID&text=ENCODED_POST_TEXT
+```
+- `refPost`: Links submission back to original Facebook post
+- `text`: Pre-fills story text field for easy submission
 
 ### 4. Message Sending (Every 5 Minutes)
 
@@ -402,6 +575,82 @@ Maintains Facebook session:
 3. Auto-fills credentials if needed
 4. Saves fresh cookies
 5. Sends email alert if manual intervention required (2FA/Captcha)
+
+---
+
+## 📈 Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     COMPLETE DATA FLOW                              │
+└─────────────────────────────────────────────────────────────────────┘
+
+SCRAPING PHASE (every 10 min):
+══════════════════════════════
+Facebook Groups
+    ↓
+Orchestrator (method selection)
+    ├→ MBasic Scraper (fast, public)
+    ├→ Apify Scraper (reliable, public)
+    └→ Playwright Scraper (auth, private)
+    ↓
+Multi-Strategy Extractor (7 strategies)
+    ↓
+┌──────────────────────────────────────────┐
+│ Database: PostRaw table                  │
+│ (posts with author info, text, URLs)     │
+└──────────────────────────────────────────┘
+
+
+CLASSIFICATION PHASE (every 3 min):
+════════════════════════════════════
+PostRaw (unclassified)
+    ↓
+OpenAI GPT-4o-mini
+    ↓
+Classification Result
+{is_historic, confidence, reason}
+    ↓
+┌──────────────────────────────────────────┐
+│ Database: PostClassified table           │
+│ (linked to PostRaw)                      │
+└──────────────────────────────────────────┘
+
+
+MESSAGE GENERATION PHASE (every 5 min):
+════════════════════════════════════════
+PostClassified (is_historic=true, confidence≥75%)
+    ↓
+OpenAI GPT-4o-mini (same language as post)
+    ↓
+Personalized Message + Pre-filled Link
+    ↓
+┌──────────────────────────────────────────┐
+│ Database: MessageGenerated queue         │
+└──────────────────────────────────────────┘
+
+
+MESSAGE DISPATCH PHASE (every 5 min):
+═════════════════════════════════════
+MessageGenerated (queued)
+    ↓
+Check: Quota OK? Session valid?
+    ↓
+Playwright → Author Profile → Messenger
+    ↓
+┌──────────────────────────────────────────┐
+│ Database: MessageSent (status: sent/error│
+└──────────────────────────────────────────┘
+
+
+MONITORING (continuous):
+════════════════════════
+All Operations → SystemLog table
+Session Health → SessionState table
+Group Status → GroupInfo table
+    ↓
+WebSocket → Dashboard (real-time updates)
+```
 
 ---
 
@@ -476,6 +725,64 @@ model SystemLog {
   type      String   // 'scrape', 'auth', 'classify', 'message', 'error'
   message   String   // Log description
   createdAt DateTime @default(now())
+}
+```
+
+### SessionState
+Facebook session health tracking:
+```prisma
+model SessionState {
+  id           Int           @id @default(autoincrement())
+  status       SessionStatus // valid, expired, invalid, refreshing, blocked, unknown
+  lastChecked  DateTime      // When session was last checked
+  lastValid    DateTime?     // Last time session was confirmed valid
+  expiresAt    DateTime?     // Estimated expiration time
+  userId       String?       // Facebook user ID
+  userName     String?       // Facebook display name
+  errorMessage String?       // Error details if any
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+enum SessionStatus {
+  valid
+  expired
+  invalid
+  refreshing
+  blocked
+  unknown
+}
+```
+
+### GroupInfo
+Group metadata and scraping status:
+```prisma
+model GroupInfo {
+  id           Int          @id @default(autoincrement())
+  groupId      String       @unique  // Facebook group ID
+  groupType    GroupType    // public, private, unknown
+  groupName    String?      // Display name
+  memberCount  Int?         // Number of members
+  lastChecked  DateTime     // When group was last probed
+  lastScraped  DateTime?    // When successfully scraped
+  accessMethod AccessMethod // mbasic, apify, playwright, none
+  isAccessible Boolean      @default(true)
+  errorMessage String?      // Last error if any
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+enum GroupType {
+  public
+  private
+  unknown
+}
+
+enum AccessMethod {
+  mbasic
+  apify
+  playwright
+  none
 }
 ```
 
@@ -604,6 +911,40 @@ Manually trigger message generation and sending.
 }
 ```
 
+### GET /api/stats
+Get overall system statistics.
+
+**Response:**
+```json
+{
+  "posts": {
+    "total": 1034,
+    "today": 45,
+    "classified": 1000,
+    "historic": 234,
+    "pending": 34
+  },
+  "messages": {
+    "generated": 150,
+    "sent": 120,
+    "sentToday": 15,
+    "quota": {
+      "used": 15,
+      "limit": 20,
+      "remaining": 5
+    }
+  },
+  "groups": {
+    "total": 3,
+    "accessible": 3
+  },
+  "session": {
+    "status": "valid",
+    "lastChecked": "2025-11-17T15:00:00.000Z"
+  }
+}
+```
+
 ### GET /api/stats/activity
 Get daily activity data for charts (posts scraped, classified, messages sent).
 
@@ -642,6 +983,109 @@ Delete all scraped data from the database. This is a destructive operation.
     "generatedMessages": 450,
     "sentMessages": 120,
     "logs": 3000
+  }
+}
+```
+
+### GET /api/session/status
+Get current Facebook session status.
+
+**Response:**
+```json
+{
+  "status": "valid",
+  "lastChecked": "2025-11-17T15:00:00.000Z",
+  "lastValid": "2025-11-17T15:00:00.000Z",
+  "userId": "100012345678901",
+  "userName": "John Doe",
+  "expiresAt": "2025-11-24T15:00:00.000Z",
+  "canAccessPrivateGroups": true
+}
+```
+
+### POST /api/session/renew
+Manually renew/refresh the Facebook session.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Session renewed successfully",
+  "session": {
+    "status": "valid",
+    "userId": "100012345678901"
+  }
+}
+```
+
+### GET /api/groups
+Get all configured groups with their scraping status.
+
+**Response:**
+```json
+{
+  "groups": [
+    {
+      "id": 1,
+      "groupId": "136596023614231",
+      "groupName": "Israeli History Group",
+      "groupType": "public",
+      "accessMethod": "apify",
+      "isAccessible": true,
+      "lastScraped": "2025-11-17T15:10:00.000Z",
+      "lastChecked": "2025-11-17T15:10:00.000Z",
+      "postsCount": 450,
+      "errorMessage": null
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "accessible": 3,
+    "public": 2,
+    "private": 1
+  }
+}
+```
+
+### POST /api/groups/:groupId/refresh
+Force refresh group metadata and access method detection.
+
+**Response:**
+```json
+{
+  "success": true,
+  "group": {
+    "groupId": "136596023614231",
+    "groupType": "public",
+    "accessMethod": "apify",
+    "isAccessible": true
+  }
+}
+```
+
+### GET /api/settings
+Get current system configuration.
+
+**Response:**
+```json
+{
+  "groups": ["136596023614231", "987654321"],
+  "messaging": {
+    "enabled": true,
+    "dailyQuota": 20,
+    "used": 15
+  },
+  "classification": {
+    "model": "gpt-4o-mini",
+    "batchSize": 25,
+    "confidenceThreshold": 75
+  },
+  "scraping": {
+    "interval": "*/10 * * * *",
+    "maxBrowserInstances": 2
+  },
+  "session": {
+    "status": "valid"
   }
 }
 ```
@@ -723,6 +1167,28 @@ View and manage configuration:
 - Deletes ALL: posts, classifications, messages (generated & sent), logs
 - Shows detailed summary of deleted items
 - Useful for starting fresh or testing the system
+
+### Groups Page (/groups)
+Manage and monitor Facebook groups:
+
+**Group Status Table:**
+- Group ID and name
+- Group type (public/private/unknown)
+- Access method (MBasic/Apify/Playwright)
+- Accessibility status
+- Last scraped timestamp
+- Post count from group
+- Error messages (if any)
+
+**Actions:**
+- Refresh group detection
+- Force re-probe access method
+- View group on Facebook
+
+**Summary Cards:**
+- Total configured groups
+- Accessible groups count
+- Public vs private breakdown
 
 ### Debug Console (/debug)
 Advanced real-time system monitoring with visual status indicators:
@@ -856,6 +1322,201 @@ CLOSED → OPEN → HALF_OPEN → CLOSED
 **Configuration:**
 - Apify: Opens after 5 failures, resets after 1 hour
 - OpenAI: Opens after 10 failures, resets after 15 minutes
+
+---
+
+## 📡 Real-Time Updates (WebSocket)
+
+The system provides real-time updates to the dashboard via WebSocket:
+
+### Event Types
+
+| Event | Description | Payload |
+|-------|-------------|---------|
+| `metrics` | System metrics update | CPU, memory, heap, uptime |
+| `scrape:start` | Scraping started | group, method |
+| `scrape:complete` | Scraping finished | group, postsCount |
+| `classify:complete` | Classification done | count, historic |
+| `message:sent` | Message delivered | postId, authorLink |
+| `error` | Error occurred | type, message |
+| `session:status` | Session changed | status, userId |
+
+### Connection
+
+```typescript
+// Dashboard connects automatically
+const ws = new WebSocket('ws://localhost:4000');
+
+ws.onmessage = (event) => {
+  const { type, data } = JSON.parse(event.data);
+  // Handle event...
+};
+```
+
+### Event Emitter (Backend)
+
+Central event bus for internal communication:
+
+```typescript
+import { eventEmitter } from './debug/eventEmitter';
+
+// Emit events
+eventEmitter.emit('scrape:complete', { group, postsCount });
+
+// Listen for events
+eventEmitter.on('error', (error) => {
+  // Handle error...
+});
+```
+
+---
+
+## ⚠️ Known Limitations
+
+### Post URL Extraction
+- **Photo posts**: 100% post URL extraction (ID from `set=pcb.XXXXX`)
+- **Text-only posts**: Use hash-based IDs (Facebook doesn't expose IDs in DOM)
+
+### Apify Scraper
+- Doesn't work reliably for Israeli/certain group types
+- Falls back to Playwright automatically
+- Circuit breaker prevents repeated failures
+
+### Author Photo Extraction
+- ~71% coverage (up from 47%)
+- Facebook uses SVG images with `<image href="">` format
+- Position-based matching as fallback
+
+### Memory Usage
+- Node.js heap usage of 80-97% is **normal**
+- V8 intentionally fills heap before garbage collection
+- RSS-based monitoring used instead (alerts only >1.5GB)
+
+### Rate Limiting
+- Facebook may block after too many messages
+- Rolling 24-hour quota prevents spam detection
+- Manual 2FA/Captcha solving may be required
+
+---
+
+## 🔒 Security Features
+
+The system implements multiple layers of security:
+
+### API Authentication
+All sensitive endpoints require API key authentication:
+
+```typescript
+// Header-based authentication
+Authorization: Bearer YOUR_API_KEY
+// or
+X-API-Key: YOUR_API_KEY
+```
+
+- API key is **mandatory** in production mode
+- Set via `API_KEY` environment variable
+- Dashboard requests include key automatically
+
+### Rate Limiting
+Prevents abuse and protects against DoS:
+
+| Endpoint Type | Limit | Window |
+|---------------|-------|--------|
+| General API | 100 requests | 1 minute |
+| Trigger endpoints | 30 requests | 1 minute |
+| Login/Auth | 5 requests | 15 minutes |
+
+- Uses Redis for distributed rate limiting (if configured)
+- Falls back to in-memory limiting without Redis
+- Returns `429 Too Many Requests` when exceeded
+
+### Security Headers (Helmet)
+```typescript
+// Applied headers:
+- X-Content-Type-Options: nosniff
+- X-Frame-Options: DENY
+- X-XSS-Protection: 1; mode=block
+- Strict-Transport-Security (production)
+- Content-Security-Policy
+```
+
+### CORS Protection
+```typescript
+// Configured origins (set via CORS_ORIGINS env var)
+- http://localhost:3000 (development)
+- https://yourdomain.com (production)
+```
+
+### Request Sanitization
+Protects against:
+- **Prototype pollution**: Strips `__proto__`, `constructor`, `prototype` from requests
+- **SQL injection**: Uses Prisma ORM with parameterized queries
+- **XSS**: Input validation and output encoding
+- **Path traversal**: Validates file paths
+
+### Message Quota System
+Prevents Facebook spam detection:
+
+```typescript
+// Rolling 24-hour quota (not calendar day)
+MAX_MESSAGES_PER_DAY=20
+
+// Quota counts ALL attempts:
+- Successful sends
+- Failed attempts
+- Pending messages
+```
+
+---
+
+## 🧰 Utility Scripts
+
+Located in `src/scripts/`, these help with development and debugging:
+
+### Facebook Login Script
+```bash
+npm run fb:login
+# Or directly:
+npx ts-node src/scripts/facebook-login.ts
+```
+Opens a browser for manual Facebook login and saves cookies.
+
+### Session Check Script
+```bash
+npm run session:check
+```
+Validates current session status and reports health.
+
+### Test Scrapers Script
+```bash
+npx ts-node src/scripts/test-scrapers.ts
+```
+Tests each scraper method (MBasic, Apify, Playwright) independently.
+
+### Cleanup Orphans Script
+```bash
+npm run cleanup:orphans
+```
+Removes orphaned database records (messages without posts, etc.).
+
+### Check Stats Script
+```bash
+npx ts-node src/scripts/check-stats.ts
+```
+Displays current database statistics and system health.
+
+### Smoke Tests
+```bash
+npm run smoke
+```
+Runs basic functionality tests to verify system is working.
+
+### Debug Scripts
+Various debug scripts for specific issues:
+```bash
+npx ts-node src/scripts/debug-extraction.ts  # Test post extraction
+npx ts-node src/scripts/debug-session.ts     # Debug session issues
+```
 
 ---
 
@@ -1083,6 +1744,40 @@ describe('Feature Name', () => {
 
 ## 📝 Configuration Reference
 
+### System Constants
+
+The system uses centralized constants defined in `src/config/constants.ts`:
+
+#### Timeouts
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PAGE_LOAD_TIMEOUT` | 60000ms | Maximum time to wait for page load |
+| `NAVIGATION_TIMEOUT` | 30000ms | Maximum time for navigation |
+| `ELEMENT_TIMEOUT` | 10000ms | Maximum time to find elements |
+| `API_TIMEOUT` | 30000ms | External API request timeout |
+
+#### Delays (Human-like)
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MIN_ACTION_DELAY` | 2000ms | Minimum delay between actions |
+| `MAX_ACTION_DELAY` | 6000ms | Maximum delay between actions |
+| `SCROLL_DELAY` | 1500ms | Delay after scrolling |
+| `TYPE_DELAY` | 50-150ms | Delay between keystrokes |
+
+#### Batch Sizes
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `CLASSIFIER_BATCH_SIZE` | 25 | Posts classified per run |
+| `GENERATOR_BATCH_SIZE` | 20 | Messages generated per run |
+| `SCRAPE_SCROLL_COUNT` | 5 | Number of scrolls per group |
+
+#### Quotas
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `MAX_MESSAGES_PER_DAY` | 20 | Rolling 24-hour message limit |
+| `MAX_BROWSER_INSTANCES` | 2 | Concurrent browser limit |
+| `MAX_RETRY_ATTEMPTS` | 3 | Message retry attempts |
+
 ### Environment Variables
 
 | Variable | Required | Description | Example |
@@ -1112,6 +1807,11 @@ describe('Feature Name', () => {
 | `SENTRY_DSN` | No | Sentry DSN for error tracking | `https://xxx@sentry.io/xxx` |
 | `CORS_ORIGINS` | No | Allowed CORS origins (comma-separated) | `http://localhost:3000` |
 | `TRIGGER_RATE_LIMIT_PER_MINUTE` | No | Rate limit for trigger endpoints | `30` (default) |
+| `SCRAPE_CRON_SCHEDULE` | No | Cron schedule for scraping | `*/10 * * * *` (every 10 min) |
+| `CLASSIFY_CRON_SCHEDULE` | No | Cron schedule for classification | `*/3 * * * *` (every 3 min) |
+| `MESSAGE_CRON_SCHEDULE` | No | Cron schedule for messaging | `*/5 * * * *` (every 5 min) |
+| `BACKUP_CRON_SCHEDULE` | No | Cron schedule for backups | `0 0 * * *` (midnight) |
+| `CONFIDENCE_THRESHOLD` | No | Minimum confidence for message generation | `75` (default) |
 
 ### Cron Schedule
 
@@ -1250,6 +1950,82 @@ Features:
 - [ ] Cron jobs running
 - [ ] Health checks responding (`/api/health`)
 - [ ] Monitoring/alerting set up
+
+---
+
+## 🔌 External Dependencies & APIs
+
+### OpenAI API
+Used for AI-powered classification and message generation.
+
+| Feature | Model | Purpose |
+|---------|-------|---------|
+| Classification | gpt-4o-mini | Determine if posts are historic |
+| Message Generation | gpt-4o-mini | Create personalized outreach messages |
+
+**Rate Limiting:**
+- Circuit breaker opens after 10 failures
+- Resets after 15 minutes
+- Exponential backoff on retries
+
+**Cost Estimate:** ~$0.01 per 100 posts classified
+
+### Apify API
+Used for public group scraping without authentication.
+
+**Actor:** `apify/facebook-groups-scraper`
+
+| Setting | Value |
+|---------|-------|
+| Results Limit | Configurable (default: 100) |
+| Circuit Breaker | Opens after 5 failures |
+| Reset Time | 1 hour |
+
+**Limitations:**
+- Doesn't work for all group types
+- May fail for Israeli history groups
+- Falls back to Playwright automatically
+
+### Playwright
+Browser automation for authenticated scraping and messaging.
+
+**Features:**
+- Stealth mode (puppeteer-extra plugins)
+- Persistent browser profile
+- Cookie-based session management
+- Human-like delays and interactions
+
+**Browser Pool:**
+- Default: 2 concurrent instances
+- Configurable via `MAX_BROWSER_INSTANCES`
+- Automatic cleanup on shutdown
+
+### Email (Nodemailer)
+Used for alert notifications (2FA, captcha, errors).
+
+**Configuration:**
+```bash
+SYSTEM_EMAIL_ALERT=your@gmail.com
+SYSTEM_EMAIL_PASSWORD=app-password  # Gmail App Password
+```
+
+### Redis (Optional)
+Used for distributed rate limiting and caching.
+
+**Features:**
+- Rate limiting across instances
+- Session caching
+- Job queue backing (BullMQ)
+
+**Fallback:** In-memory alternatives when Redis unavailable
+
+### Sentry (Optional)
+Error tracking and performance monitoring.
+
+**Features:**
+- Automatic exception capture
+- Performance sampling (10% in production)
+- Release tracking
 
 ---
 
