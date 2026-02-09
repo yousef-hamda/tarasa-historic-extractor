@@ -354,7 +354,7 @@ export async function runClassificationPipeline(): Promise<{
 
     // Classify in batch
     const results = await classifyPostsBatch(
-      unclassifiedPosts.map((p) => ({ id: p.id, text: p.text }))
+      unclassifiedPosts.map((p: typeof unclassifiedPosts[0]) => ({ id: p.id, text: p.text }))
     );
 
     // Save results to database

@@ -506,7 +506,7 @@ const testGroupConfig = async (result: DiagnosticResult, onProgress: ProgressCal
       const groupInfos = await prisma.groupInfo.findMany({
         where: { groupId: { in: groupIds } },
       });
-      const accessible = groupInfos.filter(g => g.isAccessible).length;
+      const accessible = groupInfos.filter((g: any) => g.isAccessible).length;
 
       test.status = 'passed';
       test.message = `${groupIds.length} groups configured, ${accessible} accessible`;

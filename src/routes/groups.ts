@@ -75,7 +75,7 @@ router.get('/api/groups', async (_req: Request, res: Response) => {
       where: { groupId: { in: groupIds } },
     });
 
-    const groupInfoMap = new Map(groupInfos.map((g) => [g.groupId, g]));
+    const groupInfoMap = new Map(groupInfos.map((g: typeof groupInfos[0]) => [g.groupId, g]));
 
     // Combine env groups with database info
     const groups = groupIds.map((groupId) => {
@@ -229,7 +229,7 @@ router.delete('/api/groups/:groupId', apiKeyAuth, triggerRateLimiter, async (req
     // Optionally remove from database cache
     await prisma.groupInfo.delete({
       where: { groupId },
-    }).catch((err) => {
+    }).catch((err: any) => {
       // Log but don't fail if not in database
       logger.debug(`Group ${groupId} not found in database cache: ${err.message}`);
     });

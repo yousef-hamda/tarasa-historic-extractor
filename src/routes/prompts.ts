@@ -53,8 +53,8 @@ router.get('/api/prompts', async (_req: Request, res: Response) => {
     });
 
     // Get active prompts for each type
-    const activeClassifier = prompts.find((p) => p.type === 'classifier' && p.isActive);
-    const activeGenerator = prompts.find((p) => p.type === 'generator' && p.isActive);
+    const activeClassifier = prompts.find((p: any) => p.type === 'classifier' && p.isActive);
+    const activeGenerator = prompts.find((p: any) => p.type === 'generator' && p.isActive);
 
     res.json({
       active: {
@@ -78,8 +78,8 @@ router.get('/api/prompts', async (_req: Request, res: Response) => {
         },
       },
       history: {
-        classifier: prompts.filter((p) => p.type === 'classifier'),
-        generator: prompts.filter((p) => p.type === 'generator'),
+        classifier: prompts.filter((p: any) => p.type === 'classifier'),
+        generator: prompts.filter((p: any) => p.type === 'generator'),
       },
       defaults: {
         classifier: DEFAULT_CLASSIFIER_PROMPT,

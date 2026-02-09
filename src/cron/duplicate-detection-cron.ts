@@ -199,7 +199,7 @@ export const detectDuplicates = async (): Promise<void> => {
             id: {
               in: await prisma.duplicateMatch
                 .findMany({ select: { postId: true } })
-                .then((matches) => matches.map((m) => m.postId)),
+                .then((matches: Array<{ postId: number }>) => matches.map((m: { postId: number }) => m.postId)),
             },
           },
         },

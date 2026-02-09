@@ -110,7 +110,7 @@ const generateReportStats = async (
     messagesSent,
     avgConfidence: avgConfidence._avg.confidence,
     avgQuality: avgQuality._avg.rating,
-    topGroups: topGroups.map((g) => ({ groupId: g.groupId, count: g._count.id })),
+    topGroups: topGroups.map((g: any) => ({ groupId: g.groupId, count: g._count.id })),
     highQualityCount,
   };
 };
@@ -257,7 +257,7 @@ export const generateWeeklyReport = async (): Promise<void> => {
       where: { isActive: true, frequency: 'weekly' },
     });
 
-    const recipients = configs.map((c) => c.email);
+    const recipients = configs.map((c: any) => c.email);
 
     if (recipients.length > 0) {
       const html = formatEmailReport(stats);

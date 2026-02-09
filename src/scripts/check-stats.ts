@@ -4,8 +4,8 @@ import prisma from '../database/prisma';
 async function stats() {
   const groups = await prisma.groupInfo.findMany();
   const totalGroups = groups.length;
-  const accessibleGroups = groups.filter(g => g.isAccessible).length;
-  const scrapedGroups = groups.filter(g => g.lastScraped !== null).length;
+  const accessibleGroups = groups.filter((g: any) => g.isAccessible).length;
+  const scrapedGroups = groups.filter((g: any) => g.lastScraped !== null).length;
 
   const totalPosts = await prisma.postRaw.count();
   const classifiedPosts = await prisma.postClassified.count();
@@ -34,7 +34,7 @@ async function stats() {
   console.log(`  Avg posts per scraped group: ${Math.round(totalPosts / Math.max(scrapedGroups, 1))}`);
   console.log('');
 
-  const orchestratedLogs = recentLogs.filter(l => l.message.includes('Orchestrated scrape complete'));
+  const orchestratedLogs = recentLogs.filter((l: any) => l.message.includes('Orchestrated scrape complete'));
   if (orchestratedLogs.length > 0) {
     console.log('RECENT SCRAPE RUNS (last 24h):');
     for (const log of orchestratedLogs.slice(0, 5)) {

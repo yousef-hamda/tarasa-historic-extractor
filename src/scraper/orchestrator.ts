@@ -385,7 +385,7 @@ export const getScrapingStatus = async (): Promise<{
     where: { groupId: { in: groupIds } },
   });
 
-  const cachedMap = new Map(cachedGroups.map(g => [g.groupId, g]));
+  const cachedMap = new Map(cachedGroups.map((g: any) => [g.groupId, g]));
 
   const groups = groupIds.map(groupId => {
     const cached = cachedMap.get(groupId);
