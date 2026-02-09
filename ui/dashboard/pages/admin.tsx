@@ -158,11 +158,8 @@ const AdminPage: React.FC = () => {
 
   const handleTrigger = async (endpoint: string, actionName: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
       });
 
       const data = await res.json();

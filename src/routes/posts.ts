@@ -3,10 +3,12 @@ import prisma from '../database/prisma';
 // Using hybrid scraper (Apify for public groups, Playwright for private groups)
 import { scrapeAllGroups } from '../scraper/scrapeApifyToDb';
 import { classifyPosts } from '../ai/classifier';
+import { safeErrorMessage } from '../middleware/errorHandler';
 import { generateMessages } from '../ai/generator';
 import { dispatchMessages } from '../messenger/messenger';
 import { logSystemEvent } from '../utils/systemLog';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
+import { apiKeyAuth } from '../middleware/apiAuth';
 import { parsePositiveInt, parseNonNegativeInt } from '../utils/validation';
 
 const router = Router();
@@ -37,39 +39,42 @@ router.get('/api/posts', async (req: Request, res: Response) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: 'Failed to fetch posts', message });
+    res.status(500).json({ error: 'Failed to fetch posts', message: safeErrorMessage(error, 'Internal server error') });
   }
 });
 
-router.post('/api/trigger-scrape', triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     // Using hybrid scraper: Apify for public groups, Playwright fallback for private groups
     await scrapeAllGroups();
     res.json({ status: 'completed' });
   } catch (error) {
-    await logSystemEvent('error', `Manual scrape trigger failed: ${(error as Error).message}`);
-    res.status(500).json({ status: 'error', message: (error as Error).message });
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    await logSystemEvent('error', `Manual scrape trigger failed: ${errMsg}`).catch(() => {});
+    res.status(500).json({ error: 'Scrape failed', message: errMsg });
   }
 });
 
-router.post('/api/trigger-classification', triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-classification', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await classifyPosts();
     res.json({ status: 'completed' });
   } catch (error) {
-    await logSystemEvent('error', `Manual classification trigger failed: ${(error as Error).message}`);
-    res.status(500).json({ status: 'error', message: (error as Error).message });
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    await logSystemEvent('error', `Manual classification trigger failed: ${errMsg}`).catch(() => {});
+    res.status(500).json({ error: 'Classification failed', message: errMsg });
   }
 });
 
-router.post('/api/trigger-message', triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/trigger-message', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     await generateMessages();
     await dispatchMessages();
     res.json({ status: 'completed' });
   } catch (error) {
-    await logSystemEvent('error', `Manual message trigger failed: ${(error as Error).message}`);
-    res.status(500).json({ status: 'error', message: (error as Error).message });
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    await logSystemEvent('error', `Manual message trigger failed: ${errMsg}`).catch(() => {});
+    res.status(500).json({ error: 'Message dispatch failed', message: errMsg });
   }
 });
 

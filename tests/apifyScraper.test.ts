@@ -1,4 +1,15 @@
 /**
+ * NOTE: These tests currently duplicate extraction logic rather than testing
+ * the actual code in src/scraper/apifyScraper.ts.
+ *
+ * To properly test the real scraper code, the internal extraction functions
+ * (extractPostId, extractPostText) would need to be exported from apifyScraper.ts.
+ *
+ * TODO: Refactor apifyScraper.ts to export extraction utilities and update
+ * these tests to import from the real module.
+ */
+
+/**
  * Apify Scraper Tests
  *
  * Tests for Apify post normalization and field extraction

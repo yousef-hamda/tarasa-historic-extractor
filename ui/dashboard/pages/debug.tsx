@@ -477,8 +477,12 @@ export default function DebugPage() {
     setIsDiagnosticRunning(true);
     setDiagnosticResult(null);
 
-    // Create EventSource for SSE
-    const eventSource = new EventSource(`http://${window.location.hostname}:4000/api/debug/diagnostics/stream`);
+    // Create EventSource for SSE (pass API key as query param since EventSource can't set headers)
+    const apiKey = typeof window !== 'undefined'
+      ? (localStorage.getItem('tarasa_api_key') || process.env.NEXT_PUBLIC_API_KEY || '')
+      : '';
+    const sseUrl = `http://${window.location.hostname}:4000/api/debug/diagnostics/stream${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
+    const eventSource = new EventSource(sseUrl);
     eventSourceRef.current = eventSource;
 
     eventSource.addEventListener('progress', (event) => {

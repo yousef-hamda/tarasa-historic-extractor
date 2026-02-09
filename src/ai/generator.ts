@@ -3,7 +3,8 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
-import { normalizeMessageContent, validateGeneratedMessage } from '../utils/openaiHelpers';
+import { normalizeMessageContent, validateGeneratedMessage, sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
+import { URLS } from '../config/constants';
 
 const TEMPLATE_PROMPT = `You write short, friendly messages to people on Facebook who shared a historical story or memory.
 
@@ -26,12 +27,35 @@ Rules:
 Return ONLY the final message text in the SAME LANGUAGE as the original post, including the provided link.`;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const model = process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini';
+const model = getModel('generator');
 // Increased default batch size for better throughput (was 10)
-const MAX_BATCH = Math.min(Number(process.env.GENERATOR_BATCH_SIZE ?? '20'), 50);
+const parsedBatchSize = Number(process.env.GENERATOR_BATCH_SIZE ?? '20');
+const MAX_BATCH = Math.min(isNaN(parsedBatchSize) ? 20 : parsedBatchSize, 50);
 
+// Use centralized URL from constants
+const DEFAULT_TARASA_URL = URLS.DEFAULT_TARASA;
+
+/**
+ * Build the link to be included in the message
+ *
+ * If SUBMIT_PAGE_BASE_URL is set, use the landing page which:
+ * - Shows the post text
+ * - Has a "Copy to Clipboard" button
+ * - Redirects to tarasa.me
+ *
+ * Otherwise, fall back to direct tarasa.me link (legacy behavior)
+ */
 const buildLink = (postId: number, text: string) => {
-  const base = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
+  // Check if landing page is configured
+  const submitPageBase = process.env.SUBMIT_PAGE_BASE_URL;
+
+  if (submitPageBase) {
+    // Use the new landing page URL (no text in URL - fetched from DB)
+    return `${submitPageBase.replace(/\/$/, '')}/submit/${postId}`;
+  }
+
+  // Legacy behavior: direct tarasa.me link with text in URL
+  const base = process.env.BASE_TARASA_URL || DEFAULT_TARASA_URL;
   return `${base}?refPost=${postId}&text=${encodeURIComponent(text)}`;
 };
 
@@ -84,7 +108,7 @@ export const generateMessages = async (): Promise<void> => {
             { role: 'system', content: TEMPLATE_PROMPT },
             {
               role: 'user',
-              content: `Author name: ${firstName}\nOriginal post: ${post.text}\nLink to share story: ${link}`,
+              content: `Author name: ${sanitizeForPrompt(firstName, 100)}\nOriginal post: ${sanitizeForPrompt(post.text)}\nLink to share story: ${link}`,
             },
           ],
         }),
@@ -100,7 +124,7 @@ export const generateMessages = async (): Promise<void> => {
       }
 
       // Validate the generated message contains the link
-      const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
+      const baseTarasaUrl = process.env.BASE_TARASA_URL || DEFAULT_TARASA_URL;
       if (!validateGeneratedMessage(messageText, baseTarasaUrl)) {
         logger.warn(`Generated message for post ${post.id} is too short or missing link`);
         await logSystemEvent('error', `Invalid message generated for post ${post.id} - skipped`);
@@ -132,12 +156,14 @@ export const generateMessages = async (): Promise<void> => {
 if (require.main === module) {
   require('dotenv/config');
   generateMessages()
-    .then(() => {
+    .then(async () => {
       logger.info('Message generation completed');
+      await prisma.$disconnect();
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(async (error) => {
       logger.error(`Message generation failed: ${error.message}`);
+      await prisma.$disconnect();
       process.exit(1);
     });
 }

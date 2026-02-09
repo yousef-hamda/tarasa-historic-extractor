@@ -279,11 +279,8 @@ const GroupsPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const res = await fetch('/api/groups', {
+      const res = await apiFetch('/api/groups', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ groupUrl: newGroupUrl.trim() }),
       });
 
@@ -314,7 +311,7 @@ const GroupsPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const res = await fetch(`/api/groups/${groupId}`, {
+      const res = await apiFetch(`/api/groups/${groupId}`, {
         method: 'DELETE',
       });
 
@@ -340,7 +337,7 @@ const GroupsPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const res = await fetch(`/api/groups/${groupId}/reset`, {
+      const res = await apiFetch(`/api/groups/${groupId}/reset`, {
         method: 'POST',
       });
 
@@ -370,7 +367,7 @@ const GroupsPage: React.FC = () => {
     setSuccess(null);
 
     try {
-      const res = await fetch('/api/groups/reset-all', {
+      const res = await apiFetch('/api/groups/reset-all', {
         method: 'POST',
       });
 

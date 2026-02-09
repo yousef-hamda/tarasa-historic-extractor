@@ -9,6 +9,7 @@ import { getSessionStatus, checkAndUpdateSession } from '../session/sessionManag
 import { loadSessionHealth } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
+import { apiKeyAuth } from '../middleware/apiAuth';
 import { refreshFacebookSession, interactiveSessionRenewal } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
@@ -46,6 +47,7 @@ router.get('/api/session/status', async (_req: Request, res: Response) => {
  */
 router.post(
   '/api/session/validate',
+  apiKeyAuth,
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
     try {
@@ -103,6 +105,7 @@ router.get('/api/session/groups', async (_req: Request, res: Response) => {
  */
 router.post(
   '/api/session/renew',
+  apiKeyAuth,
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
     try {

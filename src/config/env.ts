@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import logger from '../utils/logger';
+import { URLS } from './constants';
 
 interface EnvConfig {
   // Required
@@ -27,6 +28,10 @@ interface EnvConfig {
   // Apify scraper (replaces Playwright for Facebook scraping)
   APIFY_TOKEN?: string;
   APIFY_RESULTS_LIMIT: number;
+
+  // Telegram Bot (optional)
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 const requiredEnvVars = [
@@ -93,12 +98,12 @@ const getEnvConfig = (): EnvConfig => {
       .map((id) => id.trim())
       .filter(Boolean),
     MAX_MESSAGES_PER_DAY: Number(process.env.MAX_MESSAGES_PER_DAY) || 20,
-    BASE_TARASA_URL: process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833',
-    HEADLESS: process.env.HEADLESS === 'true',
+    BASE_TARASA_URL: process.env.BASE_TARASA_URL || URLS.DEFAULT_TARASA,
+    HEADLESS: process.env.HEADLESS !== 'false', // Default to true (headless) unless explicitly set to 'false'
     OPENAI_CLASSIFIER_MODEL: process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini',
     OPENAI_GENERATOR_MODEL: process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini',
-    CLASSIFIER_BATCH_SIZE: Number(process.env.CLASSIFIER_BATCH_SIZE) || 10,
-    GENERATOR_BATCH_SIZE: Number(process.env.GENERATOR_BATCH_SIZE) || 10,
+    CLASSIFIER_BATCH_SIZE: Number(process.env.CLASSIFIER_BATCH_SIZE) || 25, // Increased for better throughput
+    GENERATOR_BATCH_SIZE: Number(process.env.GENERATOR_BATCH_SIZE) || 20, // Increased for better throughput
     API_KEY: process.env.API_KEY,
     SYSTEM_EMAIL_ALERT: process.env.SYSTEM_EMAIL_ALERT,
     SYSTEM_EMAIL_PASSWORD: process.env.SYSTEM_EMAIL_PASSWORD,
@@ -106,6 +111,10 @@ const getEnvConfig = (): EnvConfig => {
     // Apify configuration
     APIFY_TOKEN: process.env.APIFY_TOKEN,
     APIFY_RESULTS_LIMIT: Number(process.env.APIFY_RESULTS_LIMIT) || 20,
+
+    // Telegram Bot
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   };
 };
 

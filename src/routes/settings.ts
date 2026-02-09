@@ -1,6 +1,9 @@
 import { Request, Response, Router } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
+import { URLS } from '../config/constants';
+import { apiKeyAuth } from '../middleware/apiAuth';
+import { triggerRateLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -35,45 +38,57 @@ const getGroups = (): string[] =>
     .filter((id): id is string => Boolean(id));
 
 router.get('/api/settings', (_req: Request, res: Response) => {
-  const groups = getGroups();
-  const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
-  const baseTarasaUrl = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
-  const emailConfigured = Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);
-  const apifyConfigured = Boolean(process.env.APIFY_TOKEN);
-  const messagingEnabled = getMessagingEnabled();
+  try {
+    const groups = getGroups();
+    const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
+    const baseTarasaUrl = process.env.BASE_TARASA_URL || URLS.DEFAULT_TARASA;
+    const emailConfigured = Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);
+    const apifyConfigured = Boolean(process.env.APIFY_TOKEN);
+    const messagingEnabled = getMessagingEnabled();
 
-  res.json({
-    groups,
-    messageLimit,
-    baseTarasaUrl,
-    emailConfigured,
-    apifyConfigured,
-    messagingEnabled,
-  });
+    res.json({
+      groups,
+      messageLimit,
+      baseTarasaUrl,
+      emailConfigured,
+      apifyConfigured,
+      messagingEnabled,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load settings', message: error instanceof Error ? error.message : 'Unknown error' });
+  }
 });
 
 // Get messaging status
 router.get('/api/settings/messaging', (_req: Request, res: Response) => {
-  res.json({
-    enabled: getMessagingEnabled(),
-  });
+  try {
+    res.json({
+      enabled: getMessagingEnabled(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load messaging status', message: error instanceof Error ? error.message : 'Unknown error' });
+  }
 });
 
-// Toggle messaging status
-router.post('/api/settings/messaging', (req: Request, res: Response) => {
+// Toggle messaging status (requires auth)
+router.post('/api/settings/messaging', apiKeyAuth, triggerRateLimiter, (req: Request, res: Response) => {
   const { enabled } = req.body;
 
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: 'enabled must be a boolean' });
   }
 
-  setMessagingEnabled(enabled);
+  try {
+    setMessagingEnabled(enabled);
 
-  res.json({
-    success: true,
-    enabled,
-    message: enabled ? 'Messaging enabled' : 'Messaging paused - messages will be queued',
-  });
+    res.json({
+      success: true,
+      enabled,
+      message: enabled ? 'Messaging enabled' : 'Messaging paused - messages will be queued',
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update messaging status', message: error instanceof Error ? error.message : 'Unknown error' });
+  }
 });
 
 export default router;

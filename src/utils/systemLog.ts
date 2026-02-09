@@ -1,9 +1,9 @@
 import prisma from '../database/prisma';
 import logger from './logger';
 
-export type LogType = 'scrape' | 'classify' | 'message' | 'auth' | 'error';
+export type LogType = 'scrape' | 'classify' | 'message' | 'auth' | 'error' | 'admin';
 
-const VALID_LOG_TYPES: LogType[] = ['scrape', 'classify', 'message', 'auth', 'error'];
+const VALID_LOG_TYPES: LogType[] = ['scrape', 'classify', 'message', 'auth', 'error', 'admin'];
 
 export const logSystemEvent = async (type: LogType, message: string): Promise<void> => {
   if (!VALID_LOG_TYPES.includes(type)) {

@@ -14,23 +14,18 @@ import {
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { debugEventEmitter } from '../debug/eventEmitter';
+import { withLock } from '../utils/cronLock';
 
 let backupTask: cron.ScheduledTask | null = null;
-let isRunning = false;
 
 /**
- * Execute backup job
+ * Execute backup job (with distributed lock protection)
  */
 const executeBackup = async (): Promise<void> => {
-  if (isRunning) {
-    logger.warn('Backup job already running, skipping...');
-    return;
-  }
+  await withLock('backup', async () => {
+    const startTime = Date.now();
 
-  isRunning = true;
-  const startTime = Date.now();
-
-  try {
+    try {
     logger.info('Starting scheduled backup job');
     debugEventEmitter.emitDebugEvent('backup', { action: 'cron_started' });
 
@@ -72,24 +67,23 @@ const executeBackup = async (): Promise<void> => {
     const duration = Date.now() - startTime;
     logger.info(`Backup job completed in ${duration}ms`);
 
-    await logSystemEvent('scrape', `Scheduled ${backupType} backup completed in ${duration}ms`);
+    await logSystemEvent('admin', `Scheduled ${backupType} backup completed in ${duration}ms`);
     debugEventEmitter.emitDebugEvent('backup', {
       action: 'cron_completed',
       type: backupType,
       duration,
     });
-  } catch (error) {
-    const errorMessage = (error as Error).message;
-    logger.error(`Backup job failed: ${errorMessage}`);
+    } catch (error) {
+      const errorMessage = (error as Error).message;
+      logger.error(`Backup job failed: ${errorMessage}`);
 
-    await logSystemEvent('error', `Scheduled backup failed: ${errorMessage}`);
-    debugEventEmitter.emitDebugEvent('backup', {
-      action: 'cron_failed',
-      error: errorMessage,
-    });
-  } finally {
-    isRunning = false;
-  }
+      await logSystemEvent('error', `Scheduled backup failed: ${errorMessage}`);
+      debugEventEmitter.emitDebugEvent('backup', {
+        action: 'cron_failed',
+        error: errorMessage,
+      });
+    }
+  });
 };
 
 /**
@@ -162,19 +156,20 @@ export const triggerBackup = async (): Promise<void> => {
 /**
  * Get backup cron status
  */
-export const getBackupCronStatus = (): {
+export const getBackupCronStatus = async (): Promise<{
   enabled: boolean;
   running: boolean;
   schedule: string;
   lastRun?: string;
   nextRun?: string;
-} => {
+}> => {
   const config = getBackupConfig();
   const stats = getBackupStats();
+  const { isLocked } = await import('../utils/cronLock');
 
   return {
     enabled: backupTask !== null && config.autoBackup,
-    running: isRunning,
+    running: await isLocked('backup'),
     schedule: config.schedule,
     lastRun: stats.lastBackup,
   };

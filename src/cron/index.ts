@@ -25,9 +25,26 @@ import './classify-cron';
 import './message-cron';
 import './login-refresh';
 import './session-check-cron';
+import './log-cleanup-cron';
 import { startBackupCron } from './backup-cron';
+import { startQualityRatingCron } from './quality-rating-cron';
+import { startReportCron } from './report-cron';
+import { startDuplicateDetectionCron } from './duplicate-detection-cron';
 
 // Start backup cron
 startBackupCron();
 
-logger.info('Cron schedules registered (scrape, classify, message, login-refresh, session-check, backup)');
+// Start quality rating cron
+startQualityRatingCron();
+
+// Start report cron
+startReportCron();
+
+// Start duplicate detection cron
+startDuplicateDetectionCron();
+
+// Start Telegram bot polling (listens for commands and questions)
+import { startTelegramPolling } from '../utils/telegram';
+startTelegramPolling();
+
+logger.info('Cron schedules registered (scrape, classify, message, login-refresh, session-check, backup, log-cleanup, quality-rating, reports, duplicate-detection)');

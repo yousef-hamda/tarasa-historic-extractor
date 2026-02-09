@@ -3,6 +3,12 @@
  *
  * Limits the number of concurrent browser instances to prevent resource exhaustion.
  * Provides queuing for requests when pool is full.
+ *
+ * Features:
+ * - Slot-based concurrency limiting
+ * - Queue with timeout for waiting requests
+ * - Automatic cleanup on timeout
+ * - Operation timeout to prevent hanging
  */
 
 import logger from './logger';
@@ -10,6 +16,7 @@ import logger from './logger';
 interface PoolOptions {
   maxInstances: number;
   acquireTimeoutMs: number;
+  operationTimeoutMs: number; // Max time for a single operation
 }
 
 class BrowserPool {
@@ -20,15 +27,20 @@ class BrowserPool {
     reject: (error: Error) => void;
     timer: NodeJS.Timeout;
   }> = [];
+  // Track active operations for forced cleanup
+  private activeOperations: Map<string, { startTime: number; timer: NodeJS.Timeout }> = new Map();
 
   constructor(options: Partial<PoolOptions> = {}) {
     const envMaxInstances = Number(process.env.MAX_BROWSER_INSTANCES) || 2;
+    const envOperationTimeout = Number(process.env.BROWSER_OPERATION_TIMEOUT_MS) || 300000; // 5 min default
+
     this.options = {
       maxInstances: options.maxInstances ?? envMaxInstances,
       acquireTimeoutMs: options.acquireTimeoutMs ?? 60000, // 1 minute default timeout
+      operationTimeoutMs: options.operationTimeoutMs ?? envOperationTimeout,
     };
 
-    logger.info(`[BrowserPool] Initialized with max ${this.options.maxInstances} instances`);
+    logger.info(`[BrowserPool] Initialized with max ${this.options.maxInstances} instances, ${this.options.operationTimeoutMs}ms operation timeout`);
   }
 
   /**
@@ -96,13 +108,39 @@ class BrowserPool {
   }
 
   /**
-   * Execute a function with automatic pool management
+   * Execute a function with automatic pool management and operation timeout
+   * Prevents operations from running forever and blocking the pool
    */
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
+  async execute<T>(fn: () => Promise<T>, operationId?: string): Promise<T> {
     const release = await this.acquire();
+    const opId = operationId || `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    let operationTimer: NodeJS.Timeout | undefined;
+
+    this.activeOperations.set(opId, {
+      startTime: Date.now(),
+      timer: undefined as unknown as NodeJS.Timeout,
+    });
+
     try {
-      return await fn();
+      const result = await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) => {
+          operationTimer = setTimeout(() => {
+            reject(new Error(`[BrowserPool] Operation ${opId} timed out after ${this.options.operationTimeoutMs}ms`));
+          }, this.options.operationTimeoutMs);
+          const op = this.activeOperations.get(opId);
+          if (op) op.timer = operationTimer;
+        }),
+      ]);
+      return result;
+    } catch (error) {
+      logger.error(`[BrowserPool] Operation ${opId} failed: ${(error as Error).message}`);
+      throw error;
     } finally {
+      if (operationTimer) clearTimeout(operationTimer);
+      const op = this.activeOperations.get(opId);
+      if (op?.timer && op.timer !== operationTimer) clearTimeout(op.timer);
+      this.activeOperations.delete(opId);
       release();
     }
   }
@@ -123,6 +161,62 @@ class BrowserPool {
    */
   hasAvailableSlot(): boolean {
     return this.activeCount < this.options.maxInstances;
+  }
+
+  /**
+   * Get detailed status including active operations
+   */
+  getDetailedStatus(): {
+    active: number;
+    waiting: number;
+    max: number;
+    activeOperations: Array<{ id: string; durationMs: number }>;
+  } {
+    const now = Date.now();
+    const activeOps = Array.from(this.activeOperations.entries()).map(([id, op]) => ({
+      id,
+      durationMs: now - op.startTime,
+    }));
+
+    return {
+      active: this.activeCount,
+      waiting: this.waitingQueue.length,
+      max: this.options.maxInstances,
+      activeOperations: activeOps,
+    };
+  }
+
+  /**
+   * Force clear a stuck operation (for emergency cleanup)
+   * WARNING: Use with caution - may leave browser instances orphaned
+   */
+  forceReleaseStuckOperations(maxAgeMs: number = 600000): number {
+    const now = Date.now();
+    let released = 0;
+
+    for (const [opId, op] of this.activeOperations.entries()) {
+      if (now - op.startTime > maxAgeMs) {
+        logger.warn(`[BrowserPool] Force releasing stuck operation ${opId} (age: ${now - op.startTime}ms)`);
+        clearTimeout(op.timer);
+        this.activeOperations.delete(opId);
+        this.activeCount = Math.max(0, this.activeCount - 1);
+        released++;
+
+        // Process waiting queue if any
+        if (this.waitingQueue.length > 0) {
+          const next = this.waitingQueue.shift();
+          if (next) {
+            next.resolve();
+          }
+        }
+      }
+    }
+
+    if (released > 0) {
+      logger.info(`[BrowserPool] Force released ${released} stuck operations`);
+    }
+
+    return released;
   }
 }
 

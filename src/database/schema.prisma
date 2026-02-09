@@ -17,13 +17,15 @@ model PostRaw {
   text        String
   scrapedAt   DateTime           @default(now())
   authorPhoto String?
-  postUrl     String?            // Direct link to the Facebook post
+  postUrl     String?
   generated   MessageGenerated[]
   messages    MessageSent[]
   classified  PostClassified?
+  quality     QualityRating?
 
   @@index([groupId])
   @@index([scrapedAt])
+  @@index([authorName])
 }
 
 model PostClassified {
@@ -33,7 +35,7 @@ model PostClassified {
   confidence   Int
   reason       String
   classifiedAt DateTime @default(now())
-  post         PostRaw  @relation(fields: [postId], references: [id])
+  post         PostRaw  @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([isHistoric, confidence])
   @@index([classifiedAt])
@@ -45,7 +47,7 @@ model MessageGenerated {
   messageText String
   link        String
   createdAt   DateTime @default(now())
-  post        PostRaw  @relation(fields: [postId], references: [id])
+  post        PostRaw  @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([createdAt])
@@ -59,7 +61,7 @@ model MessageSent {
   sentAt     DateTime      @default(now())
   error      String?
   retryCount Int           @default(0)
-  post       PostRaw       @relation(fields: [postId], references: [id])
+  post       PostRaw       @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, authorLink])
   @@index([status])
@@ -123,6 +125,7 @@ enum LogType {
   message
   auth
   error
+  admin
 }
 
 enum SessionStatus {
@@ -141,8 +144,137 @@ enum GroupType {
 }
 
 enum AccessMethod {
-  mbasic
   apify
   playwright
   none
+  mbasic
+}
+
+// AI Prompt Templates for admin customization
+model PromptTemplate {
+  id          Int      @id @default(autoincrement())
+  type        PromptType
+  name        String
+  content     String   @db.Text
+  isActive    Boolean  @default(false)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  @@unique([type, isActive])
+  @@index([type])
+  @@index([isActive])
+}
+
+enum PromptType {
+  classifier
+  generator
+}
+
+// Story Quality Rating
+model QualityRating {
+  id          Int      @id @default(autoincrement())
+  postId      Int      @unique
+  rating      Int      // 1-5 stars
+  factors     String   @db.Text // JSON: { narrative, emotional, historical, uniqueness }
+  ratedAt     DateTime @default(now())
+  post        PostRaw  @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([rating])
+  @@index([ratedAt])
+}
+
+// Duplicate Detection
+model DuplicateGroup {
+  id          Int      @id @default(autoincrement())
+  primaryPostId Int
+  similarity  Float    // 0-1 similarity score
+  detectedAt  DateTime @default(now())
+  status      DuplicateStatus @default(pending)
+  posts       DuplicateMatch[]
+
+  @@index([status])
+  @@index([detectedAt])
+}
+
+model DuplicateMatch {
+  id          Int      @id @default(autoincrement())
+  groupId     Int
+  postId      Int
+  similarity  Float
+  group       DuplicateGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, postId])
+  @@index([postId])
+}
+
+enum DuplicateStatus {
+  pending
+  reviewed
+  dismissed
+  merged
+}
+
+// A/B Testing for Messages
+model MessageVariant {
+  id          Int      @id @default(autoincrement())
+  name        String
+  promptTemplate String @db.Text
+  isActive    Boolean  @default(true)
+  weight      Int      @default(50) // Percentage weight for A/B selection
+  createdAt   DateTime @default(now())
+  metrics     VariantMetrics?
+
+  @@index([isActive])
+}
+
+model VariantMetrics {
+  id          Int      @id @default(autoincrement())
+  variantId   Int      @unique
+  totalSent   Int      @default(0)
+  responses   Int      @default(0)
+  clicks      Int      @default(0)
+  lastUpdated DateTime @updatedAt
+  variant     MessageVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+// Weekly Reports Configuration
+model ReportConfig {
+  id          Int      @id @default(autoincrement())
+  email       String
+  frequency   ReportFrequency @default(weekly)
+  isActive    Boolean  @default(true)
+  lastSentAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([isActive])
+  @@index([frequency])
+}
+
+model ReportHistory {
+  id          Int      @id @default(autoincrement())
+  period      String   // e.g., "2024-W01" for weekly
+  sentAt      DateTime @default(now())
+  recipients  String   // JSON array of emails
+  stats       String   @db.Text // JSON with report data
+
+  @@index([sentAt])
+}
+
+enum ReportFrequency {
+  daily
+  weekly
+  monthly
+}
+
+// User Preferences for multi-language support
+model UserPreference {
+  id          Int      @id @default(autoincrement())
+  userId      String   @unique // Could be session ID or IP hash
+  language    String   @default("en") // en, he, ar
+  theme       String   @default("light")
+  updatedAt   DateTime @updatedAt
+
+  @@index([language])
 }

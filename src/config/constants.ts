@@ -61,3 +61,9 @@ export const QUOTA = {
   /** Rolling window in milliseconds (24 hours) */
   WINDOW_MS: 24 * 60 * 60 * 1000,
 } as const;
+
+// URLs
+export const URLS = {
+  /** Default Tarasa platform URL for story submissions */
+  DEFAULT_TARASA: 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833',
+} as const;

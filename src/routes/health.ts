@@ -76,8 +76,8 @@ const healthCheckHandler = async (_req: Request, res: Response) => {
     },
     session: {
       status: sessionHealth.status,
-      userId: sessionHealth.userId,
-      userName: sessionHealth.userName,
+      userId: null,
+      userName: null,
       lastChecked: sessionHealth.lastChecked,
       canAccessPrivateGroups: sessionHealth.canAccessPrivateGroups,
     },

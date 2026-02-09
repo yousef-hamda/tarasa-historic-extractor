@@ -3,7 +3,7 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
-import { normalizeMessageContent, validateClassificationResult } from '../utils/openaiHelpers';
+import { normalizeMessageContent, validateClassificationResult, sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
 
 const CLASSIFICATION_PROMPT = `You are an expert community moderator for Tarasa, a historical storytelling preservation project.
 Classify whether the supplied Facebook post clearly references historical events, personal memories from the past, or stories about community history.
@@ -26,16 +26,18 @@ const CLASSIFICATION_SCHEMA = {
   },
 } as const;
 
-const model = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
+const model = getModel('classifier');
 // Increased default batch size for better throughput (was 10)
-const BATCH_SIZE = Math.min(Number(process.env.CLASSIFIER_BATCH_SIZE ?? '25'), 50);
+const parsedBatchSize = Number(process.env.CLASSIFIER_BATCH_SIZE ?? '25');
+const BATCH_SIZE = Math.min(isNaN(parsedBatchSize) ? 25 : parsedBatchSize, 50);
 
 /**
  * Validate confidence score is within valid range
  */
 const validateConfidence = (confidence: number): number => {
   if (typeof confidence !== 'number' || isNaN(confidence)) {
-    return 50; // Default to 50 if invalid
+    logger.warn(`[Classifier] Invalid confidence value received: ${confidence}, defaulting to 0`);
+    return 0;
   }
   return Math.max(0, Math.min(100, Math.round(confidence)));
 };
@@ -64,7 +66,7 @@ export const classifyPosts = async (): Promise<void> => {
           response_format: { type: 'json_schema', json_schema: CLASSIFICATION_SCHEMA },
           messages: [
             { role: 'system', content: CLASSIFICATION_PROMPT },
-            { role: 'user', content: post.text },
+            { role: 'user', content: sanitizeForPrompt(post.text) },
           ],
         }),
       );
@@ -115,12 +117,14 @@ export const classifyPosts = async (): Promise<void> => {
 if (require.main === module) {
   require('dotenv/config');
   classifyPosts()
-    .then(() => {
+    .then(async () => {
       logger.info('Classification completed');
+      await prisma.$disconnect();
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(async (error) => {
       logger.error(`Classification failed: ${error.message}`);
+      await prisma.$disconnect();
       process.exit(1);
     });
 }
