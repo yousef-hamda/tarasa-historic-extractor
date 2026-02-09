@@ -16,34 +16,25 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  */
 
 // Log level configuration
-const logLevels: Prisma.LogLevel[] = process.env.NODE_ENV === 'production'
+const logLevels = process.env.NODE_ENV === 'production'
   ? ['warn', 'error']
   : ['query', 'info', 'warn', 'error'];
-
-// Event-based logging for better observability
-const logDefinition: Prisma.LogDefinition[] = [
-  { level: 'query', emit: 'event' },
-  { level: 'info', emit: 'stdout' },
-  { level: 'warn', emit: 'stdout' },
-  { level: 'error', emit: 'stdout' },
-];
 
 export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
-    log: process.env.PRISMA_DEBUG === 'true' ? logDefinition : logLevels,
+    log: logLevels as any,
     // Transaction options
     transactionOptions: {
       maxWait: 5000, // 5s max wait for transaction slot
       timeout: 30000, // 30s transaction timeout
-      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     },
   });
 
 // Query logging in development (only when PRISMA_DEBUG is enabled)
 if (process.env.PRISMA_DEBUG === 'true') {
-  // @ts-expect-error - Prisma event typing is complex
-  prisma.$on('query', (e: { query: string; params: string; duration: number }) => {
+  // Query event logging for debugging
+  (prisma as any).$on('query', (e: { query: string; params: string; duration: number }) => {
     if (e.duration > 1000) {
       logger.warn(`[Prisma] Slow query (${e.duration}ms): ${e.query.substring(0, 100)}...`);
     }

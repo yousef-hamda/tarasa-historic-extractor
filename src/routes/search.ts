@@ -268,7 +268,7 @@ router.get('/api/search/export', async (req: Request, res: Response) => {
         return str;
       };
 
-      const rows = posts.map((post) => [
+      const rows = posts.map((post: any) => [
         post.id,
         escapeCSV(post.groupId),
         escapeCSV(post.authorName),
@@ -281,7 +281,7 @@ router.get('/api/search/export', async (req: Request, res: Response) => {
         post.quality?.rating ?? '',
       ]);
 
-      const csv = [headers.join(','), ...rows.map((row) => row.join(','))].join('\n');
+      const csv = [headers.join(','), ...rows.map((row: any) => row.join(','))].join('\n');
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=posts-export-${Date.now()}.csv`);
@@ -316,16 +316,16 @@ router.get('/api/search/groups', async (_req: Request, res: Response) => {
     });
 
     // Get group info if available
-    const groupIds = groups.map((g) => g.groupId);
+    const groupIds = groups.map((g: any) => g.groupId);
     const groupInfo = await prisma.groupInfo.findMany({
       where: { groupId: { in: groupIds } },
       select: { groupId: true, groupName: true },
     });
 
-    const groupInfoMap = new Map(groupInfo.map((g) => [g.groupId, g.groupName]));
+    const groupInfoMap = new Map(groupInfo.map((g: any) => [g.groupId, g.groupName]));
 
     res.json(
-      groups.map((g) => ({
+      groups.map((g: any) => ({
         groupId: g.groupId,
         groupName: groupInfoMap.get(g.groupId) || g.groupId,
         postCount: g._count.id,

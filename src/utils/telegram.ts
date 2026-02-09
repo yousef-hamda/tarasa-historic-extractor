@@ -221,14 +221,14 @@ const gatherSystemContext = async (): Promise<string> => {
 
     const historicRate = totalClassified > 0 ? Math.round((totalHistoric / totalClassified) * 100) : 0;
 
-    const groupList = groups.map(g => ({
+    const groupList = groups.map((g: any) => ({
       name: g.groupName || g.groupId,
       id: g.groupId,
       accessible: g.isAccessible,
       lastScraped: g.lastScraped ? timeSince(g.lastScraped) : 'never',
     }));
 
-    const recentStoriesList = recentPosts.map(p => ({
+    const recentStoriesList = recentPosts.map((p: any) => ({
       author: p.post.authorName || 'Unknown',
       text: (p.post.text || '').substring(0, 150),
       group: p.post.groupId,
@@ -236,14 +236,14 @@ const gatherSystemContext = async (): Promise<string> => {
       date: p.classifiedAt?.toLocaleDateString() || 'Unknown',
     }));
 
-    const topQualityList = topQuality.map(p => ({
+    const topQualityList = topQuality.map((p: any) => ({
       author: p.post.authorName || 'Unknown',
       text: (p.post.text || '').substring(0, 150),
       rating: p.rating,
       group: p.post.groupId,
     }));
 
-    const errorList = recentErrors.map(e => ({
+    const errorList = recentErrors.map((e: any) => ({
       message: (e.message || '').substring(0, 200),
       time: e.createdAt.toLocaleString(),
     }));
@@ -410,7 +410,7 @@ const searchPosts = async (query: string): Promise<string> => {
   }
 
   const list = posts
-    .map((p, i) => {
+    .map((p: any, i: number) => {
       const preview = (p.text || '').substring(0, 80).replace(/\n/g, ' ');
       const historic = p.classified?.isHistoric ? '📜' : '📝';
       return `${i + 1}. ${historic} <b>${escapeHtml(p.authorName || 'Unknown')}</b>\n   <i>${escapeHtml(preview)}${(p.text || '').length > 80 ? '...' : ''}</i>`;

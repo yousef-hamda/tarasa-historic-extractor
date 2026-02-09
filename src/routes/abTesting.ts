@@ -25,7 +25,7 @@ router.get('/api/ab-testing/variants', async (_req: Request, res: Response) => {
     });
 
     // Calculate rates for each variant
-    const variantsWithRates = variants.map((v) => {
+    const variantsWithRates = variants.map((v: any) => {
       const metrics = v.metrics;
       const responseRate = metrics && metrics.totalSent > 0
         ? ((metrics.responses / metrics.totalSent) * 100).toFixed(1)
@@ -44,7 +44,7 @@ router.get('/api/ab-testing/variants', async (_req: Request, res: Response) => {
     res.json({
       variants: variantsWithRates,
       total: variants.length,
-      activeCount: variants.filter((v) => v.isActive).length,
+      activeCount: variants.filter((v: any) => v.isActive).length,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -281,7 +281,7 @@ export const selectVariant = async (): Promise<{
   if (variants.length === 0) return null;
 
   // Weighted random selection
-  const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
+  const totalWeight = variants.reduce((sum: number, v: any) => sum + v.weight, 0);
   if (totalWeight === 0) return variants[0];
 
   let random = Math.random() * totalWeight;
