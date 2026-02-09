@@ -24,7 +24,7 @@ jobs:
         run: npm ci
 
       - name: Generate Prisma client
-        run: npx prisma generate --schema=src/database/schema.prisma
+        run: npx prisma generate
 
       - name: TypeScript compilation check
         run: npx tsc --noEmit

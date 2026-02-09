@@ -1,0 +1,38 @@
+# This project is NOT compatible with Cloudflare Workers
+#
+# This is a full Node.js Express application that requires:
+# - Long-running server process
+# - PostgreSQL database with Prisma ORM
+# - Redis for caching and queues
+# - Scheduled cron jobs
+# - Playwright browser automation with persistent state
+# - File system access for cookies and browser data
+#
+# Cloudflare Workers are serverless functions with limitations:
+# - No long-running processes
+# - No file system
+# - No native Node.js modules
+# - Limited execution time (50ms-15min depending on plan)
+#
+# DEPLOYMENT OPTIONS:
+#
+# Option 1 - Render (Recommended)
+# 1. Create account at render.com
+# 2. Connect your GitHub repo
+# 3. Select "Web Service"
+# 4. Build Command: npm install && npm run build
+# 5. Start Command: npm start
+# 6. Add PostgreSQL and Redis services
+#
+# Option 2 - Railway
+# 1. Create account at railway.app
+# 2. Deploy from GitHub
+# 3. Add PostgreSQL and Redis plugins
+# 4. Set environment variables
+#
+# Option 3 - Docker
+# See docker-compose.yml for containerized deployment
+#
+# If you're seeing this error during deployment, your platform
+# is misconfigured. Change the deployment settings to use Node.js
+# instead of Cloudflare Workers.
