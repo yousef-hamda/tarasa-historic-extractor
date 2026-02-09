@@ -15,6 +15,7 @@
     "generate": "ts-node src/ai/generator.ts",
     "message": "ts-node src/messenger/messenger.ts",
     "postinstall": "prisma generate",
+    "deploy": "echo '\n❌ ERROR: This application cannot be deployed with Cloudflare Workers/Pages.\n\nThis is a Node.js Express application that requires:\n- Long-running server process\n- PostgreSQL database\n- Redis cache\n- Cron jobs\n- File system access\n\nPlease deploy to a Node.js platform like:\n- Render (render.com)\n- Railway (railway.app)\n- Heroku\n- Docker container\n\nSee DEPLOYMENT.md for detailed instructions.\n' && exit 1",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "cleanup:orphans": "ts-node src/scripts/cleanup-orphans.ts",
