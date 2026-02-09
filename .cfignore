@@ -1,0 +1,16 @@
+# This project is NOT compatible with Cloudflare Workers/Pages
+# It requires Node.js runtime with:
+# - PostgreSQL database
+# - Redis cache
+# - Long-running Express server
+# - Cron jobs
+# - Playwright browser automation
+#
+# Please deploy to a Node.js platform like:
+# - Render (render.com)
+# - Railway (railway.app)
+# - Heroku
+# - DigitalOcean App Platform
+# - AWS/GCP/Azure
+
+*
