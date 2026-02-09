@@ -1,5 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import logger from '../utils/logger';
+
+/** Timing-safe string comparison to prevent timing attacks */
+const timingSafeCompare = (a: string, b: string): boolean => {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -30,14 +39,15 @@ export const apiKeyAuth = (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  const providedKey = req.headers['x-api-key'];
+  // Accept API key from header or query parameter (needed for EventSource/SSE which can't set headers)
+  const providedKey = req.headers['x-api-key'] || req.query.apiKey;
 
   if (!providedKey) {
     logger.warn(`API auth failed: Missing X-API-Key header for ${req.method} ${req.path}`);
     return res.status(401).json({ error: 'Unauthorized', message: 'Missing X-API-Key header' });
   }
 
-  if (providedKey !== apiKey) {
+  if (!timingSafeCompare(String(providedKey), apiKey)) {
     logger.warn(`API auth failed: Invalid API key for ${req.method} ${req.path}`);
     return res.status(403).json({ error: 'Forbidden', message: 'Invalid API key' });
   }
@@ -54,7 +64,7 @@ export const optionalApiKeyAuth = (req: Request, res: Response, next: NextFuncti
   const providedKey = req.headers['x-api-key'];
 
   // Mark request as authenticated if valid key provided
-  (req as any).isAuthenticated = apiKey && providedKey === apiKey;
+  (req as any).isAuthenticated = !!(apiKey && providedKey && timingSafeCompare(String(providedKey), apiKey));
 
   next();
 };

@@ -159,3 +159,10 @@ export interface TriggerResult {
 }
 
 export type StatusType = 'ok' | 'degraded' | 'unhealthy' | 'valid' | 'invalid' | 'expired' | 'pending' | 'sent' | 'error';
+
+// Next.js page component type with optional noLayout flag
+import type { NextPage } from 'next';
+
+export type NextPageWithLayout<P = object> = NextPage<P> & {
+  noLayout?: boolean;
+};

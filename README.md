@@ -64,7 +64,11 @@ tarasa-historic-extractor/
 │   │   ├── message-cron.ts        # Every 5 minutes
 │   │   ├── login-refresh.ts       # Daily session refresh
 │   │   ├── session-check-cron.ts  # Session health monitoring
-│   │   └── backup-cron.ts         # Daily backups at midnight
+│   │   ├── backup-cron.ts         # Daily backups at midnight
+│   │   ├── quality-rating-cron.ts # Automated quality rating
+│   │   ├── report-cron.ts         # Weekly email/Telegram reports
+│   │   ├── duplicate-detection-cron.ts # Duplicate post detection
+│   │   └── log-cleanup-cron.ts    # Old log cleanup
 │   ├── database/
 │   │   ├── schema.prisma          # Prisma database schema
 │   │   ├── prisma.ts              # Prisma client instance
@@ -106,7 +110,11 @@ tarasa-historic-extractor/
 │   │   ├── messages.ts            # Message queue endpoints
 │   │   ├── posts.ts               # Posts API endpoints
 │   │   ├── session.ts             # Session management endpoints
-│   │   └── stats.ts               # Activity statistics endpoints
+│   │   ├── settings.ts            # System settings endpoints
+│   │   ├── stats.ts               # Activity statistics endpoints
+│   │   ├── search.ts              # Advanced search & CSV export
+│   │   ├── submit.ts              # Author landing page API
+│   │   └── abTesting.ts           # A/B testing variant management
 │   ├── scraper/                   # Facebook scraping logic
 │   │   ├── extractors.ts          # Post data extraction (7 strategies)
 │   │   ├── fullTextExtractor.ts   # Full text & "See more" expansion
@@ -144,7 +152,8 @@ tarasa-historic-extractor/
 │   │   ├── retry.ts               # Retry with backoff utilities
 │   │   ├── selectors.ts           # Facebook DOM selectors
 │   │   ├── systemLog.ts           # Database logging utilities
-│   │   └── validation.ts          # Input validation helpers
+│   │   ├── validation.ts          # Input validation helpers
+│   │   └── telegram.ts            # AI-powered Telegram chatbot
 │   ├── validation/
 │   │   └── schemas.ts             # Zod validation schemas
 │   └── server.ts                  # Express server entry point
@@ -165,6 +174,7 @@ tarasa-historic-extractor/
 │       │   ├── ErrorBoundary.tsx  # Error boundary
 │       │   ├── GroupStatusTable.tsx # Group status display
 │       │   ├── Skeleton.tsx       # Loading skeleton
+│       │   ├── LanguageSwitcher.tsx # Language selector (EN/HE/AR)
 │       │   └── charts/            # Chart components
 │       │       ├── ActivityChart.tsx      # Daily activity line chart
 │       │       ├── ConfidenceDistribution.tsx # Confidence bar chart
@@ -181,7 +191,13 @@ tarasa-historic-extractor/
 │       │   ├── debug.tsx          # Debug console
 │       │   ├── backup.tsx         # Backup manager
 │       │   ├── groups.tsx         # Group management
-│       │   └── admin.tsx          # Admin page
+│       │   ├── admin.tsx          # Admin page
+│       │   ├── search.tsx         # Advanced search & export
+│       │   ├── prompts.tsx        # Admin prompt editor
+│       │   └── submit/
+│       │       └── [postId].tsx   # Author landing page
+│       ├── contexts/
+│       │   └── LanguageContext.tsx # Multi-language (i18n) context
 │       ├── styles/
 │       │   └── globals.css        # Global Tailwind styles
 │       ├── types/                 # TypeScript types
@@ -192,10 +208,31 @@ tarasa-historic-extractor/
 │       ├── tailwind.config.js     # Tailwind CSS config
 │       ├── postcss.config.js      # PostCSS config
 │       └── package.json           # Dashboard dependencies
-├── tests/                         # Test suite
+├── tests/                         # Test suite (838+ tests)
 │   ├── setup.ts                   # Global test setup
 │   ├── validation.test.ts         # Schema validation tests
-│   └── security.test.ts           # Security middleware tests
+│   ├── security.test.ts           # Security middleware tests
+│   ├── alerts.test.ts             # Email alert tests
+│   ├── browserPool.test.ts        # Browser pool tests
+│   ├── circuitBreaker.test.ts     # Circuit breaker tests
+│   ├── classifier.test.ts         # AI classifier tests
+│   ├── constants.test.ts          # Constants tests
+│   ├── delays.test.ts             # Delay utility tests
+│   ├── errorHandler.test.ts       # Error handler tests
+│   ├── eventEmitter.test.ts       # Event emitter tests
+│   ├── extractors.test.ts         # Scraper extractor tests
+│   ├── groupDetector.test.ts      # Group detection tests
+│   ├── metricsCollector.test.ts   # Metrics collector tests
+│   ├── openaiHelpers.test.ts      # OpenAI helper tests
+│   ├── openaiRetry.test.ts        # OpenAI retry tests
+│   ├── queryProfiler.test.ts      # Query profiler tests
+│   ├── quota.test.ts              # Quota tracking tests
+│   ├── rateLimiter.test.ts        # Rate limiter tests
+│   ├── retryExtended.test.ts      # Retry utility tests
+│   ├── selectors.test.ts          # Selector tests
+│   ├── systemLog.test.ts          # System log tests
+│   ├── validationUtils.test.ts    # Validation utility tests
+│   └── apifyScraper.test.ts       # Apify scraper tests
 ├── docs/                          # Documentation
 ├── .env                           # Environment variables (gitignored)
 ├── .env.example                   # Environment variables template
@@ -654,6 +691,278 @@ WebSocket → Dashboard (real-time updates)
 
 ---
 
+## 🤖 Telegram Bot (AI-Powered Chatbot)
+
+The system includes an AI-powered Telegram bot that provides a conversational interface to monitor and query the system.
+
+### Setup
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) on Telegram
+2. Copy the bot token
+3. Add to `.env`:
+   ```bash
+   TELEGRAM_BOT_TOKEN=your_bot_token_here
+   TELEGRAM_CHAT_ID=your_admin_chat_id
+   ```
+4. The bot starts automatically when the server runs
+
+### Features
+
+- **AI-Powered Responses**: Uses OpenAI to understand natural language questions and answer them using live system data
+- **Live System Context**: Every response includes real-time data from the database (post counts, message stats, group status, recent errors, recent stories)
+- **Conversation History**: Maintains per-chat conversation history (last 20 messages) for context-aware responses
+- **Password Protection**: Public access with password authentication
+  - Admin chat is auto-authenticated
+  - Other users must enter the password to access the bot
+- **Multilingual**: Responds in the same language the user writes in
+
+### How It Works
+
+```
+User sends message → Telegram Bot
+    ↓
+Check authentication (password-based)
+    ↓
+Gather live system context (DB queries)
+    ↓
+Send to OpenAI with:
+  - System prompt (bot personality & rules)
+  - Live system data (JSON)
+  - Conversation history (last 20 messages)
+  - User's message
+    ↓
+Return AI response → Telegram
+```
+
+### Example Interactions
+
+- "How many posts were scraped today?"
+- "What's the system status?"
+- "Show me the latest historic stories"
+- "Are there any errors?"
+- "How many messages were sent this week?"
+
+---
+
+## 🔍 Advanced Search
+
+The system includes a full-text search engine with filtering and CSV export capabilities.
+
+### Search API
+
+**`GET /api/search`** - Search posts with filters
+
+Query Parameters:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Full-text search query |
+| `groupId` | string | Filter by group ID |
+| `isHistoric` | boolean | Filter by historic classification |
+| `minConfidence` | number | Minimum confidence score (0-100) |
+| `maxConfidence` | number | Maximum confidence score (0-100) |
+| `startDate` | ISO date | Filter posts after this date |
+| `endDate` | ISO date | Filter posts before this date |
+| `sortBy` | string | Sort field (scrapedAt, confidence, authorName) |
+| `sortOrder` | string | Sort direction (asc, desc) |
+| `limit` | number | Results per page (default: 50, max: 200) |
+| `offset` | number | Pagination offset |
+
+**`GET /api/search/export`** - Export search results as CSV
+
+Uses the same query parameters as the search endpoint. Returns a downloadable CSV file with CSV injection protection (values starting with `=`, `+`, `-`, `@` are prefixed with `'`).
+
+### Dashboard Search Page
+
+The search page (`/search`) provides:
+- Full-text search bar
+- Filter panel (group, classification, confidence range, date range)
+- Sortable results table
+- One-click CSV export
+- Pagination
+
+---
+
+## ⭐ Quality Rating System
+
+Rate the quality of AI-generated messages and classified posts.
+
+### Features
+
+- 1-5 star rating for classified posts
+- Optional text feedback
+- Aggregate quality metrics (average rating, distribution)
+- Quality data included in weekly reports
+- Automated quality rating via cron job
+
+### Database Model
+
+```prisma
+model QualityRating {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  rating    Int      // 1-5 stars
+  feedback  String?  // Optional text feedback
+  ratedAt   DateTime @default(now())
+}
+```
+
+---
+
+## 🧪 A/B Testing
+
+Test different message templates to optimize response rates.
+
+### Features
+
+- Create multiple message variants with different prompt templates
+- Weighted random selection (configurable weight per variant)
+- Track metrics per variant: total sent, responses, clicks
+- Calculate response rate and click rate
+- Enable/disable variants without deleting them
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ab-testing/variants` | GET | List all variants with metrics |
+| `/api/ab-testing/variants` | POST | Create a new variant |
+| `/api/ab-testing/variants/:id` | PATCH | Update a variant |
+| `/api/ab-testing/variants/:id` | DELETE | Delete a variant |
+| `/api/ab-testing/variants/:id/record` | POST | Record a metric event (sent/response/click) |
+
+### How It Works
+
+```
+Message Generation
+    ↓
+Select active variant (weighted random)
+    ↓
+Use variant's prompt template for OpenAI
+    ↓
+Record "sent" metric
+    ↓
+Track responses & clicks over time
+    ↓
+Compare variant performance in dashboard
+```
+
+---
+
+## 📧 Weekly Reports
+
+Automated reports sent via email and/or Telegram.
+
+### Report Contents
+
+- Total posts and new posts in the period
+- Historic story counts (total and new)
+- Average AI confidence score
+- Average quality rating
+- High quality stories count (4+ stars)
+- Messages sent in the period
+- Top 5 groups by post count
+
+### Delivery Channels
+
+**Email:**
+- HTML-formatted report with styled statistics
+- Configurable recipients via `ReportConfig` in database
+- Requires SMTP configuration (Gmail app password supported)
+
+**Telegram:**
+- Condensed text report with key metrics
+- Sent to configured Telegram chat
+- Requires Telegram bot to be configured
+
+### Schedule
+
+- Runs every Monday at 9:00 AM (configurable via `WEEKLY_REPORT_CRON_SCHEDULE`)
+- Uses cron lock to prevent duplicate reports in multi-instance setups
+
+---
+
+## 🔄 Duplicate Detection
+
+Automated system to detect and flag duplicate posts across groups.
+
+### How It Works
+
+- Runs on a scheduled cron job
+- Compares post text using similarity algorithms
+- Flags duplicates in the database
+- Prevents sending duplicate messages to the same author
+- Uses cron lock for safe multi-instance operation
+
+---
+
+## 🌐 Multi-Language Dashboard (i18n)
+
+The dashboard supports multiple languages with a language switcher.
+
+### Supported Languages
+
+| Language | Code | Direction |
+|----------|------|-----------|
+| English | en | LTR |
+| Hebrew (עברית) | he | RTL |
+| Arabic (العربية) | ar | RTL |
+
+### Features
+
+- Language switcher in the navigation bar
+- All UI text translated
+- RTL layout support for Hebrew and Arabic
+- Language preference saved in browser (localStorage)
+- Translation context provider (`LanguageContext`)
+
+---
+
+## 📝 Admin Prompt Editor
+
+Edit AI prompt templates directly from the dashboard without touching code.
+
+### Features
+
+- View and edit the classifier prompt (what makes a post "historic")
+- View and edit the message generator prompt (how to write outreach messages)
+- Live preview of prompt changes
+- Reset to default prompts
+- Changes saved to database and take effect immediately
+
+### Dashboard Page
+
+Access at `/prompts` in the dashboard navigation.
+
+---
+
+## 🎯 Author Landing Page
+
+When authors receive a message with a Tarasa link, they land on a personalized page.
+
+### Features
+
+- Displays the original post text and author name
+- Pre-filled submission form for Tarasa
+- "Copy text" button for easy clipboard copy
+- "Continue to Tarasa" button with pre-filled URL
+- Works without authentication (public page)
+- Mobile-friendly responsive design
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/submit/:postId` | GET | Get post data for landing page |
+| `/api/submit/config` | GET | Get Tarasa URL configuration |
+
+### URL Pattern
+
+```
+https://yourdomain.com/submit/[postId]
+```
+
+---
+
 ## 📊 Database Schema
 
 ### PostRaw
@@ -783,6 +1092,70 @@ enum AccessMethod {
   apify
   playwright
   none
+}
+```
+
+### MessageVariant (A/B Testing)
+Message template variants for A/B testing:
+```prisma
+model MessageVariant {
+  id             Int             @id @default(autoincrement())
+  name           String          // Variant name (e.g., "Friendly", "Formal")
+  promptTemplate String          // OpenAI prompt template
+  weight         Int             @default(50) // Selection weight (0-100)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  metrics        VariantMetrics? // One-to-one relationship
+}
+```
+
+### VariantMetrics
+Tracking metrics for A/B test variants:
+```prisma
+model VariantMetrics {
+  id        Int            @id @default(autoincrement())
+  variantId Int            @unique
+  totalSent Int            @default(0)
+  responses Int            @default(0)
+  clicks    Int            @default(0)
+  variant   MessageVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+```
+
+### QualityRating
+Quality ratings for classified posts:
+```prisma
+model QualityRating {
+  id       Int      @id @default(autoincrement())
+  postId   Int
+  rating   Int      // 1-5 stars
+  feedback String?  // Optional text feedback
+  ratedAt  DateTime @default(now())
+}
+```
+
+### ReportConfig
+Email report configuration:
+```prisma
+model ReportConfig {
+  id         Int       @id @default(autoincrement())
+  email      String    // Recipient email
+  frequency  String    // "daily", "weekly", "monthly"
+  isActive   Boolean   @default(true)
+  lastSentAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+```
+
+### ReportHistory
+Report generation history:
+```prisma
+model ReportHistory {
+  id         Int      @id @default(autoincrement())
+  period     String   // e.g., "2026-W05"
+  recipients String   // JSON array of emails
+  stats      String   // JSON report data
+  createdAt  DateTime @default(now())
 }
 ```
 
@@ -1284,6 +1657,48 @@ Complete database backup and restore system:
 - Automatic daily full backup at midnight
 - Configurable via cron settings
 
+### Search Page (/search)
+Advanced post search with filtering and export:
+
+**Search Features:**
+- Full-text search across post content
+- Filter by group, classification, confidence range, date range
+- Sort by date, confidence, or author name
+- Paginated results table
+
+**Export:**
+- One-click CSV export of search results
+- CSV injection protection for spreadsheet safety
+- Includes all post and classification data
+
+### Prompt Editor (/prompts)
+Admin page to edit AI prompt templates:
+
+**Features:**
+- Edit classifier prompt (what makes a post "historic")
+- Edit message generator prompt (outreach message style)
+- Live preview of changes
+- Reset to default prompts
+- Changes take effect immediately
+
+### Author Landing Page (/submit/[postId])
+Public page for post authors who receive a message:
+
+**Features:**
+- Shows original post text and author name
+- "Copy text" button with clipboard fallback
+- "Continue to Tarasa" button with pre-filled submission URL
+- No authentication required
+- Mobile-friendly responsive design
+
+### Language Switcher
+All dashboard pages include a language switcher:
+
+- English (EN), Hebrew (עב), Arabic (عر)
+- RTL layout support for Hebrew and Arabic
+- Preference saved in localStorage
+- Available in the navigation bar
+
 ---
 
 ## 🛡️ Self-Healing System
@@ -1591,6 +2006,94 @@ Restore from a backup file.
 }
 ```
 
+### GET /api/search
+Search posts with advanced filters. See [Advanced Search](#-advanced-search) section for full parameter list.
+
+**Response:**
+```json
+{
+  "data": [...],
+  "pagination": { "total": 150, "limit": 50, "offset": 0, "hasMore": true }
+}
+```
+
+### GET /api/search/export
+Export search results as CSV file. Same query parameters as `/api/search`.
+
+### GET /api/submit/:postId
+Get post data for the author landing page (no auth required).
+
+**Response:**
+```json
+{
+  "id": 1,
+  "text": "Historic post content...",
+  "authorName": "Author Name",
+  "groupId": "136596023614231"
+}
+```
+
+### GET /api/submit/config
+Get Tarasa URL configuration for the landing page (no auth required).
+
+**Response:**
+```json
+{
+  "tarasaUrl": "https://tarasa.com/add-story"
+}
+```
+
+### GET /api/ab-testing/variants
+Get all A/B test variants with metrics and calculated rates.
+
+**Response:**
+```json
+{
+  "variants": [
+    {
+      "id": 1,
+      "name": "Friendly",
+      "promptTemplate": "...",
+      "weight": 60,
+      "isActive": true,
+      "metrics": { "totalSent": 100, "responses": 15, "clicks": 8 },
+      "responseRate": "15.0",
+      "clickRate": "8.0"
+    }
+  ],
+  "total": 2,
+  "activeCount": 1
+}
+```
+
+### POST /api/ab-testing/variants
+Create a new message variant (requires auth).
+
+**Request:**
+```json
+{
+  "name": "Formal",
+  "promptTemplate": "Write a formal message to {author} about their post...",
+  "weight": 40
+}
+```
+
+### PATCH /api/ab-testing/variants/:id
+Update a variant (requires auth).
+
+### DELETE /api/ab-testing/variants/:id
+Delete a variant (requires auth).
+
+### POST /api/ab-testing/variants/:id/record
+Record a metric event for a variant.
+
+**Request:**
+```json
+{
+  "event": "sent"  // or "response" or "click"
+}
+```
+
 ---
 
 ## 🔧 Troubleshooting
@@ -1812,6 +2315,11 @@ The system uses centralized constants defined in `src/config/constants.ts`:
 | `MESSAGE_CRON_SCHEDULE` | No | Cron schedule for messaging | `*/5 * * * *` (every 5 min) |
 | `BACKUP_CRON_SCHEDULE` | No | Cron schedule for backups | `0 0 * * *` (midnight) |
 | `CONFIDENCE_THRESHOLD` | No | Minimum confidence for message generation | `75` (default) |
+| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token from @BotFather | `123456:ABC-DEF...` |
+| `TELEGRAM_CHAT_ID` | No | Admin Telegram chat ID | `2108329608` |
+| `WEEKLY_REPORT_CRON_SCHEDULE` | No | Cron schedule for weekly reports | `0 9 * * 1` (Monday 9 AM) |
+| `SYSTEM_EMAIL_ALERT` | No | SMTP sender email for reports | `your@gmail.com` |
+| `SYSTEM_EMAIL_PASSWORD` | No | SMTP password (Gmail app password) | (app password) |
 
 ### Cron Schedule
 
@@ -1821,6 +2329,11 @@ The system uses centralized constants defined in `src/config/constants.ts`:
 | Classify | `*/3 * * * *` | Every 3 minutes |
 | Message | `*/5 * * * *` | Every 5 minutes |
 | Login Refresh | `0 0 * * *` | Daily at midnight |
+| Backup | `0 0 * * *` | Daily at midnight |
+| Quality Rating | Configurable | Automated quality assessment |
+| Weekly Report | `0 9 * * 1` | Every Monday at 9:00 AM |
+| Duplicate Detection | Configurable | Detect duplicate posts |
+| Log Cleanup | Configurable | Remove old system logs |
 
 To modify schedules, edit files in `src/cron/`
 
@@ -2067,7 +2580,108 @@ For issues or questions:
 
 ## 🔄 Version History
 
-### v1.5.0 (Current)
+### v1.6.0 (Current)
+Major feature update with AI-powered Telegram bot, A/B testing, advanced search, quality ratings, weekly reports, multi-language dashboard, and comprehensive bug fixes.
+
+**AI-Powered Telegram Bot:**
+- ✅ Telegram bot with OpenAI-powered natural language responses
+- ✅ Live system context injection (post counts, group status, errors, recent stories)
+- ✅ Per-chat conversation history (last 20 messages)
+- ✅ Password-based public access authentication
+- ✅ Admin chat auto-authenticated
+- ✅ Automatic startup with server, graceful shutdown
+
+**A/B Testing System:**
+- ✅ Create and manage message template variants
+- ✅ Weighted random variant selection for message generation
+- ✅ Track metrics per variant (sent, responses, clicks)
+- ✅ Calculate response rate and click rate
+- ✅ Enable/disable variants without deletion
+- ✅ Full CRUD API with authentication
+
+**Advanced Search & Export:**
+- ✅ Full-text search across post content
+- ✅ Filter by group, classification, confidence range, date range
+- ✅ Sortable results (date, confidence, author)
+- ✅ CSV export with injection protection
+- ✅ Paginated results
+- ✅ New dashboard search page
+
+**Quality Rating System:**
+- ✅ 1-5 star rating for classified posts
+- ✅ Optional text feedback
+- ✅ Automated quality rating cron job
+- ✅ Aggregate metrics in weekly reports
+
+**Weekly Reports (Email + Telegram):**
+- ✅ Automated weekly report generation (Mondays at 9 AM)
+- ✅ HTML email reports with styled statistics
+- ✅ Telegram condensed report delivery
+- ✅ Configurable recipients via database
+- ✅ Report history tracking
+- ✅ ISO week number calculation
+
+**Multi-Language Dashboard (i18n):**
+- ✅ English, Hebrew (עברית), Arabic (العربية) support
+- ✅ RTL layout for Hebrew and Arabic
+- ✅ Language switcher in navigation
+- ✅ Language preference saved in localStorage
+- ✅ Translation context provider
+
+**Admin Prompt Editor:**
+- ✅ Edit classifier and generator prompts from dashboard
+- ✅ Live preview of changes
+- ✅ Reset to defaults
+- ✅ Changes take effect immediately
+
+**Author Landing Page:**
+- ✅ Personalized page for message recipients
+- ✅ Post text display with copy button
+- ✅ Pre-filled Tarasa submission link
+- ✅ No authentication required (public)
+- ✅ Mobile-friendly design
+
+**Duplicate Detection:**
+- ✅ Automated duplicate post detection cron job
+- ✅ Prevents duplicate message sending
+- ✅ Cron lock for multi-instance safety
+
+**Bug Fixes & Hardening:**
+- ✅ Added error boundaries to quality-rating, report, and duplicate-detection cron jobs
+- ✅ Fixed route ordering in backup.ts (`/config` before `/:id`)
+- ✅ Fixed backup cron log type (`'scrape'` → `'admin'`)
+- ✅ Added NaN validation and invalid date checks in search.ts
+- ✅ Added CSV formula injection protection in search export
+- ✅ Added try/catch to all settings route handlers
+- ✅ Fixed ISO week number calculation in report-cron
+- ✅ Added 404 checks in A/B testing before update/record operations
+- ✅ Capped stats `days` parameter to 1-90 range
+- ✅ Fixed unsafe error casting in posts route handlers
+
+**Testing:**
+- ✅ Expanded test suite to 838+ unit tests
+- ✅ All tests passing
+- ✅ TypeScript compilation clean
+- ✅ Dashboard build successful
+
+**New API Endpoints:**
+- `GET /api/search` - Advanced search with filters
+- `GET /api/search/export` - CSV export
+- `GET /api/submit/:postId` - Landing page data
+- `GET /api/submit/config` - Tarasa URL config
+- `GET /api/ab-testing/variants` - List A/B test variants
+- `POST /api/ab-testing/variants` - Create variant
+- `PATCH /api/ab-testing/variants/:id` - Update variant
+- `DELETE /api/ab-testing/variants/:id` - Delete variant
+- `POST /api/ab-testing/variants/:id/record` - Record metric
+
+**New Cron Jobs:**
+- Quality rating assessment
+- Weekly email/Telegram reports
+- Duplicate post detection
+- Log cleanup
+
+### v1.5.0
 Major update with post URL extraction improvements, activity chart fixes, and data management features:
 
 **Post URL Extraction Enhancement:**

@@ -169,7 +169,23 @@ export const ensureLogin = async (context: BrowserContext): Promise<void> => {
   await page.close();
 };
 
-export const createFacebookContext = async (): Promise<{ browser: Browser; context: BrowserContext }> => {
+/**
+ * Create a Facebook browser context
+ * @param options.publicGroupMode - Skip cookie loading for public group scraping
+ *                                  When true, uses unauthenticated access which
+ *                                  renders post URLs correctly for public groups
+ */
+export const createFacebookContext = async (options?: { publicGroupMode?: boolean }): Promise<{ browser: Browser; context: BrowserContext }> => {
+  const { publicGroupMode = false } = options || {};
+
+  // NOTE: Persistent browser is disabled for scraping because it causes
+  // Facebook to not render post URLs properly. Using fresh browser with cookies instead.
+  // The persistent browser might have accumulated state that affects FB rendering.
+
+  // OPTION: Force use of fresh browser by skipping persistent browser entirely
+  const useFreshBrowser = true;  // Set to false to re-enable persistent browser
+
+  if (!useFreshBrowser && !publicGroupMode) {
   // Try to use persistent browser first (preferred method)
   try {
     const { browser, context } = await createPersistentBrowser();
@@ -216,8 +232,9 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
   } catch (persistentError) {
     logger.warn(`Persistent browser failed: ${(persistentError as Error).message}. Falling back to cookie-based approach.`);
   }
+  } // End of if (!useFreshBrowser)
 
-  // Fallback to cookie-based approach (legacy method)
+  // Fresh browser with cookie-based approach (used for scraping)
   // Default to headless unless explicitly set to false
   const headless = process.env.HEADLESS !== 'false';
   logger.info(`Fallback browser launching (headless: ${headless})`);
@@ -234,16 +251,25 @@ export const createFacebookContext = async (): Promise<{ browser: Browser; conte
   });
   const context = await browser.newContext();
 
-  const cookies = await loadCookies();
-  if (cookies.length) {
-    await context.addCookies(cookies);
-  }
+  // Cookie loading: Skip for public groups to ensure URLs render correctly
+  if (publicGroupMode) {
+    logger.info('Scraping without cookies (public group mode)');
+    // Don't load cookies - public groups render URLs better without auth
+  } else {
+    // Load cookies for authenticated operations (messenger, private groups, etc.)
+    const cookies = await loadCookies();
+    if (cookies.length) {
+      await context.addCookies(cookies);
+      logger.info(`Loaded ${cookies.length} cookies into fresh browser context`);
+    }
 
-  try {
-    await ensureLogin(context);
-  } catch (error) {
-    await browser.close();
-    throw error;
+    // Verify login for authenticated operations
+    try {
+      await ensureLogin(context);
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
   }
 
   return { browser, context };

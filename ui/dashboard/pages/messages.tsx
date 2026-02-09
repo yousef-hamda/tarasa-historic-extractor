@@ -119,9 +119,8 @@ const MessagesPage: React.FC = () => {
   const toggleMessaging = async () => {
     setTogglingMessaging(true);
     try {
-      const res = await fetch('/api/settings/messaging', {
+      const res = await apiFetch('/api/settings/messaging', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !messagingEnabled }),
       });
       if (res.ok) {

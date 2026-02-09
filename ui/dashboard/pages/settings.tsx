@@ -181,12 +181,8 @@ const SettingsPage: React.FC = () => {
     };
 
     try {
-      const res = await fetch(endpoints[type], {
+      const res = await apiFetch(endpoints[type], {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-        },
       });
 
       const data = await res.json();

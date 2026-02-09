@@ -83,8 +83,25 @@ export const dispatchMessages = async (): Promise<void> => {
     return;
   }
 
-  const { browser, context } = await createFacebookContext();
-  const page = await context.newPage();
+  let browser;
+  let context;
+  let page;
+
+  try {
+    const facebookContext = await createFacebookContext();
+    browser = facebookContext.browser;
+    context = facebookContext.context;
+    page = await context.newPage();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Failed to create Facebook context: ${errorMessage}`);
+    await logSystemEvent('error', `Messenger failed to initialize: ${errorMessage}`);
+    // Clean up browser if it was created but page creation failed
+    if (browser) {
+      await browser.close().catch((e: Error) => logger.warn(`Browser cleanup on init error: ${e.message}`));
+    }
+    return;
+  }
 
   try {
     for (const candidate of pending) {
@@ -219,8 +236,16 @@ export const dispatchMessages = async (): Promise<void> => {
       await humanDelay();
     }
   } finally {
-    await saveCookies(context);
-    await browser.close();
+    if (context) {
+      await saveCookies(context).catch((err) => {
+        logger.warn(`Failed to save cookies: ${err.message}`);
+      });
+    }
+    if (browser) {
+      await browser.close().catch((err) => {
+        logger.warn(`Failed to close browser: ${err.message}`);
+      });
+    }
   }
 };
 

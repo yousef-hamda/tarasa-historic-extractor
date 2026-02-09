@@ -25,7 +25,8 @@ export const scrapeGroups = async (): Promise<void> => {
     return;
   }
 
-  const { browser, context } = await createFacebookContext();
+  // Use publicGroupMode for scraping - cookies interfere with URL rendering for public groups
+  const { browser, context } = await createFacebookContext({ publicGroupMode: true });
 
   try {
     const page = await context.newPage();
@@ -188,7 +189,8 @@ export const debugScrape = async () => {
     return { error: 'No groups configured' };
   }
 
-  const { browser, context } = await createFacebookContext();
+  // Use publicGroupMode for scraping - cookies interfere with URL rendering for public groups
+  const { browser, context } = await createFacebookContext({ publicGroupMode: true });
 
   try {
     const page = await context.newPage();

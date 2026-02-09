@@ -1,6 +1,11 @@
 import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
 import { getDailyMessageUsage } from '../utils/quota';
+import { apiKeyAuth } from '../middleware/apiAuth';
+import { triggerRateLimiter } from '../middleware/rateLimiter';
+import { safeErrorMessage } from '../middleware/errorHandler';
+import { logSystemEvent } from '../utils/systemLog';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -10,7 +15,7 @@ const router = Router();
  */
 router.get('/api/stats/activity', async (req: Request, res: Response) => {
   try {
-    const days = parseInt(req.query.days as string) || 7;
+    const days = Math.min(Math.max(parseInt(req.query.days as string) || 7, 1), 90);
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days + 1);
     startDate.setHours(0, 0, 0, 0);
@@ -123,10 +128,22 @@ router.get('/api/stats', async (_req: Request, res: Response) => {
 
 /**
  * Delete all scraped data (posts, classifications, messages, logs)
- * This is a destructive operation - use with caution!
+ * This is a destructive operation - requires auth + confirmation header.
  */
-router.delete('/api/data/reset', async (_req: Request, res: Response) => {
+router.delete('/api/data/reset', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
+  // Require explicit confirmation header to prevent accidental deletion
+  const confirmation = req.headers['x-confirm-delete'];
+  if (confirmation !== 'DELETE-ALL-DATA') {
+    res.status(400).json({
+      error: 'Confirmation required',
+      message: 'Send X-Confirm-Delete: DELETE-ALL-DATA header to confirm this destructive operation',
+    });
+    return;
+  }
+
   try {
+    await logSystemEvent('admin', 'Data reset initiated via API');
+
     // Delete in order to respect foreign key constraints
     // 1. Delete sent messages first (references messageGenerated)
     const deletedSentMessages = await prisma.messageSent.deleteMany();
@@ -143,6 +160,8 @@ router.delete('/api/data/reset', async (_req: Request, res: Response) => {
     // 5. Delete system logs
     const deletedLogs = await prisma.systemLog.deleteMany();
 
+    await logSystemEvent('admin', `Data reset completed: ${deletedPosts.count} posts, ${deletedClassifications.count} classifications, ${deletedGeneratedMessages.count + deletedSentMessages.count} messages, ${deletedLogs.count} logs deleted`);
+
     res.json({
       success: true,
       message: 'All data has been deleted successfully',
@@ -156,7 +175,7 @@ router.delete('/api/data/reset', async (_req: Request, res: Response) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Failed to reset data:', error);
+    logger.error(`Failed to reset data: ${message}`);
     res.status(500).json({ error: 'Failed to reset data', message });
   }
 });

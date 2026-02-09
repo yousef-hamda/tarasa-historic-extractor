@@ -13,10 +13,14 @@ import sessionRouter from './routes/session';
 import groupsRouter from './routes/groups';
 import debugRouter from './routes/debug';
 import backupRouter from './routes/backup';
+import submitRouter from './routes/submit';
+import searchRouter from './routes/search';
+import promptsRouter from './routes/prompts';
+import abTestingRouter from './routes/abTesting';
 import logger from './utils/logger';
 import './cron';
 import { errorHandler } from './middleware/errorHandler';
-import { apiRateLimiter } from './middleware/rateLimiter';
+// apiRateLimiter removed - advancedRateLimiter from security.ts handles all global rate limiting
 import { disconnectDatabase } from './database/prisma';
 
 // New security and monitoring imports
@@ -76,9 +80,6 @@ app.use(requestTrackerMiddleware);
 // Advanced rate limiting with Redis backend (falls back to memory if Redis unavailable)
 app.use(advancedRateLimiter);
 
-// Legacy rate limiter as backup
-app.use(apiRateLimiter);
-
 // API Routes
 app.use(postsRouter);
 app.use(messagesRouter);
@@ -92,6 +93,14 @@ app.use(groupsRouter);
 // Debug and Backup Routes
 app.use(debugRouter);
 app.use(backupRouter);
+
+// Search, Prompts, and A/B Testing Routes
+app.use(searchRouter);
+app.use(promptsRouter);
+app.use(abTestingRouter);
+
+// Public Submit Landing Page API (no auth required)
+app.use(submitRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);
@@ -123,12 +132,31 @@ const gracefulShutdown = async (signal: string) => {
   isShuttingDown = true;
   logger.info(`${signal} received. Starting graceful shutdown...`);
 
+  // Stop Telegram bot polling
+  try {
+    const { stopTelegramPolling } = await import('./utils/telegram');
+    stopTelegramPolling();
+    logger.info('Telegram bot polling stopped');
+  } catch (error) {
+    logger.error(`Error stopping Telegram polling: ${(error as Error).message}`);
+  }
+
   // Close WebSocket connections
   try {
     closeAllConnections();
     logger.info('WebSocket connections closed');
   } catch (error) {
     logger.error(`Error closing WebSocket connections: ${(error as Error).message}`);
+  }
+
+  // Release all cron locks before shutdown
+  try {
+    const { forceReleaseLock } = await import('./utils/cronLock');
+    const lockNames = ['scrape', 'classify', 'message', 'login-refresh', 'session-check', 'backup', 'log-cleanup'];
+    await Promise.all(lockNames.map(name => forceReleaseLock(name)));
+    logger.info('All cron locks released');
+  } catch (error) {
+    logger.error(`Error releasing cron locks: ${(error as Error).message}`);
   }
 
   // Stop accepting new connections

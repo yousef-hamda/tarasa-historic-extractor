@@ -3,7 +3,7 @@
  * Comprehensive debugging endpoints for the admin dashboard
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { collectMetrics, getMetricsHistory, getAverageMetrics, isSystemUnderStress, formatBytes, formatDuration } from '../debug/metricsCollector';
 import { getRecentRequests, getRequestStats, getRouteMetrics, getSlowRequests, getFailedRequests } from '../debug/requestTracker';
 import { getErrorLogs, getErrorStats, resolveError, clearResolvedErrors, trackError } from '../debug/errorTracker';
@@ -12,28 +12,12 @@ import { getConnectedClients } from '../debug/websocket';
 import { getEventHistory } from '../debug/eventEmitter';
 import { runFullDiagnostics, getLastDiagnosticResult, setLastDiagnosticResult, DiagnosticResult } from '../debug/diagnostics';
 import logger from '../utils/logger';
+import { apiKeyAuth } from '../middleware/apiAuth';
 
 const router = Router();
 
-// Middleware for debug routes - require API key in production
-const debugAuthMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const expectedKey = process.env.API_KEY || process.env.DEBUG_API_KEY;
-
-  // In development, allow access without key
-  if (process.env.NODE_ENV !== 'production' || !expectedKey) {
-    return next();
-  }
-
-  if (apiKey !== expectedKey) {
-    res.status(401).json({ error: 'Unauthorized - Invalid API key' });
-    return;
-  }
-
-  next();
-};
-
-router.use('/api/debug', debugAuthMiddleware);
+// Use centralized auth middleware for all debug routes
+router.use('/api/debug', apiKeyAuth);
 
 /**
  * GET /api/debug/overview

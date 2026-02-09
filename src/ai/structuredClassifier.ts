@@ -23,6 +23,8 @@ import {
 } from '../validation/schemas';
 import { captureException } from '../config/sentry';
 import { cacheGet, cacheSet, CacheKeys } from '../config/redis';
+import { URLS } from '../config/constants';
+import { sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
 
 // ============================================
 // OpenAI Client Configuration
@@ -32,11 +34,14 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const CLASSIFIER_MODEL = process.env.OPENAI_CLASSIFIER_MODEL || 'gpt-4o-mini';
-const GENERATOR_MODEL = process.env.OPENAI_GENERATOR_MODEL || 'gpt-4o-mini';
-const CLASSIFIER_BATCH_SIZE = parseInt(process.env.CLASSIFIER_BATCH_SIZE || '10', 10);
-const GENERATOR_BATCH_SIZE = parseInt(process.env.GENERATOR_BATCH_SIZE || '10', 10);
+const CLASSIFIER_MODEL = getModel('classifier');
+const GENERATOR_MODEL = getModel('generator');
+const parsedClassifierBatch = parseInt(process.env.CLASSIFIER_BATCH_SIZE || '25', 10);
+const parsedGeneratorBatch = parseInt(process.env.GENERATOR_BATCH_SIZE || '20', 10);
+const CLASSIFIER_BATCH_SIZE = isNaN(parsedClassifierBatch) ? 25 : parsedClassifierBatch;
+const GENERATOR_BATCH_SIZE = isNaN(parsedGeneratorBatch) ? 20 : parsedGeneratorBatch;
 const MIN_CONFIDENCE = 75;
+const DEFAULT_TARASA_URL = URLS.DEFAULT_TARASA;
 
 // ============================================
 // JSON Schema for OpenAI Structured Outputs
@@ -158,7 +163,7 @@ export async function classifyPostStructured(postText: string): Promise<Classifi
       model: CLASSIFIER_MODEL,
       messages: [
         { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
-        { role: 'user', content: `Classify this post:\n\n${postText}` },
+        { role: 'user', content: `Classify this post:\n\n${sanitizeForPrompt(postText)}` },
       ],
       response_format: {
         type: 'json_schema',
@@ -280,7 +285,7 @@ export async function generateMessageStructured(
         { role: 'system', content: prompt },
         {
           role: 'user',
-          content: `Generate a message for ${authorName || 'the author'} about this post:\n\n${postText}\n\nInclude this link: ${tarasaLink}`,
+          content: `Generate a message for ${sanitizeForPrompt(authorName || 'the author', 100)} about this post:\n\n${sanitizeForPrompt(postText)}\n\nInclude this link: ${tarasaLink}`,
         },
       ],
       response_format: {
@@ -407,7 +412,8 @@ export async function runMessageGenerationPipeline(): Promise<{
   const stats = { generated: 0, errors: 0 };
 
   try {
-    const baseUrl = process.env.BASE_TARASA_URL || 'https://tarasa.me/he/premium/5d5252bf574a2100368f9833';
+    const baseUrl = process.env.BASE_TARASA_URL || DEFAULT_TARASA_URL;
+    const submitPageBase = process.env.SUBMIT_PAGE_BASE_URL;
 
     // Get historic posts without generated messages
     const postsNeedingMessages = await prisma.postRaw.findMany({
@@ -439,17 +445,22 @@ export async function runMessageGenerationPipeline(): Promise<{
 
     for (const post of postsNeedingMessages) {
       try {
+        // Build the correct link for this post
+        const postLink = submitPageBase
+          ? `${submitPageBase.replace(/\/$/, '')}/submit/${post.id}`
+          : `${baseUrl}?refPost=${post.id}&text=${encodeURIComponent(post.text)}`;
+
         const result = await generateMessageStructured(
           post.text,
           post.authorName || undefined,
-          baseUrl
+          postLink
         );
 
         await prisma.messageGenerated.create({
           data: {
             postId: post.id,
             messageText: result.message,
-            link: baseUrl,
+            link: postLink,
           },
         });
 

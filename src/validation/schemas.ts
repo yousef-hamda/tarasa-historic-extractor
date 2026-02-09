@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import type { Request, Response, NextFunction } from 'express';
 
 // ============================================
 // Environment Validation
@@ -29,8 +30,8 @@ export const envSchema = z.object({
   PORT: z.string().default('4000').transform(Number),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   MAX_MESSAGES_PER_DAY: z.string().default('20').transform(Number),
-  CLASSIFIER_BATCH_SIZE: z.string().default('10').transform(Number),
-  GENERATOR_BATCH_SIZE: z.string().default('10').transform(Number),
+  CLASSIFIER_BATCH_SIZE: z.string().default('25').transform(Number),
+  GENERATOR_BATCH_SIZE: z.string().default('20').transform(Number),
   APIFY_RESULTS_LIMIT: z.string().default('20').transform(Number),
   HEADLESS: z.string().default('true').transform((v) => v === 'true'),
 
@@ -117,8 +118,8 @@ export const classificationResultSchema = z.object({
   confidence: z.number().min(0).max(100).describe('Confidence score 0-100'),
   reason: z.string().max(500).describe('Brief explanation for the classification'),
   language: z.enum(['hebrew', 'arabic', 'english', 'other']).describe('Detected language of the post'),
-  historical_period: z.string().optional().describe('Approximate time period mentioned (e.g., "1948", "1960s", "Ottoman era")'),
-  topics: z.array(z.string()).max(5).describe('Key historical topics mentioned'),
+  historical_period: z.string().max(100).optional().describe('Approximate time period mentioned (e.g., "1948", "1960s", "Ottoman era")'),
+  topics: z.array(z.string().max(100)).max(5).describe('Key historical topics mentioned'),
 });
 
 export type ClassificationResult = z.infer<typeof classificationResultSchema>;
@@ -186,7 +187,7 @@ export function validateWithErrors<T>(
  * Express middleware factory for request validation
  */
 export function validateRequest<T>(schema: z.ZodSchema<T>, source: 'body' | 'query' | 'params' = 'body') {
-  return (req: any, res: any, next: any) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req[source]);
 
     if (!result.success) {
@@ -202,7 +203,7 @@ export function validateRequest<T>(schema: z.ZodSchema<T>, source: 'body' | 'que
     }
 
     // Replace with validated and coerced data
-    req[source] = result.data;
+    (req as unknown as Record<string, unknown>)[source] = result.data;
     next();
   };
 }

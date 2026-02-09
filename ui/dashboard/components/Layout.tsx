@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
+import LanguageSwitcher from './LanguageSwitcher';
 import {
   HomeIcon,
   DocumentTextIcon,
@@ -14,6 +16,8 @@ import {
   ShieldCheckIcon,
   Bars3Icon,
   XMarkIcon,
+  SparklesIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 interface HealthStatus {
@@ -21,19 +25,22 @@ interface HealthStatus {
 }
 
 const navLinks = [
-  { href: '/', label: 'Dashboard', icon: HomeIcon },
-  { href: '/posts', label: 'Posts', icon: DocumentTextIcon },
-  { href: '/messages', label: 'Messages', icon: ChatBubbleLeftRightIcon },
-  { href: '/groups', label: 'Groups', icon: UserGroupIcon },
-  { href: '/logs', label: 'Logs', icon: ClipboardDocumentListIcon },
-  { href: '/admin', label: 'Admin', icon: ShieldCheckIcon },
-  { href: '/debug', label: 'Debug', icon: WrenchScrewdriverIcon },
-  { href: '/backup', label: 'Backup', icon: ServerStackIcon },
-  { href: '/settings', label: 'Settings', icon: CogIcon },
+  { href: '/', labelKey: 'nav.dashboard', icon: HomeIcon },
+  { href: '/posts', labelKey: 'nav.posts', icon: DocumentTextIcon },
+  { href: '/search', labelKey: 'nav.search', icon: MagnifyingGlassIcon },
+  { href: '/messages', labelKey: 'nav.messages', icon: ChatBubbleLeftRightIcon },
+  { href: '/groups', labelKey: 'nav.groups', icon: UserGroupIcon },
+  { href: '/logs', labelKey: 'nav.logs', icon: ClipboardDocumentListIcon },
+  { href: '/prompts', labelKey: 'nav.prompts', icon: SparklesIcon },
+  { href: '/admin', labelKey: 'nav.admin', icon: ShieldCheckIcon },
+  { href: '/debug', labelKey: 'nav.debug', icon: WrenchScrewdriverIcon },
+  { href: '/backup', labelKey: 'nav.backup', icon: ServerStackIcon },
+  { href: '/settings', labelKey: 'nav.settings', icon: CogIcon },
 ];
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
+  const { t, direction } = useLanguage();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -56,23 +63,23 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [fetchHealth]);
 
   const getStatusConfig = () => {
-    if (!health) return { color: 'bg-slate-400', text: 'Loading' };
+    if (!health) return { color: 'bg-slate-400', text: t('common.loading') };
     switch (health.status) {
       case 'ok':
-        return { color: 'bg-emerald-500', text: 'Healthy' };
+        return { color: 'bg-emerald-500', text: t('dashboard.healthy') };
       case 'degraded':
-        return { color: 'bg-amber-500', text: 'Degraded' };
+        return { color: 'bg-amber-500', text: t('dashboard.degraded') };
       case 'unhealthy':
-        return { color: 'bg-red-500', text: 'Unhealthy' };
+        return { color: 'bg-red-500', text: t('dashboard.unhealthy') };
       default:
-        return { color: 'bg-slate-400', text: 'Unknown' };
+        return { color: 'bg-slate-400', text: t('common.unknown') };
     }
   };
 
   const statusConfig = getStatusConfig();
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" dir={direction}>
       {/* Top Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -80,7 +87,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             {/* Left side - Logo & Navigation */}
             <div className="flex items-center">
               {/* Logo */}
-              <Link href="/" className="flex items-center gap-2.5 mr-8">
+              <Link href="/" className="flex items-center gap-2.5 me-8">
                 <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
                   <span className="text-white font-bold text-sm">T</span>
                 </div>
@@ -103,15 +110,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                       }`}
                     >
                       <Icon className="w-4 h-4" />
-                      {link.label}
+                      {t(link.labelKey)}
                     </Link>
                   );
                 })}
               </div>
             </div>
 
-            {/* Right side - Status & Mobile Menu */}
+            {/* Right side - Status, Language & Mobile Menu */}
             <div className="flex items-center gap-3">
+              {/* Language Switcher */}
+              <LanguageSwitcher compact />
+
               {/* System Status */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
                 <div className={`w-2 h-2 rounded-full ${statusConfig.color}`} />
@@ -154,7 +164,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    {link.label}
+                    {t(link.labelKey)}
                   </Link>
                 );
               })}

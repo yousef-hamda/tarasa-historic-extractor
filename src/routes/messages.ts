@@ -1,6 +1,7 @@
 import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
 import { parsePositiveInt, parseNonNegativeInt } from '../utils/validation';
+import { safeErrorMessage } from '../middleware/errorHandler';
 
 const router = Router();
 
@@ -45,7 +46,7 @@ router.get('/api/messages', async (req: Request, res: Response) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    res.status(500).json({ error: 'Failed to fetch messages', message });
+    res.status(500).json({ error: 'Failed to fetch messages', message: safeErrorMessage(error, 'Internal server error') });
   }
 });
 

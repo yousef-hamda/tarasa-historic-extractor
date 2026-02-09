@@ -23,7 +23,7 @@ export const parseNonNegativeInt = (value: unknown, defaultValue: number): numbe
   return Math.floor(parsed);
 };
 
-const VALID_LOG_TYPES = ['scrape', 'classify', 'message', 'auth', 'error'] as const;
+const VALID_LOG_TYPES = ['scrape', 'classify', 'message', 'auth', 'error', 'admin'] as const;
 export type LogType = typeof VALID_LOG_TYPES[number];
 
 export const isValidLogType = (type: unknown): type is LogType => {

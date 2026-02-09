@@ -133,6 +133,7 @@ const normalizePostId = (rawId: string | null, fallback: string | null, text: st
 
 /**
  * Normalize a Facebook profile/page URL to a clean, consistent format
+ * UPDATED: Now handles /stories/{user_id}/... pattern (Facebook's new author link format)
  */
 const normalizeAuthorLink = (href: string | null): string | undefined => {
   if (!href) return undefined;
@@ -144,9 +145,18 @@ const normalizeAuthorLink = (href: string | null): string | undefined => {
     const paramsToRemove = [
       '__cft__', '__tn__', 'comment_id', 'reply_comment_id',
       'ref', 'fref', 'hc_ref', '__xts__', 'eid', 'rc', 'notif_id',
-      'notif_t', 'ref_notif_type', 'acontext', 'aref'
+      'notif_t', 'ref_notif_type', 'acontext', 'aref', 'view_single'
     ];
     paramsToRemove.forEach(param => url.searchParams.delete(param));
+
+    // NEW: Handle /stories/{user_id}/... format (Facebook's current author link pattern)
+    // Example: /stories/1348778025227849/UzpfSVNDOjg4ODgwNDE0Mzg0OTAxNg==/?...
+    if (url.pathname.includes('/stories/')) {
+      const storiesMatch = url.pathname.match(/\/stories\/(\d+)\//);
+      if (storiesMatch) {
+        return `https://www.facebook.com/profile.php?id=${storiesMatch[1]}`;
+      }
+    }
 
     // Handle /user/ID format (converts to profile.php?id=)
     if (url.pathname.includes('/user/')) {
@@ -178,6 +188,14 @@ const normalizeAuthorLink = (href: string | null): string | undefined => {
       if (match) {
         return `https://www.facebook.com/profile.php?id=${match[1]}`;
       }
+    }
+
+    // Handle /{username}/posts/... format - extract username
+    // Example: /david.matlow.3/posts/pfbid02X6EAgJQaCxigJJ1U8VeKQsV2P6S...
+    const usernamePostMatch = url.pathname.match(/^\/([a-zA-Z0-9._-]+)\/posts\//);
+    if (usernamePostMatch) {
+      const username = usernamePostMatch[1];
+      return `https://www.facebook.com/${username}`;
     }
 
     // Handle /username or /pagename format (no subpath)
@@ -216,11 +234,22 @@ const normalizeAuthorLink = (href: string | null): string | undefined => {
 
 /**
  * Check if a URL is a valid Facebook profile/page link (not a group, post, photo, etc.)
+ * UPDATED: Facebook now uses /stories/{user_id}/... for profile links from posts
  */
 const isValidProfileLink = (href: string | null): boolean => {
   if (!href) return false;
 
-  // Exclude non-profile links
+  // Must be a Facebook URL
+  if (!href.includes('facebook.com') && !href.startsWith('/stories/')) return false;
+
+  // NEW: /stories/{user_id}/... is now used for author links
+  // Extract user ID from stories URL pattern
+  if (href.includes('/stories/')) {
+    const storiesMatch = href.match(/\/stories\/(\d+)\//);
+    if (storiesMatch) return true;
+  }
+
+  // Exclude non-profile links (but allow /stories/)
   const excludePatterns = [
     '/groups/',
     '/posts/',
@@ -231,7 +260,6 @@ const isValidProfileLink = (href: string | null): boolean => {
     '/watch/',
     '/marketplace/',
     '/gaming/',
-    '/stories/',
     '/reels/',
     '/hashtag/',
     '/share',
@@ -241,17 +269,15 @@ const isValidProfileLink = (href: string | null): boolean => {
   ];
 
   for (const pattern of excludePatterns) {
-    if (href.includes(pattern) && !href.includes('/user/')) return false;
+    if (href.includes(pattern) && !href.includes('/user/') && !href.includes('/stories/')) return false;
   }
-
-  // Must be a Facebook URL
-  if (!href.includes('facebook.com')) return false;
 
   // Valid profile patterns
   const validPatterns = [
     /\/user\/\d+/,                    // /user/123456
     /\/profile\.php\?id=\d+/,         // /profile.php?id=123456
     /\/people\/[^\/]+\/\d+/,          // /people/Name/123456
+    /\/stories\/\d+\//,               // /stories/123456/... (NEW)
     /facebook\.com\/[a-zA-Z0-9.]+\/?$/, // /username (no subpath)
     /facebook\.com\/[a-zA-Z0-9.]+\?/, // /username?params
   ];
@@ -829,7 +855,7 @@ export const extractPosts = async (page: Page, context?: BrowserContext): Promis
           if (feed) {
             const allPostLinks = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]');
             let closestLink: Element | null = null;
-            let closestDistance = 200;
+            let closestDistance = 400; // Increased from 200px - FB DOM structure varies
 
             for (const link of allPostLinks) {
               const linkRect = link.getBoundingClientRect();
@@ -1064,7 +1090,6 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
 
     const feed = document.querySelector('div[role="feed"]');
     if (!feed) {
-      console.log('No feed found');
       return results;
     }
 
@@ -1095,9 +1120,10 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
         cleanUrl = url.toString();
       } catch {}
 
-      // Extract post ID for deduplication
-      const postIdMatch = cleanUrl.match(/\/posts\/(\d+)/);
-      const postId = postIdMatch ? postIdMatch[1] : cleanUrl; // Use full URL as key if no ID
+      // Extract post ID for deduplication - handle both numeric and pfbid formats
+      const numericIdMatch = cleanUrl.match(/\/posts\/(\d+)/);
+      const pfbidMatch = cleanUrl.match(/\/posts\/(pfbid[a-zA-Z0-9]+)/);
+      const postId = numericIdMatch ? numericIdMatch[1] : (pfbidMatch ? pfbidMatch[1] : cleanUrl);
 
       // Only keep the entry with smallest Y (highest on page) for each post ID
       const existing = postUrlMap.get(postId);
@@ -1127,11 +1153,8 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       }
     }
 
-    console.log(`Found ${postUrlMap.size} unique post URLs in feed`);
-
     // ====== PHASE 2: FIND TEXT ELEMENTS ======
     const feedChildren = Array.from(feed.children);
-    console.log(`Feed has ${feedChildren.length} children`);
 
     // Find ALL substantial text elements in the page (not in comments)
     const allDirAuto = document.querySelectorAll('div[dir="auto"], span[dir="auto"]');
@@ -1178,7 +1201,6 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       });
     }
 
-    console.log(`Found ${textElements.length} potential post text elements`);
 
     // Sort by Y position (top to bottom)
     textElements.sort((a, b) => a.y - b.y);
@@ -1210,15 +1232,6 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       }
     }
 
-    // Add debug info that will be visible in the returned results
-    const _debugInfo = {
-      totalDirAuto: allDirAuto.length,
-      afterFiltering: textElements.length,
-      afterDedup: uniqueTexts.length,
-      samples: uniqueTexts.slice(0, 5).map(t => t.text.substring(0, 40))
-    };
-    console.log('DEBUG:', JSON.stringify(_debugInfo));
-
     // For each text element, find associated author info
     for (const textItem of uniqueTexts) {
       const textElement = textItem.element;
@@ -1231,33 +1244,51 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       let container: HTMLElement | null = textElement;
       let foundContainer = false;
 
-      // Walk up looking for the CLOSEST container with a profile link
+      // Walk up looking for a container with BOTH profile link AND post URL
+      // This ensures we get the full post container, not just a small nested element
       let current: HTMLElement | null = textElement.parentElement;
+      let containerWithProfile: HTMLElement | null = null;
+
       for (let i = 0; i < 15 && current; i++) {
         // Stop at feed level
         if (current.getAttribute('role') === 'feed') break;
 
-        // Check if this level has a profile link
-        const hasProfileLink = !!current.querySelector('a[href*="/user/"], a[href*="profile.php"]');
+        // Check if this level has a profile link (including /stories/ pattern)
+        const hasProfileLink = !!current.querySelector('a[href*="/user/"], a[href*="profile.php"], a[href*="/stories/"]');
+
+        // Check if this level has a post URL
+        const hasPostUrl = !!current.querySelector('a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"]');
 
         if (hasProfileLink) {
-          // Found a container with profile link - use this one and STOP
-          container = current;
-          foundContainer = true;
-          break;  // Don't keep searching for larger containers
+          // Remember this container as fallback
+          if (!containerWithProfile) {
+            containerWithProfile = current;
+          }
+
+          // Ideal: container has BOTH profile link AND post URL
+          if (hasPostUrl) {
+            container = current;
+            foundContainer = true;
+            break;  // Found the best container
+          }
         }
 
         current = current.parentElement;
       }
 
-      // If we didn't find a container with profile link, just use parent levels
+      // If we didn't find a container with both, use the one with profile link
+      if (!foundContainer && containerWithProfile) {
+        container = containerWithProfile;
+        foundContainer = true;
+      }
+
+      // If we still didn't find a container, just use parent levels
       if (!foundContainer) {
         container = textElement.parentElement?.parentElement?.parentElement || textElement;
         foundContainer = true;  // Use whatever we have
       }
 
       if (!container) {
-        console.log(`No container for: "${postText.substring(0, 30)}..."`);
         continue;
       }
 
@@ -1299,16 +1330,21 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
         if (href && (href.includes('scontent') || href.includes('fbcdn'))) {
           const rect = img.getBoundingClientRect();
 
-          // Find parent link
+          // Find parent link - UPDATED to include /stories/ pattern
           let link: string | null = null;
           let name: string | null = null;
           let parent = img.parentElement;
           for (let i = 0; i < 5 && parent; i++) {
             if (parent.tagName === 'A') {
               const parentHref = parent.getAttribute('href') || '';
-              if (parentHref.includes('/user/') || parentHref.includes('profile.php')) {
+              // Check for /user/, profile.php, OR /stories/ patterns
+              if (parentHref.includes('/user/') || parentHref.includes('profile.php') || parentHref.includes('/stories/')) {
                 link = parentHref;
                 name = parent.getAttribute('aria-label');
+                // Clean up name - remove "View Story" suffix in various languages
+                if (name) {
+                  name = name.replace(/,?\s*הצגת סטורי$/i, '').replace(/,?\s*View Story$/i, '').trim();
+                }
                 break;
               }
             }
@@ -1339,8 +1375,10 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
 
       // STRATEGY 2: If no photo found, look for profile link ABOVE the text
       // The author link is always ABOVE the post text (negative Y difference)
+      // UPDATED: Now also looks for /stories/{user_id}/ links (Facebook's new pattern)
       if (!authorLink) {
-        const profileLinks = el.querySelectorAll('a[aria-label][href*="/user/"], a[aria-label][href*="profile.php"]');
+        // Include /stories/ links which Facebook now uses for author profiles
+        const profileLinks = el.querySelectorAll('a[aria-label][href*="/user/"], a[aria-label][href*="profile.php"], a[aria-label][href*="/stories/"]');
         const linkInfos: Array<{ y: number; link: string; name: string }> = [];
 
         for (const link of profileLinks) {
@@ -1369,8 +1407,9 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       }
 
       // STRATEGY 3: Look in h2/h3/h4 headers for author name (they're always at top)
+      // UPDATED: Also search for /stories/ links which Facebook now uses
       if (!authorName) {
-        const headerLinks = el.querySelectorAll('h2 a[href*="/user/"], h3 a[href*="/user/"], h4 a[href*="/user/"], h2 a[href*="profile.php"], h3 a[href*="profile.php"]');
+        const headerLinks = el.querySelectorAll('h2 a[href*="/user/"], h3 a[href*="/user/"], h4 a[href*="/user/"], h2 a[href*="profile.php"], h3 a[href*="profile.php"], h2 a[href*="/stories/"], h3 a[href*="/stories/"], h4 a[href*="/stories/"]');
         for (const link of headerLinks) {
           const rect = link.getBoundingClientRect();
           // Header is always above text
@@ -1460,7 +1499,7 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
                 break;
               }
             }
-            // If not in map, still use it
+            // If not in map, still use it (also handles pfbid)
             if (!postUrl) {
               postUrl = cleanUrl;
               break;
@@ -1544,6 +1583,43 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
         }
       }
 
+      // Strategy 3b: Find timestamp link ABOVE the text (same container or parent)
+      // Timestamp links (showing "1h", "2d", etc.) almost always contain the post URL
+      if (!postUrl) {
+        // Look for short timestamp-like text links near the top of the container
+        const allLinks = el.querySelectorAll('a[href*="facebook.com"]');
+        for (const link of allLinks) {
+          const href = link.getAttribute('href') || '';
+          const text = (link as HTMLElement).innerText?.trim() || '';
+          const linkRect = link.getBoundingClientRect();
+
+          // Timestamp links are short (like "1h", "2d", "Yesterday") and above the text
+          const isTimestampText = text.length < 20 && (
+            text.match(/^\d+\s*[hdwmy]$/i) ||   // 1h, 2d, 3w, etc.
+            text.match(/^\d+\s*(hour|day|week|month|year)/i) ||
+            text.match(/^(just now|yesterday|today)/i) ||
+            text.match(/^(hrs?|min|sec)/i)
+          );
+
+          // Link should be above the text and contain a post URL pattern
+          if (isTimestampText && linkRect.top < textY &&
+              (href.includes('/posts/') || href.includes('/permalink/') || href.includes('pfbid'))) {
+            let cleanUrl = href.startsWith('/') ? `https://www.facebook.com${href}` : href;
+            try {
+              const url = new URL(cleanUrl, 'https://www.facebook.com');
+              url.searchParams.delete('comment_id');
+              url.searchParams.delete('reply_comment_id');
+              url.searchParams.delete('__cft__[0]');
+              url.searchParams.delete('__tn__');
+              cleanUrl = url.toString();
+            } catch {}
+
+            postUrl = cleanUrl;
+            break;
+          }
+        }
+      }
+
       // Strategy 4: Extract post ID from photo URLs in this container (set=pcb.XXXXX)
       // Photo posts have the post ID in the photo URL's set parameter
       if (!postUrl && groupId) {
@@ -1560,10 +1636,10 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
       }
 
       // Strategy 5: Use postUrlMap to find closest UNUSED URL by proximity
-      // Only match if URL is reasonably close (within 150px) and not yet used
+      // Use larger threshold (400px) to account for Facebook's varying DOM structure
       if (!postUrl) {
         let closestEntry: { postId: string; entry: { url: string; y: number; used: boolean } } | null = null;
-        let closestDistance = 150; // Reduced from 200px for more precision
+        let closestDistance = 400; // Increased from 150px - FB DOM structure varies
 
         for (const [postId, entry] of postUrlMap.entries()) {
           if (entry.used) continue; // Skip already used URLs
@@ -1610,12 +1686,21 @@ const extractPostsFromFeedChildren = async (page: Page): Promise<ScrapedPost[]> 
     // 3. Fallback to content hash
     let postId: string = '';
 
-    // Priority 1: Extract from post URL (e.g., /posts/1234567890)
+    // Priority 1: Extract from post URL
+    // Handles: /posts/1234567890, /posts/pfbid02X6E..., /{username}/posts/pfbid...
     if (postData.postUrl) {
-      const urlPostIdMatch = postData.postUrl.match(/\/posts\/(\d+)/);
-      if (urlPostIdMatch) {
-        postId = urlPostIdMatch[1];
-        logger.debug(`Extracted post ID from URL: ${postId}`);
+      // First try numeric post ID
+      const numericMatch = postData.postUrl.match(/\/posts\/(\d+)/);
+      if (numericMatch) {
+        postId = numericMatch[1];
+        logger.debug(`Extracted numeric post ID from URL: ${postId}`);
+      } else {
+        // Try pfbid format (alphanumeric ID used by Facebook)
+        const pfbidMatch = postData.postUrl.match(/\/posts\/(pfbid[a-zA-Z0-9]+)/);
+        if (pfbidMatch) {
+          postId = pfbidMatch[1];
+          logger.debug(`Extracted pfbid from URL: ${postId}`);
+        }
       }
     }
 
@@ -1861,7 +1946,7 @@ const extractPostsAlternative = async (page: Page): Promise<ScrapedPost[]> => {
         if (feed) {
           const allPostLinks = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"]');
           let closestLink: Element | null = null;
-          let closestDistance = 200; // Max 200px
+          let closestDistance = 400; // Increased from 200px - FB DOM structure varies
 
           for (const link of allPostLinks) {
             const linkRect = link.getBoundingClientRect();

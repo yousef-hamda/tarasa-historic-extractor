@@ -77,12 +77,15 @@ export const scrapeGroupWithPlaywright = async (groupId: string): Promise<Normal
  */
 const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<NormalizedPost[]> => {
 
-  // Pre-check: verify we have a valid session
-  const hasSession = await hasValidFacebookSession();
-  if (!hasSession) {
-    logger.error('[Playwright] Cannot scrape without valid Facebook session');
-    logger.error('[Playwright] Please run: npx ts-node src/scripts/facebook-login.ts');
-    return [];
+  // NOTE: Session check skipped for PUBLIC groups
+  // Public groups can be viewed without authentication
+  // The session check is only needed for private groups
+  // For now, we try to scrape and rely on the page content to determine access
+  const health = await getCookieHealth();
+  if (health.hasSession) {
+    logger.info(`[Playwright] Valid session found for user: ${health.userId}`);
+  } else {
+    logger.info('[Playwright] No active session - attempting public group access');
   }
 
   // Retry loop for browser operations
@@ -91,14 +94,17 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
   for (let attempt = 1; attempt <= MAX_BROWSER_RETRIES; attempt++) {
     let browser: Browser | null = null;
     let context: BrowserContext | null = null;
+    let page: Awaited<ReturnType<BrowserContext['newPage']>> | null = null;
 
     try {
       logger.info(`[Playwright] Browser launch attempt ${attempt}/${MAX_BROWSER_RETRIES}`);
-      const ctx = await createFacebookContext();
+      // Use publicGroupMode for scraping - cookies interfere with URL rendering for public groups
+      // For private groups, this may need to be revisited
+      const ctx = await createFacebookContext({ publicGroupMode: true });
       browser = ctx.browser;
       context = ctx.context;
 
-      const page = await context.newPage();
+      page = await context.newPage();
       // OPTIMIZED: Use shorter default timeout (15s instead of 90s)
       page.setDefaultTimeout(15000);
 
@@ -149,6 +155,11 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         }
       }
 
+      // CRITICAL: Wait for Facebook to finish rendering post content
+      // Post URLs (timestamp links) may take several seconds to appear
+      logger.info('[Playwright] Waiting for feed content to fully render (5s)...');
+      await sleep(5000);
+
       // Dismiss popups and dialogs FIRST before any content checks
       logger.info('[Playwright] Dismissing any popups/dialogs...');
       try {
@@ -174,17 +185,18 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         logger.debug(`[Playwright] Popup dismissal: ${(e as Error).message}`);
       }
 
-      // Try to navigate to Discussion tab to ensure we see the full feed
-      try {
-        const discussionTab = await page.$('a:has-text("Discussion")');
-        if (discussionTab) {
-          await discussionTab.click();
-          await sleep(3000);  // Longer wait for content to load
-          logger.info('[Playwright] Clicked Discussion tab');
-        }
-      } catch (e) {
-        logger.debug(`[Playwright] Discussion tab: ${(e as Error).message}`);
-      }
+      // DISABLED: Discussion tab click was causing post URLs to not render
+      // Keeping the default view which seems to have better URL visibility
+      // try {
+      //   const discussionTab = await page.$('a:has-text("Discussion")');
+      //   if (discussionTab) {
+      //     await discussionTab.click();
+      //     await sleep(3000);  // Longer wait for content to load
+      //     logger.info('[Playwright] Clicked Discussion tab');
+      //   }
+      // } catch (e) {
+      //   logger.debug(`[Playwright] Discussion tab: ${(e as Error).message}`);
+      // }
 
       // Wait for feed content to load after navigation
       await page.waitForTimeout(2000);
@@ -194,12 +206,14 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       await sleep(1000);
 
       // NOW wait for actual content to load after Discussion tab click
+      // CRITICAL: Wait for BOTH text elements AND post URLs to be visible
+      // Post URLs (timestamp links) may load AFTER the text is rendered
       logger.info('[Playwright] Waiting for post content to load...');
       const maxWaitAttempts = 15;
       for (let attempt = 0; attempt < maxWaitAttempts; attempt++) {
         const contentCheck = await page.evaluate(() => {
           const feed = document.querySelector('div[role="feed"]');
-          if (!feed) return { hasContent: false };
+          if (!feed) return { hasContent: false, hasPostUrls: false, substantialCount: 0, postUrlCount: 0 };
 
           const dirAutoDivs = document.querySelectorAll('div[dir="auto"]');
           let substantialCount = 0;
@@ -210,19 +224,66 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
             }
           }
 
+          // Also check for post URLs (timestamps that link to posts)
+          // These may load AFTER the text is visible
+          const postUrls = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"]');
+          const postUrlCount = postUrls.length;
+
           return {
             hasContent: substantialCount >= 2,
-            substantialCount
+            hasPostUrls: postUrlCount > 0,
+            substantialCount,
+            postUrlCount
           };
         });
 
-        if (contentCheck.hasContent) {
-          logger.info(`[Playwright] Found ${contentCheck.substantialCount} substantial text elements`);
+        // Wait for BOTH text elements AND post URLs to be present
+        if (contentCheck.hasContent && contentCheck.hasPostUrls) {
+          logger.info(`[Playwright] Found ${contentCheck.substantialCount} substantial text elements and ${contentCheck.postUrlCount} post URLs`);
           break;
+        } else if (contentCheck.hasContent && !contentCheck.hasPostUrls) {
+          // Have text but waiting for URLs - log and continue waiting
+          if (attempt > 3) {
+            logger.debug(`[Playwright] Have ${contentCheck.substantialCount} texts but waiting for post URLs...`);
+          }
         }
 
         await page.evaluate('window.scrollBy(0, 300)');
         await sleep(1000);
+      }
+
+      // FALLBACK: If we still don't have post URLs after the loop, scroll to top and wait
+      // Post URLs (timestamp links) may take extra time to render
+      // Scroll back to top first - this is where the first posts are
+      await page.evaluate('window.scrollTo(0, 0)');
+      await sleep(500);
+
+      const finalCheck = await page.evaluate(() => {
+        const feed = document.querySelector('div[role="feed"]');
+        if (!feed) return { hasPostUrls: false, postUrlCount: 0 };
+        const postUrls = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"]');
+        return { hasPostUrls: postUrls.length > 0, postUrlCount: postUrls.length };
+      });
+
+      if (!finalCheck.hasPostUrls) {
+        logger.info('[Playwright] Post URLs not yet loaded, waiting additional 5 seconds at top of feed...');
+        await sleep(5000);
+
+        // Check again
+        const recheck = await page.evaluate(() => {
+          const feed = document.querySelector('div[role="feed"]');
+          if (!feed) return { hasPostUrls: false, postUrlCount: 0 };
+          const postUrls = feed.querySelectorAll('a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"]');
+          return { hasPostUrls: postUrls.length > 0, postUrlCount: postUrls.length };
+        });
+
+        if (recheck.hasPostUrls) {
+          logger.info(`[Playwright] Post URLs now loaded: ${recheck.postUrlCount}`);
+        } else {
+          logger.warn('[Playwright] WARNING: Post URLs still not visible - extraction may fail to get post IDs');
+        }
+      } else {
+        logger.info(`[Playwright] Post URLs loaded: ${finalCheck.postUrlCount}`);
       }
 
       // Check if we need to join the group (quick check)
@@ -242,6 +303,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         } catch (joinError) {
           logger.warn(`[Playwright] Could not auto-join group: ${joinError}`);
           await saveCookies(context);
+          // Close resources in order: page -> context -> browser
+          try { if (page) await page.close(); } catch {}
+          try { if (context) await context.close(); } catch {}
           await safeCloseBrowser(browser);
           return [];
         }
@@ -391,6 +455,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
 
       logger.info(`[Playwright] Extracted ${posts.length} posts from group ${groupId}`);
 
+      // Clear the intercepted cache after extraction to prevent memory leaks
+      clearInterceptedCache();
+
       // Convert to NormalizedPost format
       const normalizedPosts: NormalizedPost[] = posts.map(post => {
         // Construct post URL if not extracted, using groupId and fbPostId
@@ -418,6 +485,10 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       } catch (cookieError) {
         logger.warn(`[Playwright] Could not save cookies: ${(cookieError as Error).message}`);
       }
+
+      // Close resources in order: page -> context -> browser
+      try { if (page) await page.close(); } catch {}
+      try { if (context) await context.close(); } catch {}
       await safeCloseBrowser(browser);
 
       return normalizedPosts;
@@ -425,6 +496,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
     } catch (error) {
       lastError = error as Error;
       logger.error(`[Playwright] Attempt ${attempt} failed: ${lastError.message}`);
+
+      // Clear the intercepted cache to prevent memory leaks on error
+      clearInterceptedCache();
 
       // Try to save cookies before closing
       try {
@@ -435,7 +509,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         // Cookies couldn't be saved, that's okay
       }
 
-      // Clean up browser on error
+      // Clean up resources in order: page -> context -> browser
+      try { if (page) await page.close(); } catch {}
+      try { if (context) await context.close(); } catch {}
       await safeCloseBrowser(browser);
 
       // OPTIMIZED: Reduced retry delay from 5s to 3s

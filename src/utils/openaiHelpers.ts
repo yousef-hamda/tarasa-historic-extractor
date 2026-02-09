@@ -2,6 +2,54 @@
  * Shared utilities for OpenAI API interactions
  */
 
+// Pinned model versions to prevent behavior changes from OpenAI model updates.
+// Update these explicitly when you want to upgrade.
+export const PINNED_MODELS = {
+  classifier: 'gpt-4o-mini-2024-07-18',
+  generator: 'gpt-4o-mini-2024-07-18',
+} as const;
+
+/**
+ * Get the model to use for a given role, respecting env overrides.
+ * Falls back to pinned version if env is set to an unpinned alias.
+ */
+export const getModel = (role: 'classifier' | 'generator'): string => {
+  const envKey = role === 'classifier' ? 'OPENAI_CLASSIFIER_MODEL' : 'OPENAI_GENERATOR_MODEL';
+  return process.env[envKey] || PINNED_MODELS[role];
+};
+
+/**
+ * Sanitize user-generated content before including it in AI prompts.
+ * Prevents prompt injection by:
+ * - Truncating excessively long text
+ * - Stripping control characters
+ * - Removing common prompt injection patterns
+ */
+export const sanitizeForPrompt = (text: string, maxLength = 4000): string => {
+  if (!text) return '';
+
+  let sanitized = text;
+
+  // Truncate to max length to prevent token abuse
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength) + '... [truncated]';
+  }
+
+  // Remove null bytes and other control characters (keep newlines and tabs)
+  sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+  // Defense-in-depth: filter common prompt injection patterns
+  // (Structured output schemas already constrain responses, this raises the bar)
+  sanitized = sanitized
+    .replace(/\bignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?)\b/gi, '[filtered]')
+    .replace(/\b(system|assistant)\s*:\s*/gi, '[filtered]: ')
+    .replace(/\byou\s+are\s+now\b/gi, '[filtered]')
+    .replace(/\bforget\s+(all\s+)?(previous|everything|above)\b/gi, '[filtered]')
+    .replace(/\bnew\s+instructions?\s*:/gi, '[filtered]:');
+
+  return sanitized;
+};
+
 /**
  * Normalize OpenAI message content which can be a string or array of content parts
  */
@@ -51,12 +99,26 @@ export const validateClassificationResult = (
 
 /**
  * Validate generated message contains required link
+ *
+ * Accepts both:
+ * - Direct tarasa.me links (legacy)
+ * - Landing page links with /submit/ pattern (new)
  */
 export const validateGeneratedMessage = (
   message: string,
   expectedLinkBase: string,
 ): boolean => {
   if (!message || message.length < 50) return false;
-  // Message should contain the tarasa link
-  return message.includes(expectedLinkBase) || message.includes('tarasa.com') || message.includes('tarasa.me');
+
+  // Check for landing page submit link pattern (more precise than includes)
+  if (/https?:\/\/[^\s]+\/submit\/\d+/.test(message)) return true;
+
+  // Check for expected domain
+  try {
+    const expectedDomain = new URL(expectedLinkBase).hostname;
+    return message.includes(expectedDomain);
+  } catch {
+    // If expectedLinkBase is not a valid URL, fall back to includes
+    return message.includes(expectedLinkBase);
+  }
 };

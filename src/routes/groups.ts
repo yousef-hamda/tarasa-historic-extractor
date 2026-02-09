@@ -2,10 +2,64 @@ import { Request, Response, Router } from 'express';
 import prisma from '../database/prisma';
 import { logSystemEvent } from '../utils/systemLog';
 import logger from '../utils/logger';
+import { apiKeyAuth } from '../middleware/apiAuth';
+import { triggerRateLimiter } from '../middleware/rateLimiter';
+import { safeErrorMessage } from '../middleware/errorHandler';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const router = Router();
+
+/**
+ * Validate that a group ID is safe to use (alphanumeric and dots/underscores only)
+ */
+const isValidGroupId = (groupId: string): boolean => {
+  // Group IDs can be numeric or alphanumeric with dots, underscores, and hyphens
+  // Max length 100 to prevent abuse
+  return /^[a-zA-Z0-9._-]{1,100}$/.test(groupId);
+};
+
+/**
+ * Safely update the GROUP_IDS in .env file with proper error handling
+ * Returns true if successful, false otherwise
+ */
+const updateEnvGroupIds = (newGroups: string[]): boolean => {
+  const envPath = path.resolve(process.cwd(), '.env');
+
+  try {
+    // Check if .env file exists
+    if (!fs.existsSync(envPath)) {
+      logger.error('Cannot update GROUP_IDS: .env file not found');
+      return false;
+    }
+
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    const newGroupIds = newGroups.join(',');
+
+    // Check if GROUP_IDS line exists
+    let updatedContent: string;
+    if (/GROUP_IDS=/.test(envContent)) {
+      // Replace existing GROUP_IDS line (escape special regex chars in group IDs)
+      updatedContent = envContent.replace(
+        /GROUP_IDS=.*/,
+        `GROUP_IDS=${newGroupIds}`
+      );
+    } else {
+      // Add GROUP_IDS line if it doesn't exist
+      updatedContent = envContent + `\nGROUP_IDS=${newGroupIds}\n`;
+    }
+
+    fs.writeFileSync(envPath, updatedContent);
+
+    // Update process.env
+    process.env.GROUP_IDS = newGroupIds;
+
+    return true;
+  } catch (error) {
+    logger.error(`Failed to update .env file: ${(error as Error).message}`);
+    return false;
+  }
+};
 
 // Get all groups with their info
 router.get('/api/groups', async (_req: Request, res: Response) => {
@@ -51,7 +105,7 @@ router.get('/api/groups', async (_req: Request, res: Response) => {
 });
 
 // Add a new group
-router.post('/api/groups', async (req: Request, res: Response) => {
+router.post('/api/groups', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const { groupUrl, groupId: providedGroupId } = req.body;
 
@@ -82,6 +136,14 @@ router.post('/api/groups', async (req: Request, res: Response) => {
       });
     }
 
+    // Validate group ID format
+    if (!isValidGroupId(groupId)) {
+      return res.status(400).json({
+        error: 'Invalid group ID',
+        message: 'Group ID must be alphanumeric (1-100 characters, may include dots, underscores, and hyphens)',
+      });
+    }
+
     // Get current groups from env
     const currentGroups = (process.env.GROUP_IDS || '')
       .split(',')
@@ -99,20 +161,13 @@ router.post('/api/groups', async (req: Request, res: Response) => {
     // Add new group to the list
     const newGroups = [...currentGroups, groupId];
 
-    // Update .env file
-    const envPath = path.resolve(process.cwd(), '.env');
-    let envContent = fs.readFileSync(envPath, 'utf-8');
-
-    // Replace GROUP_IDS line
-    envContent = envContent.replace(
-      /GROUP_IDS=.*/,
-      `GROUP_IDS=${newGroups.join(',')}`
-    );
-
-    fs.writeFileSync(envPath, envContent);
-
-    // Update process.env
-    process.env.GROUP_IDS = newGroups.join(',');
+    // Update .env file with proper error handling
+    if (!updateEnvGroupIds(newGroups)) {
+      return res.status(500).json({
+        error: 'Failed to persist group',
+        message: 'Could not update configuration file. Group added to memory only.',
+      });
+    }
 
     // Create initial entry in database
     await prisma.groupInfo.upsert({
@@ -142,7 +197,7 @@ router.post('/api/groups', async (req: Request, res: Response) => {
 });
 
 // Delete a group
-router.delete('/api/groups/:groupId', async (req: Request, res: Response) => {
+router.delete('/api/groups/:groupId', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const { groupId } = req.params;
 
@@ -163,26 +218,20 @@ router.delete('/api/groups/:groupId', async (req: Request, res: Response) => {
     // Remove group from list
     const newGroups = currentGroups.filter((id) => id !== groupId);
 
-    // Update .env file
-    const envPath = path.resolve(process.cwd(), '.env');
-    let envContent = fs.readFileSync(envPath, 'utf-8');
-
-    // Replace GROUP_IDS line
-    envContent = envContent.replace(
-      /GROUP_IDS=.*/,
-      `GROUP_IDS=${newGroups.join(',')}`
-    );
-
-    fs.writeFileSync(envPath, envContent);
-
-    // Update process.env
-    process.env.GROUP_IDS = newGroups.join(',');
+    // Update .env file with proper error handling
+    if (!updateEnvGroupIds(newGroups)) {
+      return res.status(500).json({
+        error: 'Failed to persist removal',
+        message: 'Could not update configuration file. Group removed from memory only.',
+      });
+    }
 
     // Optionally remove from database cache
     await prisma.groupInfo.delete({
       where: { groupId },
-    }).catch(() => {
-      // Ignore if not in database
+    }).catch((err) => {
+      // Log but don't fail if not in database
+      logger.debug(`Group ${groupId} not found in database cache: ${err.message}`);
     });
 
     await logSystemEvent('scrape', `Removed group: ${groupId}`);
@@ -201,7 +250,7 @@ router.delete('/api/groups/:groupId', async (req: Request, res: Response) => {
 });
 
 // Reset ALL groups cache (force re-detection for all)
-router.post('/api/groups/reset-all', async (_req: Request, res: Response) => {
+router.post('/api/groups/reset-all', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     // Get all groups from env
     const groupIds = (process.env.GROUP_IDS || '')
@@ -246,7 +295,7 @@ router.post('/api/groups/reset-all', async (_req: Request, res: Response) => {
 });
 
 // Reset group cache (force re-detection)
-router.post('/api/groups/:groupId/reset', async (req: Request, res: Response) => {
+router.post('/api/groups/:groupId/reset', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const { groupId } = req.params;
 
@@ -283,7 +332,7 @@ router.post('/api/groups/:groupId/reset', async (req: Request, res: Response) =>
 });
 
 // Update group info (name, etc.)
-router.patch('/api/groups/:groupId', async (req: Request, res: Response) => {
+router.patch('/api/groups/:groupId', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const { groupId } = req.params;
     const { groupName, memberCount } = req.body;

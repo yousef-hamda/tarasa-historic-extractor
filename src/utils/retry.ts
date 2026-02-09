@@ -39,7 +39,9 @@ export const withRetries = async <T>(
       logger.warn(
         `${name}attempt ${attempt}/${attempts} failed: ${lastError.message}. Retrying in ${currentDelay}ms...`
       );
-      await delay(currentDelay);
+      // Add jitter to prevent thundering herd (0.5x to 1.5x multiplier)
+      const jitteredDelay = currentDelay * (0.5 + Math.random());
+      await delay(jitteredDelay);
       currentDelay *= factor;
     }
   }

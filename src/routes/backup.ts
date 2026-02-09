@@ -3,7 +3,7 @@
  * Full backup management endpoints for the admin dashboard
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import {
   createFullBackup,
   createIncrementalBackup,
@@ -19,28 +19,12 @@ import {
   cleanupOldBackups,
 } from '../backup/backupManager';
 import logger from '../utils/logger';
+import { apiKeyAuth } from '../middleware/apiAuth';
 
 const router = Router();
 
-// Middleware for backup routes - require API key
-const backupAuthMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
-  const expectedKey = process.env.API_KEY || process.env.BACKUP_API_KEY;
-
-  // In development, allow access without key
-  if (process.env.NODE_ENV !== 'production' || !expectedKey) {
-    return next();
-  }
-
-  if (apiKey !== expectedKey) {
-    res.status(401).json({ error: 'Unauthorized - Invalid API key' });
-    return;
-  }
-
-  next();
-};
-
-router.use('/api/backup', backupAuthMiddleware);
+// Use centralized auth middleware for all backup routes
+router.use('/api/backup', apiKeyAuth);
 
 /**
  * GET /api/backup/list
@@ -68,6 +52,14 @@ router.get('/api/backup/list', (req: Request, res: Response) => {
  */
 router.get('/api/backup/stats', (req: Request, res: Response) => {
   res.json(getBackupStats());
+});
+
+/**
+ * GET /api/backup/config
+ * Get backup configuration (must be registered before :id to avoid conflict)
+ */
+router.get('/api/backup/config', (req: Request, res: Response) => {
+  res.json(getBackupConfig());
 });
 
 /**
@@ -257,14 +249,6 @@ router.post('/api/backup/cleanup', async (req: Request, res: Response) => {
       details: (error as Error).message,
     });
   }
-});
-
-/**
- * GET /api/backup/config
- * Get backup configuration
- */
-router.get('/api/backup/config', (req: Request, res: Response) => {
-  res.json(getBackupConfig());
 });
 
 /**
