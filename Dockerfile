@@ -16,11 +16,12 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy package files
+# Copy package files and Prisma schema (needed for postinstall)
 COPY package*.json ./
+COPY prisma ./prisma
 COPY ui/dashboard/package*.json ./ui/dashboard/
 
-# Install dependencies
+# Install dependencies (postinstall runs prisma generate)
 RUN npm ci --only=production && npm cache clean --force
 
 # Stage 2: Builder
@@ -35,8 +36,8 @@ COPY --from=deps /app/ui/dashboard/node_modules ./ui/dashboard/node_modules
 # Copy source code
 COPY . .
 
-# Generate Prisma client
-RUN npx prisma generate --schema=src/database/schema.prisma
+# Generate Prisma client (already generated in deps stage, but regenerate to be sure)
+RUN npx prisma generate
 
 # Build TypeScript
 RUN npm run build
@@ -84,7 +85,7 @@ RUN groupadd -r tarasa && useradd -r -g tarasa tarasa
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/src/database/schema.prisma ./src/database/
+COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/ui/dashboard/.next ./ui/dashboard/.next
 COPY --from=builder /app/ui/dashboard/public ./ui/dashboard/public
 COPY --from=builder /app/ui/dashboard/package*.json ./ui/dashboard/
