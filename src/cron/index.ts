@@ -1,6 +1,19 @@
 import logger from '../utils/logger';
 import { initializeSession } from '../session/sessionManager';
 import { logSystemEvent } from '../utils/systemLog';
+import { seedGroupsFromEnv } from '../scraper/groupRegistry';
+
+// Seed groups from GROUP_IDS env var on first boot (no-op if GroupInfo non-empty)
+(async () => {
+  try {
+    const result = await seedGroupsFromEnv();
+    if (result.seeded > 0) {
+      await logSystemEvent('admin', `Seeded ${result.seeded} groups from GROUP_IDS env on first boot`);
+    }
+  } catch (error) {
+    logger.error(`Group seed error: ${(error as Error).message}`);
+  }
+})();
 
 // Initialize session before starting cron jobs
 (async () => {

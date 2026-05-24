@@ -14,15 +14,13 @@ import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { scrapeGroupWithApify, isApifyConfigured, NormalizedPost } from './apifyScraper';
 import { scrapeGroupWithPlaywright } from './playwrightScraper';
+import { getActiveGroupIds } from './groupRegistry';
 
 /**
- * Get group IDs from environment variable
+ * Get group IDs from the GroupInfo registry (DB-backed).
  */
-const getGroupIds = (): string[] => {
-  return (process.env.GROUP_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
+const getGroupIds = async (): Promise<string[]> => {
+  return getActiveGroupIds();
 };
 
 /**
@@ -154,11 +152,11 @@ export const scrapeAndSave = async (
  * This is the main entry point called by the cron job
  */
 export const scrapeAllGroups = async (): Promise<void> => {
-  const groupIds = getGroupIds();
+  const groupIds = await getGroupIds();
 
   if (groupIds.length === 0) {
-    logger.warn('No Facebook group IDs configured. Skipping scrape.');
-    await logSystemEvent('scrape', 'Skipped scrape run because GROUP_IDS is empty');
+    logger.warn('No active groups in GroupInfo. Skipping scrape.');
+    await logSystemEvent('scrape', 'Skipped scrape run: no active groups in GroupInfo');
     return;
   }
 

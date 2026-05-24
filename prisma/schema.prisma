@@ -105,12 +105,14 @@ model GroupInfo {
   lastScraped  DateTime?
   accessMethod AccessMethod @default(none)
   isAccessible Boolean      @default(true)
+  isEnabled    Boolean      @default(true)
   errorMessage String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   @@index([groupType])
   @@index([accessMethod])
+  @@index([isEnabled])
 }
 
 enum MessageStatus {

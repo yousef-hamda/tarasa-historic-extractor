@@ -7,21 +7,18 @@ import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS } from '../config/constants';
 import path from 'path';
 import { withRetries } from '../utils/retry';
+import { getActiveGroupIds } from './groupRegistry';
 
-const getGroupUrls = (): string[] => {
-  const ids = (process.env.GROUP_IDS ?? '')
-    .split(',')
-    .map((id: string) => id.trim())
-    .filter((id: string): id is string => Boolean(id));
-
+const getGroupUrls = async (): Promise<string[]> => {
+  const ids = await getActiveGroupIds();
   return ids.map((id: string) => `https://www.facebook.com/groups/${id}`);
 };
 
 export const scrapeGroups = async (): Promise<void> => {
-  const groups = getGroupUrls();
+  const groups = await getGroupUrls();
   if (!groups.length) {
-    logger.warn('No Facebook group IDs configured. Skipping scrape.');
-    await logSystemEvent('scrape', 'Skipped scrape run because GROUP_IDS is empty');
+    logger.warn('No active groups in GroupInfo. Skipping scrape.');
+    await logSystemEvent('scrape', 'Skipped scrape run: no active groups in GroupInfo');
     return;
   }
 
@@ -184,7 +181,7 @@ export const scrapeGroups = async (): Promise<void> => {
  * Debug function to take a screenshot and get page info
  */
 export const debugScrape = async () => {
-  const groups = getGroupUrls();
+  const groups = await getGroupUrls();
   if (!groups.length) {
     return { error: 'No groups configured' };
   }

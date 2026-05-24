@@ -25,6 +25,7 @@ import {
   markGroupError,
   updateGroupCache,
 } from './groupDetector';
+import { getActiveGroupIds } from './groupRegistry';
 import { AccessMethod } from '@prisma/client';
 
 export interface ScrapeResult {
@@ -39,13 +40,10 @@ export interface ScrapeResult {
 }
 
 /**
- * Get configured group IDs from environment
+ * Get configured group IDs from the GroupInfo registry (DB-backed).
  */
-const getGroupIds = (): string[] => {
-  return (process.env.GROUP_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
+const getGroupIds = async (): Promise<string[]> => {
+  return getActiveGroupIds();
 };
 
 /**
@@ -280,11 +278,11 @@ export const scrapeAllGroupsOrchestrated = async (): Promise<{
   totalPosts: number;
   results: ScrapeResult[];
 }> => {
-  const groupIds = getGroupIds();
+  const groupIds = await getGroupIds();
 
   if (groupIds.length === 0) {
-    logger.warn('[Orchestrator] No groups configured. Set GROUP_IDS env variable.');
-    await logSystemEvent('scrape', 'Skipped scrape: GROUP_IDS is empty');
+    logger.warn('[Orchestrator] No groups configured. Add groups via the dashboard or seed GROUP_IDS env.');
+    await logSystemEvent('scrape', 'Skipped scrape: no active groups in GroupInfo');
     return {
       totalGroups: 0,
       successfulGroups: 0,
@@ -376,7 +374,7 @@ export const getScrapingStatus = async (): Promise<{
   apifyConfigured: boolean;
   mbasicAvailable: boolean;
 }> => {
-  const groupIds = getGroupIds();
+  const groupIds = await getGroupIds();
 
   // Batch fetch all group info from cache - DO NOT call detectGroupType()
   // detectGroupType() triggers isSessionValid() and other operations for EACH group

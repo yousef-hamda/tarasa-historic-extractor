@@ -5,8 +5,6 @@ import logger from '../utils/logger';
 import { apiKeyAuth } from '../middleware/apiAuth';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { safeErrorMessage } from '../middleware/errorHandler';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const router = Router();
 
@@ -19,79 +17,26 @@ const isValidGroupId = (groupId: string): boolean => {
   return /^[a-zA-Z0-9._-]{1,100}$/.test(groupId);
 };
 
-/**
- * Safely update the GROUP_IDS in .env file with proper error handling
- * Returns true if successful, false otherwise
- */
-const updateEnvGroupIds = (newGroups: string[]): boolean => {
-  const envPath = path.resolve(process.cwd(), '.env');
-
-  try {
-    // Check if .env file exists
-    if (!fs.existsSync(envPath)) {
-      logger.error('Cannot update GROUP_IDS: .env file not found');
-      return false;
-    }
-
-    const envContent = fs.readFileSync(envPath, 'utf-8');
-    const newGroupIds = newGroups.join(',');
-
-    // Check if GROUP_IDS line exists
-    let updatedContent: string;
-    if (/GROUP_IDS=/.test(envContent)) {
-      // Replace existing GROUP_IDS line (escape special regex chars in group IDs)
-      updatedContent = envContent.replace(
-        /GROUP_IDS=.*/,
-        `GROUP_IDS=${newGroupIds}`
-      );
-    } else {
-      // Add GROUP_IDS line if it doesn't exist
-      updatedContent = envContent + `\nGROUP_IDS=${newGroupIds}\n`;
-    }
-
-    fs.writeFileSync(envPath, updatedContent);
-
-    // Update process.env
-    process.env.GROUP_IDS = newGroupIds;
-
-    return true;
-  } catch (error) {
-    logger.error(`Failed to update .env file: ${(error as Error).message}`);
-    return false;
-  }
-};
-
 // Get all groups with their info
 router.get('/api/groups', async (_req: Request, res: Response) => {
   try {
-    // Get groups from env
-    const groupIds = (process.env.GROUP_IDS || '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
-
-    // Get cached info from database
+    // Read the active group list from the DB (isEnabled=true), with full info
     const groupInfos = await prisma.groupInfo.findMany({
-      where: { groupId: { in: groupIds } },
+      where: { isEnabled: true },
+      orderBy: { groupId: 'asc' },
     });
 
-    const groupInfoMap = new Map(groupInfos.map((g: typeof groupInfos[0]) => [g.groupId, g]));
-
-    // Combine env groups with database info
-    const groups = groupIds.map((groupId) => {
-      const info = groupInfoMap.get(groupId);
-      return {
-        groupId,
-        groupName: info?.groupName || null,
-        groupType: info?.groupType || 'unknown',
-        accessMethod: info?.accessMethod || 'none',
-        isAccessible: info?.isAccessible ?? true,
-        memberCount: info?.memberCount || null,
-        lastScraped: info?.lastScraped || null,
-        lastChecked: info?.lastChecked || null,
-        errorMessage: info?.errorMessage || null,
-      };
-    });
+    const groups = groupInfos.map((info: typeof groupInfos[0]) => ({
+      groupId: info.groupId,
+      groupName: info.groupName || null,
+      groupType: info.groupType || 'unknown',
+      accessMethod: info.accessMethod || 'none',
+      isAccessible: info.isAccessible ?? true,
+      memberCount: info.memberCount || null,
+      lastScraped: info.lastScraped || null,
+      lastChecked: info.lastChecked || null,
+      errorMessage: info.errorMessage || null,
+    }));
 
     res.json({
       groups,
@@ -144,50 +89,38 @@ router.post('/api/groups', apiKeyAuth, triggerRateLimiter, async (req: Request, 
       });
     }
 
-    // Get current groups from env
-    const currentGroups = (process.env.GROUP_IDS || '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    // Check if group already exists and is active
+    const existing = await prisma.groupInfo.findUnique({ where: { groupId } });
 
-    // Check if group already exists
-    if (currentGroups.includes(groupId)) {
+    if (existing && existing.isEnabled) {
       return res.status(400).json({
         error: 'Group already exists',
         message: `Group ${groupId} is already in the list`,
       });
     }
 
-    // Add new group to the list
-    const newGroups = [...currentGroups, groupId];
-
-    // Update .env file with proper error handling
-    if (!updateEnvGroupIds(newGroups)) {
-      return res.status(500).json({
-        error: 'Failed to persist group',
-        message: 'Could not update configuration file. Group added to memory only.',
-      });
-    }
-
-    // Create initial entry in database
+    // Upsert: re-enable a previously-disabled group, or create fresh
     await prisma.groupInfo.upsert({
       where: { groupId },
-      update: { lastChecked: new Date() },
+      update: { isEnabled: true, lastChecked: new Date() },
       create: {
         groupId,
+        isEnabled: true,
         groupType: 'unknown',
         accessMethod: 'none',
         isAccessible: true,
       },
     });
 
-    await logSystemEvent('scrape', `Added new group: ${groupId}`);
+    const totalGroups = await prisma.groupInfo.count({ where: { isEnabled: true } });
+
+    await logSystemEvent('scrape', `Added group: ${groupId}`);
 
     res.json({
       success: true,
       message: `Group ${groupId} added successfully`,
       groupId,
-      totalGroups: newGroups.length,
+      totalGroups,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -196,51 +129,35 @@ router.post('/api/groups', apiKeyAuth, triggerRateLimiter, async (req: Request, 
   }
 });
 
-// Delete a group
+// Soft-disable a group (preserves history, can be re-added later)
 router.delete('/api/groups/:groupId', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const { groupId } = req.params;
 
-    // Get current groups from env
-    const currentGroups = (process.env.GROUP_IDS || '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    const existing = await prisma.groupInfo.findUnique({ where: { groupId } });
 
-    // Check if group exists
-    if (!currentGroups.includes(groupId)) {
+    if (!existing || !existing.isEnabled) {
       return res.status(404).json({
         error: 'Group not found',
-        message: `Group ${groupId} is not in the list`,
+        message: `Group ${groupId} is not in the active list`,
       });
     }
 
-    // Remove group from list
-    const newGroups = currentGroups.filter((id) => id !== groupId);
-
-    // Update .env file with proper error handling
-    if (!updateEnvGroupIds(newGroups)) {
-      return res.status(500).json({
-        error: 'Failed to persist removal',
-        message: 'Could not update configuration file. Group removed from memory only.',
-      });
-    }
-
-    // Optionally remove from database cache
-    await prisma.groupInfo.delete({
+    // Soft-disable: keep the row and its cached metadata, just flip isEnabled
+    await prisma.groupInfo.update({
       where: { groupId },
-    }).catch((err: any) => {
-      // Log but don't fail if not in database
-      logger.debug(`Group ${groupId} not found in database cache: ${err.message}`);
+      data: { isEnabled: false },
     });
 
-    await logSystemEvent('scrape', `Removed group: ${groupId}`);
+    const totalGroups = await prisma.groupInfo.count({ where: { isEnabled: true } });
+
+    await logSystemEvent('scrape', `Disabled group: ${groupId}`);
 
     res.json({
       success: true,
-      message: `Group ${groupId} removed successfully`,
+      message: `Group ${groupId} disabled successfully`,
       groupId,
-      totalGroups: newGroups.length,
+      totalGroups,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -252,13 +169,13 @@ router.delete('/api/groups/:groupId', apiKeyAuth, triggerRateLimiter, async (req
 // Reset ALL groups cache (force re-detection for all)
 router.post('/api/groups/reset-all', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
-    // Get all groups from env
-    const groupIds = (process.env.GROUP_IDS || '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    // Reset all active groups to trigger fresh detection
+    const activeGroups = await prisma.groupInfo.findMany({
+      where: { isEnabled: true },
+      select: { groupId: true },
+    });
+    const groupIds = activeGroups.map((g: { groupId: string }) => g.groupId);
 
-    // Reset all group info to trigger fresh detection
     let resetCount = 0;
     for (const groupId of groupIds) {
       await prisma.groupInfo.upsert({

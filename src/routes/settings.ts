@@ -4,6 +4,7 @@ import * as path from 'path';
 import { URLS } from '../config/constants';
 import { apiKeyAuth } from '../middleware/apiAuth';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
+import { getActiveGroupIds } from '../scraper/groupRegistry';
 
 const router = Router();
 
@@ -31,15 +32,9 @@ const setMessagingEnabled = (enabled: boolean): void => {
 // Export for use in messenger
 export { getMessagingEnabled };
 
-const getGroups = (): string[] =>
-  (process.env.GROUP_IDS || '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter((id): id is string => Boolean(id));
-
-router.get('/api/settings', (_req: Request, res: Response) => {
+router.get('/api/settings', async (_req: Request, res: Response) => {
   try {
-    const groups = getGroups();
+    const groups = await getActiveGroupIds();
     const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
     const baseTarasaUrl = process.env.BASE_TARASA_URL || URLS.DEFAULT_TARASA;
     const emailConfigured = Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);

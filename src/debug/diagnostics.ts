@@ -10,6 +10,7 @@ import logger from '../utils/logger';
 import { isSessionValid, getSessionStatus } from '../session/sessionManager';
 import { apifyCircuitBreaker, openaiCircuitBreaker } from '../utils/circuitBreaker';
 import { browserPool } from '../utils/browserPool';
+import { getActiveGroupIds } from '../scraper/groupRegistry';
 import OpenAI from 'openai';
 
 export type DiagnosticStatus = 'pending' | 'running' | 'passed' | 'failed' | 'fixed' | 'skipped';
@@ -407,7 +408,7 @@ const testEnvVars = async (result: DiagnosticResult, onProgress: ProgressCallbac
 
   const startTime = Date.now();
   const required = ['DATABASE_URL', 'OPENAI_API_KEY'];
-  const optional = ['APIFY_TOKEN', 'GROUP_IDS'];
+  const optional = ['APIFY_TOKEN'];
   const missing: string[] = [];
   const present: string[] = [];
 
@@ -493,14 +494,11 @@ const testGroupConfig = async (result: DiagnosticResult, onProgress: ProgressCal
 
   const startTime = Date.now();
   try {
-    const groupIds = (process.env.GROUP_IDS || '')
-      .split(',')
-      .map(id => id.trim())
-      .filter(Boolean);
+    const groupIds = await getActiveGroupIds();
 
     if (groupIds.length === 0) {
       test.status = 'failed';
-      test.message = 'No groups configured in GROUP_IDS';
+      test.message = 'No active groups configured (GroupInfo is empty)';
     } else {
       // Check how many have been scraped
       const groupInfos = await prisma.groupInfo.findMany({
