@@ -1,44 +1,63 @@
-import React from 'react';
-import type { GetServerSideProps } from 'next';
+import React, { useEffect, useState } from 'react';
+import { apiFetch } from '../utils/api';
 
-interface SettingsPageProps {
+type SettingsPayload = {
   groups: string[];
-  messageLimit: string;
-}
+  messageLimit: number;
+  baseTarasaUrl: string;
+  emailConfigured: boolean;
+};
 
-const SettingsPage: React.FC<SettingsPageProps> = ({ groups, messageLimit }) => {
+const defaultSettings: SettingsPayload = {
+  groups: [],
+  messageLimit: 20,
+  baseTarasaUrl: 'https://tarasa.com/add-story',
+  emailConfigured: false,
+};
+
+const SettingsPage: React.FC = () => {
+  const [settings, setSettings] = useState<SettingsPayload>(defaultSettings);
+
+  useEffect(() => {
+    apiFetch('/api/settings')
+      .then((res) => res.json())
+      .then((payload: SettingsPayload) => setSettings(payload))
+      .catch((error) => console.error('Failed to load settings', error));
+  }, []);
 
   return (
     <div className="p-8 space-y-4">
       <h1 className="text-2xl font-bold">Settings</h1>
-      <section className="bg-white shadow rounded p-4">
+      <section className="bg-white shadow rounded p-4 space-y-2">
         <h2 className="text-lg font-semibold">Facebook Groups</h2>
-        <ul className="list-disc list-inside">
-          {groups.map((group) => (
-            <li key={group}>{group}</li>
-          ))}
-        </ul>
+        {settings.groups.length ? (
+          <ul className="list-disc list-inside space-y-1">
+            {settings.groups.map((group) => (
+              <li key={group}>{group}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-500">No groups configured.</p>
+        )}
       </section>
-      <section className="bg-white shadow rounded p-4">
+      <section className="bg-white shadow rounded p-4 space-y-1">
         <h2 className="text-lg font-semibold">Message Limits</h2>
-        <p>Max per day: {messageLimit}</p>
+        <p>Max messages per day: {settings.messageLimit}</p>
+      </section>
+      <section className="bg-white shadow rounded p-4 space-y-1">
+        <h2 className="text-lg font-semibold">Tarasa Submission Link</h2>
+        <p className="break-all">{settings.baseTarasaUrl}</p>
+      </section>
+      <section className="bg-white shadow rounded p-4 space-y-1">
+        <h2 className="text-lg font-semibold">Email Alerts</h2>
+        <p className="text-sm text-gray-700">
+          {settings.emailConfigured
+            ? 'Email alerts are configured for login challenges.'
+            : 'Email alerts are not configured.'}
+        </p>
       </section>
     </div>
   );
-};
-
-export const getServerSideProps: GetServerSideProps<SettingsPageProps> = async () => {
-  const groups = (process.env.GROUP_IDS || '')
-    .split(',')
-    .map((group) => group.trim())
-    .filter(Boolean);
-
-  return {
-    props: {
-      groups,
-      messageLimit: process.env.MAX_MESSAGES_PER_DAY || '20',
-    },
-  };
 };
 
 export default SettingsPage;
