@@ -8,6 +8,8 @@ build
 .next
 *.log
 src/config/cookies.json
+src/config/cookies.json.backup
+debug-output/
 
 # Browser profile data (created by Facebook login)
 browser-data/
