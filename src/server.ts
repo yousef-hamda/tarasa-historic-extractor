@@ -1,8 +1,10 @@
 process.stderr.write('[BOOT] server.ts top of file\n');
 import 'dotenv/config';
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
+import next from 'next';
 import { validateEnv } from './config/env';
 process.stderr.write('[BOOT] env validator imported\n');
 import postsRouter from './routes/posts';
@@ -112,25 +114,49 @@ app.use(abTestingRouter);
 // Public Submit Landing Page API (no auth required)
 app.use(submitRouter);
 
-// Error handler (must be last)
-app.use(errorHandler);
-
 const port = process.env.PORT || 4000;
-process.stderr.write(`[BOOT] about to listen on port=${port}\n`);
 
-// Use httpServer instead of app.listen for WebSocket support
-httpServer.listen(Number(port), '0.0.0.0', () => {
-  logger.info(`API listening on port ${port}`);
-  process.stderr.write(`[BOOT] httpServer.listen callback fired — bound to 0.0.0.0:${port}\n`);
-  logger.info(`Debug WebSocket available at ws://localhost:${port}/debug/ws`);
-  logger.info(`Debug Dashboard API at http://localhost:${port}/api/debug/overview`);
-  logger.info(`Backup API at http://localhost:${port}/api/backup/list`);
+// Prepare Next.js for the dashboard, then mount catch-all + error handler + listen.
+// Async IIFE so prepare() is awaited before binding the port.
+(async () => {
+  process.stderr.write('[BOOT] Next.js preparing\n');
+  const dashboardDir = path.resolve(__dirname, '../ui/dashboard');
+  const nextApp = next({ dev: false, dir: dashboardDir });
 
-  // Reset circuit breakers on startup - clears any stale OPEN states
-  resetAllCircuitBreakers();
-  const cbStatus = getCircuitBreakerStatus();
-  logger.info(`Circuit breakers reset: Apify=${cbStatus.apify.state}, OpenAI=${cbStatus.openai.state}`);
-});
+  try {
+    await nextApp.prepare();
+    process.stderr.write('[BOOT] Next.js ready\n');
+  } catch (err) {
+    const e = err as Error;
+    process.stderr.write(`[BOOT] Next.js prepare FAILED: ${e.message}\n${e.stack}\n`);
+    // Continue without dashboard — API still works
+  }
+
+  const nextHandler = nextApp.getRequestHandler();
+
+  // Catch-all: anything not handled by /api/* routers above is delegated to Next.
+  // MUST be registered AFTER all API routers and BEFORE the error handler.
+  app.all('*', (req, res) => nextHandler(req, res));
+
+  // Error handler (must be last)
+  app.use(errorHandler);
+
+  process.stderr.write(`[BOOT] about to listen on port=${port}\n`);
+
+  // Use httpServer instead of app.listen for WebSocket support
+  httpServer.listen(Number(port), '0.0.0.0', () => {
+    logger.info(`API listening on port ${port}`);
+    process.stderr.write(`[BOOT] httpServer.listen callback fired — bound to 0.0.0.0:${port}\n`);
+    logger.info(`Debug WebSocket available at ws://localhost:${port}/debug/ws`);
+    logger.info(`Debug Dashboard API at http://localhost:${port}/api/debug/overview`);
+    logger.info(`Backup API at http://localhost:${port}/api/backup/list`);
+
+    // Reset circuit breakers on startup - clears any stale OPEN states
+    resetAllCircuitBreakers();
+    const cbStatus = getCircuitBreakerStatus();
+    logger.info(`Circuit breakers reset: Apify=${cbStatus.apify.state}, OpenAI=${cbStatus.openai.state}`);
+  });
+})();
 
 httpServer.on('error', (err) => {
   process.stderr.write(`[BOOT] httpServer error: ${err.message}\n${(err as Error).stack}\n`);
