@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { apiFetch } from '../utils/api';
+import { apiFetch, getApiKey, setApiKey as persistApiKey, clearApiKey } from '../utils/api';
 import {
   Cog6ToothIcon,
   UserGroupIcon,
@@ -16,6 +16,8 @@ import {
   UserCircleIcon,
   ShieldCheckIcon,
   TrashIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 
 interface Settings {
@@ -49,8 +51,34 @@ const SettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<{ kind: 'saved' | 'cleared' } | null>(null);
   const [triggering, setTriggering] = useState<TriggerType | null>(null);
   const [triggerResult, setTriggerResult] = useState<{ type: TriggerType; success: boolean; message: string } | null>(null);
+
+  // Hydrate the input from localStorage on mount so users see what's already saved.
+  useEffect(() => {
+    const existing = getApiKey();
+    if (existing) setApiKey(existing);
+  }, []);
+
+  // Auto-clear the API-key save status banner after 3 s.
+  useEffect(() => {
+    if (!apiKeyStatus) return;
+    const id = setTimeout(() => setApiKeyStatus(null), 3000);
+    return () => clearTimeout(id);
+  }, [apiKeyStatus]);
+
+  const handleSaveApiKey = () => {
+    persistApiKey(apiKey);
+    setApiKeyStatus({ kind: 'saved' });
+  };
+
+  const handleClearApiKey = () => {
+    clearApiKey();
+    setApiKey('');
+    setApiKeyStatus({ kind: 'cleared' });
+  };
 
   // Session state
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null);
@@ -482,13 +510,74 @@ const SettingsPage: React.FC = () => {
           <div className="relative">
             <KeyIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
-              type="password"
+              type={showApiKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter your API key"
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm"
+              className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm"
+              autoComplete="off"
+              spellCheck={false}
             />
+            <button
+              type="button"
+              onClick={() => setShowApiKey((v) => !v)}
+              aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+            >
+              {showApiKey ? (
+                <EyeSlashIcon className="w-4 h-4" />
+              ) : (
+                <EyeIcon className="w-4 h-4" />
+              )}
+            </button>
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Authenticates your dashboard with the backend. Stored locally in your
+            browser only — never sent anywhere except this app&apos;s API.
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSaveApiKey}
+              disabled={!apiKey.trim()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircleIcon className="w-4 h-4" />
+              Save API Key
+            </button>
+            <button
+              type="button"
+              onClick={handleClearApiKey}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              <TrashIcon className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+
+          {apiKeyStatus && (
+            <div
+              className={`mt-3 flex items-center gap-2 p-3 rounded-lg ${
+                apiKeyStatus.kind === 'saved' ? 'bg-emerald-50' : 'bg-slate-50'
+              }`}
+            >
+              <CheckCircleIcon
+                className={`w-5 h-5 ${
+                  apiKeyStatus.kind === 'saved' ? 'text-emerald-500' : 'text-slate-500'
+                }`}
+              />
+              <span
+                className={`text-sm ${
+                  apiKeyStatus.kind === 'saved' ? 'text-emerald-700' : 'text-slate-700'
+                }`}
+              >
+                {apiKeyStatus.kind === 'saved'
+                  ? 'API Key saved — all dashboard actions now active.'
+                  : 'API Key cleared from this browser.'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Result Message */}

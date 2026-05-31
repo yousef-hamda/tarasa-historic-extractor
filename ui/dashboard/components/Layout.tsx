@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { apiFetch } from '../utils/api';
+import { apiFetch, hasApiKey, API_KEY_CHANGED_EVENT } from '../utils/api';
 import { useLanguage } from '../contexts/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import {
@@ -18,6 +18,7 @@ import {
   XMarkIcon,
   SparklesIcon,
   MagnifyingGlassIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 
 interface HealthStatus {
@@ -43,6 +44,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t, direction } = useLanguage();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [apiKeyPresent, setApiKeyPresent] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -61,6 +63,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const interval = setInterval(fetchHealth, 30000);
     return () => clearInterval(interval);
   }, [fetchHealth]);
+
+  // API-key presence tracking. Updates immediately when set/cleared from
+  // Settings (custom event), and across tabs via the native storage event.
+  useEffect(() => {
+    const sync = () => setApiKeyPresent(hasApiKey());
+    sync();
+    window.addEventListener(API_KEY_CHANGED_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(API_KEY_CHANGED_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
 
   const getStatusConfig = () => {
     if (!health) return { color: 'bg-slate-400', text: t('common.loading') };
@@ -121,6 +136,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <div className="flex items-center gap-3">
               {/* Language Switcher */}
               <LanguageSwitcher compact />
+
+              {/* API Key Status */}
+              <Link
+                href="/settings"
+                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                  apiKeyPresent
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                }`}
+                title={
+                  apiKeyPresent
+                    ? 'API key configured on this device'
+                    : 'No API key set — click to configure'
+                }
+              >
+                <KeyIcon className="w-3.5 h-3.5" />
+                {apiKeyPresent ? 'Connected' : 'API Key needed'}
+              </Link>
 
               {/* System Status */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">

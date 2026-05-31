@@ -4,6 +4,7 @@ const DEFAULT_TIMEOUT = 30000; // 30 seconds
 
 // API key storage - read from environment or localStorage
 const API_KEY_STORAGE_KEY = 'tarasa_api_key';
+export const API_KEY_CHANGED_EVENT = 'tarasa-api-key-changed';
 
 export const getApiKey = (): string => {
   // Server-side: use env variable
@@ -14,10 +15,28 @@ export const getApiKey = (): string => {
   return localStorage.getItem(API_KEY_STORAGE_KEY) || process.env.NEXT_PUBLIC_API_KEY || '';
 };
 
+export const hasApiKey = (): boolean => {
+  if (typeof window === 'undefined') return Boolean(process.env.NEXT_PUBLIC_API_KEY);
+  return Boolean(localStorage.getItem(API_KEY_STORAGE_KEY) || process.env.NEXT_PUBLIC_API_KEY);
+};
+
 export const setApiKey = (key: string): void => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+  if (typeof window === 'undefined') return;
+  const trimmed = key.trim();
+  if (trimmed) {
+    localStorage.setItem(API_KEY_STORAGE_KEY, trimmed);
+  } else {
+    localStorage.removeItem(API_KEY_STORAGE_KEY);
   }
+  // Fires within the same tab so listeners (e.g. navbar status pill) can update
+  // immediately. localStorage `storage` events only fire in OTHER tabs.
+  window.dispatchEvent(new Event(API_KEY_CHANGED_EVENT));
+};
+
+export const clearApiKey = (): void => {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(API_KEY_STORAGE_KEY);
+  window.dispatchEvent(new Event(API_KEY_CHANGED_EVENT));
 };
 
 export class ApiError extends Error {
