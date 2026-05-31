@@ -1,8 +1,10 @@
+process.stderr.write('[BOOT] server.ts top of file\n');
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { validateEnv } from './config/env';
+process.stderr.write('[BOOT] env validator imported\n');
 import postsRouter from './routes/posts';
 import logsRouter from './routes/logs';
 import messagesRouter from './routes/messages';
@@ -18,7 +20,9 @@ import searchRouter from './routes/search';
 import promptsRouter from './routes/prompts';
 import abTestingRouter from './routes/abTesting';
 import logger from './utils/logger';
+process.stderr.write('[BOOT] route + logger imports complete\n');
 import './cron';
+process.stderr.write('[BOOT] ./cron imported (cron jobs scheduled, IIFEs kicked off)\n');
 import { errorHandler } from './middleware/errorHandler';
 // apiRateLimiter removed - advancedRateLimiter from security.ts handles all global rate limiting
 import { disconnectDatabase } from './database/prisma';
@@ -40,27 +44,33 @@ import {
 
 // Circuit breaker reset on startup
 import { resetAllCircuitBreakers, getCircuitBreakerStatus } from './utils/circuitBreaker';
+process.stderr.write('[BOOT] all imports complete, about to call validateEnv()\n');
 
 // Validate environment variables before starting
 validateEnv();
+process.stderr.write('[BOOT] validateEnv passed\n');
 
 // Initialize Sentry for error tracking (before anything else)
 initSentry();
+process.stderr.write('[BOOT] initSentry returned\n');
 if (isSentryEnabled()) {
   logger.info('Sentry error tracking initialized');
 }
 
 // Setup global error handlers for debug system
 setupGlobalErrorHandlers();
+process.stderr.write('[BOOT] global error handlers installed\n');
 
 const app = express();
 
 // Create HTTP server for WebSocket support
 const httpServer = createServer(app);
+process.stderr.write('[BOOT] express + http server created\n');
 
 // Initialize WebSocket server for real-time debug monitoring
 const wss = initializeWebSocket(httpServer);
 logger.info('Debug WebSocket server initialized');
+process.stderr.write('[BOOT] WebSocket server initialized\n');
 
 // Security headers (Helmet.js) - must be first
 app.use(securityHeaders);
@@ -106,10 +116,12 @@ app.use(submitRouter);
 app.use(errorHandler);
 
 const port = process.env.PORT || 4000;
+process.stderr.write(`[BOOT] about to listen on port=${port}\n`);
 
 // Use httpServer instead of app.listen for WebSocket support
-httpServer.listen(port, () => {
+httpServer.listen(Number(port), '0.0.0.0', () => {
   logger.info(`API listening on port ${port}`);
+  process.stderr.write(`[BOOT] httpServer.listen callback fired — bound to 0.0.0.0:${port}\n`);
   logger.info(`Debug WebSocket available at ws://localhost:${port}/debug/ws`);
   logger.info(`Debug Dashboard API at http://localhost:${port}/api/debug/overview`);
   logger.info(`Backup API at http://localhost:${port}/api/backup/list`);
@@ -118,6 +130,10 @@ httpServer.listen(port, () => {
   resetAllCircuitBreakers();
   const cbStatus = getCircuitBreakerStatus();
   logger.info(`Circuit breakers reset: Apify=${cbStatus.apify.state}, OpenAI=${cbStatus.openai.state}`);
+});
+
+httpServer.on('error', (err) => {
+  process.stderr.write(`[BOOT] httpServer error: ${err.message}\n${(err as Error).stack}\n`);
 });
 
 // Graceful shutdown handling
