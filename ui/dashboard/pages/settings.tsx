@@ -85,6 +85,8 @@ const SettingsPage: React.FC = () => {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [renewingSession, setRenewingSession] = useState(false);
   const [sessionRenewResult, setSessionRenewResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [cookieJson, setCookieJson] = useState('');
 
   // Reset data state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -126,30 +128,55 @@ const SettingsPage: React.FC = () => {
     fetchSessionStatus();
   }, [fetchSessionStatus]);
 
-  const handleRenewSession = async () => {
+  const handleUploadCookies = async () => {
     if (renewingSession) return;
+    const trimmed = cookieJson.trim();
+    if (!trimmed) {
+      setSessionRenewResult({ success: false, message: 'Paste your cookies JSON before saving.' });
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      setSessionRenewResult({
+        success: false,
+        message: 'Could not parse JSON. Make sure you copied the full export from Cookie-Editor.',
+      });
+      return;
+    }
 
     setRenewingSession(true);
     setSessionRenewResult(null);
 
     try {
-      const res = await apiFetch('/api/session/renew', { method: 'POST' });
+      // skipAuth: this endpoint is public; never block on a missing API key
+      const res = await apiFetch('/api/session/upload-cookies', {
+        method: 'POST',
+        body: JSON.stringify(Array.isArray(parsed) ? { cookies: parsed } : parsed),
+        skipAuth: true,
+      });
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setSessionRenewResult({ success: true, message: data.message });
-        // Refresh session status
+        setSessionRenewResult({
+          success: true,
+          message: `Session renewed — ${data.cookieCount} cookies saved for user ${data.userId}.`,
+        });
+        setCookieJson('');
+        setShowCookieModal(false);
         await fetchSessionStatus();
       } else {
         setSessionRenewResult({
           success: false,
-          message: data.hint || data.message || 'Session renewal failed',
+          message: data.message || data.error || 'Failed to save cookies',
         });
       }
     } catch (err) {
       setSessionRenewResult({
         success: false,
-        message: err instanceof Error ? err.message : 'Failed to renew session',
+        message: err instanceof Error ? err.message : 'Failed to save cookies',
       });
     } finally {
       setRenewingSession(false);
@@ -466,7 +493,10 @@ const SettingsPage: React.FC = () => {
         {/* Renew Button */}
         <div className="flex items-center gap-4">
           <button
-            onClick={handleRenewSession}
+            onClick={() => {
+              setSessionRenewResult(null);
+              setShowCookieModal(true);
+            }}
             disabled={renewingSession}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
               renewingSession
@@ -474,23 +504,25 @@ const SettingsPage: React.FC = () => {
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {renewingSession ? (
-              <>
-                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                Renewing Session...
-              </>
-            ) : (
-              <>
-                <ArrowPathIcon className="w-4 h-4" />
-                Renew Session
-              </>
-            )}
+            <ArrowPathIcon className="w-4 h-4" />
+            Renew Session
           </button>
           <p className="text-xs text-slate-400">
-            Opens a browser to verify and refresh your Facebook login
+            Upload fresh Facebook cookies from your browser
           </p>
         </div>
       </div>
+
+      {/* Cookie Upload Modal */}
+      {showCookieModal && (
+        <CookieUploadModal
+          cookieJson={cookieJson}
+          setCookieJson={setCookieJson}
+          onSave={handleUploadCookies}
+          onClose={() => setShowCookieModal(false)}
+          saving={renewingSession}
+        />
+      )}
 
       {/* Manual Triggers Section */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
@@ -758,4 +790,175 @@ export default SettingsPage;
 
 export const getServerSideProps = async () => {
   return { props: {} };
+};
+
+// ============================================================================
+// CookieUploadModal — clean, self-contained, lives at the bottom of the file
+// so it can share the strict tsconfig settings of the page.
+// ============================================================================
+
+interface CookieUploadModalProps {
+  cookieJson: string;
+  setCookieJson: (v: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+  saving: boolean;
+}
+
+const CookieUploadModal: React.FC<CookieUploadModalProps> = ({
+  cookieJson,
+  setCookieJson,
+  onSave,
+  onClose,
+  saving,
+}) => {
+  // Live preview: do we appear to have c_user and xs?
+  const preview = React.useMemo(() => {
+    const trimmed = cookieJson.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.cookies) ? parsed.cookies : null;
+      if (!arr) return { ok: false, msg: 'JSON parsed, but no cookies array detected.' };
+      const fb = arr.filter((c: { domain?: string }) => typeof c?.domain === 'string' && c.domain.includes('facebook.com'));
+      const hasCUser = fb.some((c: { name?: string }) => c?.name === 'c_user');
+      const hasXs = fb.some((c: { name?: string }) => c?.name === 'xs');
+      if (hasCUser && hasXs) {
+        return { ok: true, msg: `Detected c_user + xs (${fb.length} facebook.com cookies in total).` };
+      }
+      const missing = [!hasCUser && 'c_user', !hasXs && 'xs'].filter(Boolean).join(' and ');
+      return { ok: false, msg: `Missing ${missing}. Make sure you're logged into Facebook before exporting.` };
+    } catch {
+      return { ok: false, msg: 'Not valid JSON yet — paste the full Cookie-Editor export.' };
+    }
+  }, [cookieJson]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-slate-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">Renew Facebook Session</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Upload fresh cookies from your browser. Takes ~30 seconds.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="text-slate-400 hover:text-slate-600 p-1"
+            >
+              <XCircleIcon className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Instructions */}
+          <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
+            <p className="text-sm font-medium text-slate-700 mb-3">How to get your cookies:</p>
+            <ol className="text-sm text-slate-600 space-y-2 list-decimal list-inside">
+              <li>
+                Install{' '}
+                <a
+                  href="https://cookie-editor.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  Cookie-Editor
+                </a>{' '}
+                (free, works in Chrome/Firefox/Safari/Edge). One-time, ~20 sec.
+              </li>
+              <li>
+                Open{' '}
+                <a
+                  href="https://www.facebook.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  facebook.com
+                </a>{' '}
+                in a new tab and make sure you&apos;re logged in.
+              </li>
+              <li>
+                Click the Cookie-Editor icon in your toolbar → click <b>Export</b> → choose{' '}
+                <b>Export as JSON</b>. It auto-copies to your clipboard.
+              </li>
+              <li>Come back here and paste in the box below, then Save.</li>
+            </ol>
+          </div>
+
+          {/* Textarea */}
+          <div>
+            <label className="text-sm font-medium text-slate-700 block mb-2">
+              Cookies JSON
+            </label>
+            <textarea
+              value={cookieJson}
+              onChange={(e) => setCookieJson(e.target.value)}
+              placeholder='[ { "name": "c_user", "value": "...", "domain": ".facebook.com", ... }, ... ]'
+              spellCheck={false}
+              className="w-full h-40 p-3 border border-slate-200 rounded-lg text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {preview && (
+              <div
+                className={`mt-2 flex items-start gap-2 p-2 rounded-md text-xs ${
+                  preview.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                }`}
+              >
+                {preview.ok ? (
+                  <CheckCircleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                )}
+                <span>{preview.msg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Privacy note */}
+          <p className="text-xs text-slate-500">
+            Cookies are sent only to this app&apos;s API and stored on the server to keep the
+            scraper logged in. They are never shared elsewhere.
+          </p>
+        </div>
+
+        <div className="p-6 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || !preview?.ok}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <CheckCircleIcon className="w-4 h-4" />
+                Save Cookies
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
