@@ -86,6 +86,7 @@ const SettingsPage: React.FC = () => {
   const [renewingSession, setRenewingSession] = useState(false);
   const [sessionRenewResult, setSessionRenewResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showCookieModal, setShowCookieModal] = useState(false);
+  const [showCookieFallback, setShowCookieFallback] = useState(false);
   const [cookieJson, setCookieJson] = useState('');
 
   // Reset data state
@@ -127,6 +128,47 @@ const SettingsPage: React.FC = () => {
     loadSettings();
     fetchSessionStatus();
   }, [fetchSessionStatus]);
+
+  // Primary one-click flow: server attempts headless login with stored FB credentials.
+  const handleAutoRenew = async () => {
+    if (renewingSession) return;
+    setRenewingSession(true);
+    setSessionRenewResult(null);
+    setShowCookieFallback(false);
+
+    try {
+      const res = await apiFetch('/api/session/renew', {
+        method: 'POST',
+        skipAuth: true,
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setSessionRenewResult({
+          success: true,
+          message: data.message || 'Session renewed.',
+        });
+        await fetchSessionStatus();
+      } else {
+        // Auto-login was blocked (captcha / 2FA / FB rejected). Offer the fallback.
+        setSessionRenewResult({
+          success: false,
+          message: data.hint || data.message || 'Session renewal failed.',
+        });
+        if (data.requiresManualUpload || data.canRetry === false) {
+          setShowCookieFallback(true);
+        }
+      }
+    } catch (err) {
+      setSessionRenewResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Network error during renewal.',
+      });
+      setShowCookieFallback(true);
+    } finally {
+      setRenewingSession(false);
+    }
+  };
 
   const handleUploadCookies = async () => {
     if (renewingSession) return;
@@ -491,12 +533,9 @@ const SettingsPage: React.FC = () => {
         )}
 
         {/* Renew Button */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <button
-            onClick={() => {
-              setSessionRenewResult(null);
-              setShowCookieModal(true);
-            }}
+            onClick={handleAutoRenew}
             disabled={renewingSession}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
               renewingSession
@@ -504,16 +543,44 @@ const SettingsPage: React.FC = () => {
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            <ArrowPathIcon className="w-4 h-4" />
-            Renew Session
+            {renewingSession ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Logging in to Facebook...
+              </>
+            ) : (
+              <>
+                <ArrowPathIcon className="w-4 h-4" />
+                Renew Session
+              </>
+            )}
           </button>
           <p className="text-xs text-slate-400">
-            Upload fresh Facebook cookies from your browser
+            Logs in to Facebook on the server using your saved credentials
           </p>
         </div>
+
+        {/* Fallback: appears only when auto-login fails (captcha / 2FA / FB block) */}
+        {showCookieFallback && (
+          <div className="mt-4 p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm flex items-center gap-3">
+            <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
+            <span className="text-slate-700">
+              Facebook blocked the automated login. Upload your cookies manually instead:
+            </span>
+            <button
+              onClick={() => {
+                setSessionRenewResult(null);
+                setShowCookieModal(true);
+              }}
+              className="ms-auto px-3 py-1.5 rounded-md text-xs font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-100"
+            >
+              Upload cookies manually
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Cookie Upload Modal */}
+      {/* Cookie Upload Modal — fallback path only */}
       {showCookieModal && (
         <CookieUploadModal
           cookieJson={cookieJson}

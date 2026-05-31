@@ -12,7 +12,7 @@ import { loadSessionHealth, markSessionValid } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { apiKeyAuth } from '../middleware/apiAuth';
-import { refreshFacebookSession, interactiveSessionRenewal } from '../facebook/session';
+import { refreshFacebookSession } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import prisma from '../database/prisma';
@@ -103,68 +103,75 @@ router.get('/api/session/groups', async (_req: Request, res: Response) => {
 
 /**
  * POST /api/session/renew
- * Manually trigger a Facebook session renewal
- * Opens a VISIBLE browser window for manual login (5 minute timeout)
+ *
+ * One-click auto-login: launches a headless Chromium on the server, types the
+ * FB_EMAIL / FB_PASSWORD from env, captures fresh cookies, and saves them.
+ *
+ * Falls through to a clear failure message when Facebook blocks the login
+ * (captcha, 2FA, suspicious-activity check). In that case the dashboard
+ * surfaces the cookie-upload modal as a fallback.
  */
 router.post(
   '/api/session/renew',
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
     try {
-      logger.info('[Session] Interactive session renewal triggered from dashboard');
-      await logSystemEvent('auth', 'Interactive session renewal triggered - opening browser window');
+      logger.info('[Session] Auto-renewal triggered from dashboard');
+      await logSystemEvent('auth', 'Auto-renewal triggered - launching headless browser');
 
-      // Use interactive renewal which opens a VISIBLE browser
-      // User has 5 minutes to complete login
-      const result = await interactiveSessionRenewal(300000); // 5 minutes
+      const result = await refreshFacebookSession();
 
       if (result.success) {
-        logger.info(`[Session] Interactive renewal successful for user ${result.userId}`);
-
-        // Get the full session status
         const health = await checkAndUpdateSession();
+        logger.info(`[Session] Auto-renewal succeeded for user ${health.userId}`);
+        await logSystemEvent('auth', `Auto-renewal succeeded for user ${health.userId}`);
 
-        res.json({
+        return res.json({
           success: true,
-          message: 'Facebook session renewed successfully! You can close this notification.',
+          message: 'Facebook session renewed successfully.',
           session: {
             status: health.status,
-            userId: result.userId || health.userId,
+            userId: health.userId,
             userName: health.userName,
             lastChecked: health.lastChecked,
             canAccessPrivateGroups: health.canAccessPrivateGroups,
           },
         });
-      } else {
-        logger.warn(`[Session] Interactive renewal failed: ${result.error}`);
-
-        // Get current session state
-        const health = await checkAndUpdateSession();
-
-        res.status(400).json({
-          success: false,
-          error: 'Session renewal failed',
-          message: result.error || 'Unable to complete login',
-          hint: result.error?.includes('timed out')
-            ? 'Please try again and complete the login within 5 minutes.'
-            : 'A browser window opened but login was not completed. Please try again.',
-          session: {
-            status: health.status,
-            userId: health.userId,
-            lastChecked: health.lastChecked,
-          },
-        });
       }
+
+      // Auto-login was blocked or failed
+      logger.warn(`[Session] Auto-renewal failed: ${result.error}`);
+      const health = await checkAndUpdateSession();
+      const err = result.error || 'Unknown error';
+      const isChallenge =
+        /two-factor|2fa|captcha|checkpoint|security check/i.test(err);
+
+      return res.status(400).json({
+        success: false,
+        error: 'Auto-renewal failed',
+        message: err,
+        canRetry: !isChallenge,
+        requiresManualUpload: isChallenge,
+        hint: isChallenge
+          ? 'Facebook is asking for a 2FA / captcha challenge that the server cannot solve. Use "Upload cookies manually" below to bypass.'
+          : 'The automated login failed. You can retry, or use "Upload cookies manually" as a fallback.',
+        session: {
+          status: health.status,
+          userId: health.userId,
+          lastChecked: health.lastChecked,
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`[Session] Interactive renewal error: ${message}`);
-      await logSystemEvent('error', `Interactive session renewal failed: ${message}`);
+      logger.error(`[Session] Auto-renewal error: ${message}`);
+      await logSystemEvent('error', `Auto-renewal failed: ${message}`);
 
       res.status(500).json({
         success: false,
-        error: 'Session renewal failed',
+        error: 'Auto-renewal failed',
         message,
-        hint: 'An error occurred while opening the browser. Please try running: npm run fb:login',
+        requiresManualUpload: true,
+        hint: 'Unexpected server error during automated login. Use "Upload cookies manually" below.',
       });
     }
   }
