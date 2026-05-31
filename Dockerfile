@@ -21,8 +21,9 @@ COPY package*.json ./
 COPY prisma ./prisma
 COPY ui/dashboard/package*.json ./ui/dashboard/
 
-# Install dependencies (postinstall runs prisma generate)
-RUN npm ci --only=production && npm cache clean --force
+# Install ALL dependencies (dev deps needed for tsc + next build in builder stage).
+# Workspaces share the root node_modules — npm ci handles all workspace packages.
+RUN npm ci && npm cache clean --force
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
@@ -30,11 +31,16 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 # Copy dependencies from deps stage
+# (Workspaces hoist all dashboard deps into the root node_modules,
+# so there is no separate ui/dashboard/node_modules to copy.)
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/ui/dashboard/node_modules ./ui/dashboard/node_modules
 
 # Copy source code
 COPY . .
+
+# Ensure ui/dashboard/public exists (Next.js doesn't require it, but the
+# production stage COPYs it unconditionally — see below).
+RUN mkdir -p ui/dashboard/public
 
 # Generate Prisma client (already generated in deps stage, but regenerate to be sure)
 RUN npx prisma generate
@@ -89,6 +95,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/ui/dashboard/.next ./ui/dashboard/.next
 COPY --from=builder /app/ui/dashboard/public ./ui/dashboard/public
 COPY --from=builder /app/ui/dashboard/package*.json ./ui/dashboard/
+
+# Prune dev dependencies to slim the production image
+RUN npm prune --omit=dev
 
 # Install Playwright browsers
 RUN npx playwright install chromium && \
