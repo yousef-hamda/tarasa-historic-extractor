@@ -96,6 +96,10 @@ COPY --from=builder /app/ui/dashboard/.next ./ui/dashboard/.next
 COPY --from=builder /app/ui/dashboard/public ./ui/dashboard/public
 COPY --from=builder /app/ui/dashboard/package*.json ./ui/dashboard/
 
+# Copy and prepare the container start script
+COPY --from=builder /app/start.sh ./start.sh
+RUN chmod +x ./start.sh
+
 # Prune dev dependencies to slim the production image
 RUN npm prune --omit=dev
 
@@ -113,9 +117,10 @@ USER tarasa
 # Expose ports
 EXPOSE 4000 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:4000/api/health || exit 1
+# Health check — uses the runtime $PORT (Railway injects it), falls back to 4000
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4000}/api/health" || exit 1
 
-# Start command
-CMD ["node", "--max-old-space-size=1024", "dist/server.js"]
+# Start command — runs ./start.sh which migrates then exec-s node.
+# Baked into the image so it cannot be misconfigured via Railway's UI start-command field.
+CMD ["./start.sh"]
