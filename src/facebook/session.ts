@@ -663,10 +663,10 @@ export const stealthRefreshFacebookSession = async (): Promise<{
     logger.info('[StealthLogin] Navigating to facebook.com');
     await page.goto('https://www.facebook.com/', {
       waitUntil: 'domcontentloaded',
-      timeout: 45_000,
+      timeout: 30_000,
     });
 
-    await stealthHumanDelay(2000, 4000);
+    await stealthHumanDelay(1000, 2000);
     await randomMouseMovement(page);
 
     // Did the persistent stealth profile keep us logged in from a prior session?
@@ -706,12 +706,10 @@ export const stealthRefreshFacebookSession = async (): Promise<{
       await clickFirstMatchingSelector(page, selectors.loginButton);
 
       // Wait for the post-click navigation to settle. FB's homepage keeps making
-      // background requests so 'networkidle' rarely fires; rely on a generous
-      // 'load' wait + fixed buffer + cookie probe instead.
-      await page.waitForLoadState('load', { timeout: 30_000 }).catch(() => undefined);
+      // background requests so 'networkidle' rarely fires; rely on a 'load' wait
+      // + a single fixed buffer + cookie probe instead.
+      await page.waitForLoadState('load', { timeout: 20_000 }).catch(() => undefined);
       await stealthHumanDelay(3000, 5000);
-      // One more grace for FB's post-login redirects (login → home → ...).
-      await stealthHumanDelay(2000, 3000);
     }
 
     // Did Facebook show a challenge? Wrap in try/catch — the execution context

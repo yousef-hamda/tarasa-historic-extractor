@@ -160,8 +160,10 @@ const SettingsPage: React.FC = () => {
       // status 409 means a previous renewal is still running — that's fine,
       // we just continue to the polling loop.
 
-      // 2. Poll status until the background job finishes or we hit the cap
-      const POLL_TIMEOUT_MS = 180_000; // 3 minutes total
+      // 2. Poll status until the background job finishes or we hit the cap.
+      // 240s gives the 200s server-side hard timeout time to fire and the
+      // status endpoint time to expose the result.
+      const POLL_TIMEOUT_MS = 240_000;
       const POLL_INTERVAL_MS = 3_000;
       const startedAt = Date.now();
 

@@ -12,7 +12,7 @@ import { loadSessionHealth, markSessionValid } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { apiKeyAuth } from '../middleware/apiAuth';
-import { refreshFacebookSession, stealthRefreshFacebookSession } from '../facebook/session';
+import { stealthRefreshFacebookSession } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import prisma from '../database/prisma';
@@ -161,31 +161,20 @@ router.post(
       startedAt: renewalState.startedAt,
     });
 
-    // Background work — fire-and-forget. Hard-capped at 2 minutes so a stuck
-    // headless Chromium can't permanently pin renewalState.running=true (which
-    // would block every future renewal attempt with HTTP 409).
+    // Background work — fire-and-forget. Hard-capped so a stuck headless
+    // Chromium can't permanently pin renewalState.running=true (which would
+    // block every future renewal attempt with HTTP 409).
     //
-    // We try the STEALTH login first (playwright stealth tricks + human-like
-    // typing + persistent fingerprinted profile) because plain Chromium gets
-    // detected by FB's bot signals within seconds from Railway IPs. If stealth
-    // doesn't deliver session cookies, fall back to the plain refresh which is
-    // sometimes accepted on accounts FB already trusts.
-    const HARD_TIMEOUT_MS = 120_000;
+    // We use STEALTH login only — plain Chromium is detected as a bot by FB
+    // in <1s, and the plain refresh follows the exact same login flow, so
+    // falling back to it just doubles the runtime without changing the
+    // outcome. Stealth detects challenges (2FA / captcha / checkpoint) and
+    // returns informative errors the dashboard can surface.
+    const HARD_TIMEOUT_MS = 200_000;
     (async () => {
       try {
-        const runWithStealthFallback = async () => {
-          const stealth = await stealthRefreshFacebookSession();
-          if (stealth.success) return { success: true as const };
-          logger.warn(`[Session] Stealth login did not succeed (${stealth.error}); trying plain refresh`);
-          const plain = await refreshFacebookSession();
-          if (plain.success) return { success: true as const };
-          // Surface the more informative of the two errors (stealth message
-          // typically tells us about challenge type)
-          return { success: false as const, error: stealth.error || plain.error || 'Unknown' };
-        };
-
         const result = await Promise.race([
-          runWithStealthFallback(),
+          stealthRefreshFacebookSession(),
           new Promise<{ success: false; error: string }>((_, reject) =>
             setTimeout(
               () =>
