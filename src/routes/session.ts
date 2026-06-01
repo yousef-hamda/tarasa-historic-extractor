@@ -19,9 +19,23 @@ import prisma from '../database/prisma';
 
 const router = Router();
 
+// Module-level state tracking the (at most one) in-flight headless renewal.
+// We don't put this in the DB because it's purely process-local and only
+// meaningful while the request that started it is still hot.
+interface RenewalState {
+  running: boolean;
+  startedAt?: Date;
+  finishedAt?: Date;
+  lastError?: string;
+  requiresManualUpload?: boolean;
+}
+const renewalState: RenewalState = { running: false };
+
 /**
  * GET /api/session/status
- * Get current session status (public)
+ * Get current session status (public). Also reports any in-flight or recent
+ * renewal job so the dashboard can poll this endpoint instead of waiting on
+ * a long-running POST /api/session/renew (which Railway's proxy would 504).
  */
 router.get('/api/session/status', async (_req: Request, res: Response) => {
   try {
@@ -36,6 +50,13 @@ router.get('/api/session/status', async (_req: Request, res: Response) => {
         lastValid: health.lastValid,
         expiresAt: health.expiresAt,
         errorMessage: health.errorMessage,
+      },
+      renewal: {
+        running: renewalState.running,
+        startedAt: renewalState.startedAt ?? null,
+        finishedAt: renewalState.finishedAt ?? null,
+        lastError: renewalState.lastError ?? null,
+        requiresManualUpload: renewalState.requiresManualUpload ?? false,
       },
     });
   } catch (error) {
@@ -104,76 +125,86 @@ router.get('/api/session/groups', async (_req: Request, res: Response) => {
 /**
  * POST /api/session/renew
  *
- * One-click auto-login: launches a headless Chromium on the server, types the
- * FB_EMAIL / FB_PASSWORD from env, captures fresh cookies, and saves them.
- *
- * Falls through to a clear failure message when Facebook blocks the login
- * (captcha, 2FA, suspicious-activity check). In that case the dashboard
- * surfaces the cookie-upload modal as a fallback.
+ * Async one-click auto-login. Returns 202 IMMEDIATELY and runs the headless
+ * login in the background — Railway's edge proxy would 504 a synchronous
+ * call that takes >60s, so we hand the work off and let the dashboard poll
+ * GET /api/session/status to see when it finishes.
  */
 router.post(
   '/api/session/renew',
   triggerRateLimiter,
   async (_req: Request, res: Response) => {
-    try {
-      logger.info('[Session] Auto-renewal triggered from dashboard');
-      await logSystemEvent('auth', 'Auto-renewal triggered - launching headless browser');
-
-      const result = await refreshFacebookSession();
-
-      if (result.success) {
-        const health = await checkAndUpdateSession();
-        logger.info(`[Session] Auto-renewal succeeded for user ${health.userId}`);
-        await logSystemEvent('auth', `Auto-renewal succeeded for user ${health.userId}`);
-
-        return res.json({
-          success: true,
-          message: 'Facebook session renewed successfully.',
-          session: {
-            status: health.status,
-            userId: health.userId,
-            userName: health.userName,
-            lastChecked: health.lastChecked,
-            canAccessPrivateGroups: health.canAccessPrivateGroups,
-          },
-        });
-      }
-
-      // Auto-login was blocked or failed
-      logger.warn(`[Session] Auto-renewal failed: ${result.error}`);
-      const health = await checkAndUpdateSession();
-      const err = result.error || 'Unknown error';
-      const isChallenge =
-        /two-factor|2fa|captcha|checkpoint|security check/i.test(err);
-
-      return res.status(400).json({
+    if (renewalState.running) {
+      return res.status(409).json({
         success: false,
-        error: 'Auto-renewal failed',
-        message: err,
-        canRetry: !isChallenge,
-        requiresManualUpload: isChallenge,
-        hint: isChallenge
-          ? 'Facebook is asking for a 2FA / captcha challenge that the server cannot solve. Use "Upload cookies manually" below to bypass.'
-          : 'The automated login failed. You can retry, or use "Upload cookies manually" as a fallback.',
-        session: {
-          status: health.status,
-          userId: health.userId,
-          lastChecked: health.lastChecked,
-        },
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.error(`[Session] Auto-renewal error: ${message}`);
-      await logSystemEvent('error', `Auto-renewal failed: ${message}`);
-
-      res.status(500).json({
-        success: false,
-        error: 'Auto-renewal failed',
-        message,
-        requiresManualUpload: true,
-        hint: 'Unexpected server error during automated login. Use "Upload cookies manually" below.',
+        error: 'Renewal already in progress',
+        message: 'A renewal is already running. Wait a moment and poll /api/session/status.',
+        running: true,
+        startedAt: renewalState.startedAt,
       });
     }
+
+    renewalState.running = true;
+    renewalState.startedAt = new Date();
+    renewalState.finishedAt = undefined;
+    renewalState.lastError = undefined;
+    renewalState.requiresManualUpload = undefined;
+
+    logger.info('[Session] Auto-renewal kicked off (async)');
+    await logSystemEvent('auth', 'Auto-renewal triggered - background headless login');
+
+    // Send the response NOW so the proxy doesn't time out.
+    res.status(202).json({
+      success: true,
+      message: 'Renewal started. Poll /api/session/status to check progress.',
+      running: true,
+      startedAt: renewalState.startedAt,
+    });
+
+    // Background work — fire-and-forget. Hard-capped at 2 minutes so a stuck
+    // headless Chromium can't permanently pin renewalState.running=true (which
+    // would block every future renewal attempt with HTTP 409).
+    const HARD_TIMEOUT_MS = 120_000;
+    (async () => {
+      try {
+        const result = await Promise.race([
+          refreshFacebookSession(),
+          new Promise<{ success: false; error: string }>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `Auto-renewal timed out after ${HARD_TIMEOUT_MS / 1000}s — Facebook likely showed a challenge.`
+                  )
+                ),
+              HARD_TIMEOUT_MS
+            )
+          ),
+        ]);
+
+        if (result.success) {
+          await checkAndUpdateSession();
+          logger.info('[Session] Auto-renewal succeeded');
+          await logSystemEvent('auth', 'Auto-renewal succeeded');
+        } else {
+          const err = result.error || 'Unknown error';
+          renewalState.lastError = err;
+          renewalState.requiresManualUpload =
+            /two-factor|2fa|captcha|checkpoint|security check/i.test(err);
+          logger.warn(`[Session] Auto-renewal failed: ${err}`);
+          await logSystemEvent('error', `Auto-renewal failed: ${err}`);
+        }
+      } catch (bgErr) {
+        const message = bgErr instanceof Error ? bgErr.message : 'Unknown error';
+        renewalState.lastError = message;
+        renewalState.requiresManualUpload = true;
+        logger.error(`[Session] Auto-renewal threw: ${message}`);
+        await logSystemEvent('error', `Auto-renewal threw: ${message}`).catch(() => undefined);
+      } finally {
+        renewalState.running = false;
+        renewalState.finishedAt = new Date();
+      }
+    })();
   }
 );
 

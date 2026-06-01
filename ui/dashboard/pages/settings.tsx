@@ -129,9 +129,11 @@ const SettingsPage: React.FC = () => {
     fetchSessionStatus();
   }, [fetchSessionStatus]);
 
-  // Primary one-click flow: server attempts headless login with stored FB credentials.
-  // Note: headless Chromium + FB login can take 40-90s — generous timeout so the
-  // browser doesn't abort while the server is still working.
+  // Primary one-click flow.
+  //
+  // The server returns 202 IMMEDIATELY and runs the headless login in the
+  // background. We then poll /api/session/status every 3 s to learn the result.
+  // This avoids Railway's proxy 504 timeout that synchronous long requests hit.
   const handleAutoRenew = async () => {
     if (renewingSession) return;
     setRenewingSession(true);
@@ -139,37 +141,85 @@ const SettingsPage: React.FC = () => {
     setShowCookieFallback(false);
 
     try {
-      const res = await apiFetch('/api/session/renew', {
+      // 1. Kick off the background renewal (fast response, no proxy timeout risk)
+      const startRes = await apiFetch('/api/session/renew', {
         method: 'POST',
         skipAuth: true,
-        timeout: 120_000,
+        timeout: 15_000,
       });
-      const data = await res.json();
 
-      if (res.ok && data.success) {
-        setSessionRenewResult({
-          success: true,
-          message: data.message || 'Session renewed.',
-        });
-        await fetchSessionStatus();
-      } else {
-        // Auto-login was blocked (captcha / 2FA / FB rejected). Offer the fallback.
-        setSessionRenewResult({
-          success: false,
-          message: data.hint || data.message || 'Session renewal failed.',
-        });
-        if (data.requiresManualUpload || data.canRetry === false) {
-          setShowCookieFallback(true);
-        }
+      if (!startRes.ok && startRes.status !== 202 && startRes.status !== 409) {
+        // Try to read JSON, but tolerate non-JSON responses (e.g., proxy HTML)
+        let msg = `Unable to start renewal (HTTP ${startRes.status})`;
+        try {
+          const data = await startRes.json();
+          msg = data?.message || data?.error || msg;
+        } catch { /* response wasn't JSON — keep status-based message */ }
+        throw new Error(msg);
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Network error during renewal.';
-      const isTimeout = /timeout/i.test(msg);
+      // status 409 means a previous renewal is still running — that's fine,
+      // we just continue to the polling loop.
+
+      // 2. Poll status until the background job finishes or we hit the cap
+      const POLL_TIMEOUT_MS = 180_000; // 3 minutes total
+      const POLL_INTERVAL_MS = 3_000;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+        let statusData: SessionStatus & {
+          renewal?: {
+            running: boolean;
+            lastError: string | null;
+            requiresManualUpload: boolean;
+          };
+        };
+        try {
+          const statusRes = await apiFetch('/api/session/status');
+          if (!statusRes.ok) continue;
+          statusData = await statusRes.json();
+        } catch {
+          // Network blip — try again next tick
+          continue;
+        }
+
+        // Always refresh the displayed session card while we're polling
+        setSessionStatus(statusData);
+
+        const renewal = statusData.renewal;
+        if (renewal && !renewal.running) {
+          // Background job finished
+          if (renewal.lastError) {
+            setSessionRenewResult({ success: false, message: renewal.lastError });
+            if (renewal.requiresManualUpload) setShowCookieFallback(true);
+          } else if (statusData.sessionHealth?.status === 'valid') {
+            setSessionRenewResult({
+              success: true,
+              message: 'Facebook session renewed successfully.',
+            });
+          } else {
+            setSessionRenewResult({
+              success: false,
+              message: 'Renewal finished but the session is still not valid.',
+            });
+            setShowCookieFallback(true);
+          }
+          return;
+        }
+        // Otherwise it's still running — keep polling.
+      }
+
+      // 3. Hit the soft cap without a definitive result
       setSessionRenewResult({
         success: false,
-        message: isTimeout
-          ? 'The server is still trying — refresh this page in a minute to check, or use manual upload below.'
-          : msg,
+        message: 'Renewal is taking longer than 3 minutes. It may still complete in the background — refresh this page in a minute, or use manual upload.',
+      });
+      setShowCookieFallback(true);
+    } catch (err) {
+      setSessionRenewResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to start renewal.',
       });
       setShowCookieFallback(true);
     } finally {
@@ -553,7 +603,7 @@ const SettingsPage: React.FC = () => {
             {renewingSession ? (
               <>
                 <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                Logging in to Facebook...
+                Logging in… (checking every 3 s)
               </>
             ) : (
               <>
@@ -563,7 +613,7 @@ const SettingsPage: React.FC = () => {
             )}
           </button>
           <p className="text-xs text-slate-400">
-            Logs in to Facebook on the server using your saved credentials. Can take 30-90 seconds.
+            Server logs in to Facebook with your saved credentials. Usually finishes in 30-90 seconds.
           </p>
         </div>
 
