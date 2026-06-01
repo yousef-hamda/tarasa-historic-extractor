@@ -712,46 +712,67 @@ export const stealthRefreshFacebookSession = async (): Promise<{
       await stealthHumanDelay(3000, 5000);
     }
 
-    // Did Facebook show a challenge? Wrap in try/catch — the execution context
-    // can disappear mid-navigation and that would otherwise throw.
+    // Did Facebook show a challenge?
+    //
+    // The most reliable signal is the URL. Playwright's page.url() reads from
+    // the browser process so it survives in-page navigation — unlike
+    // page.evaluate(() => location.href) which can throw "Execution context
+    // was destroyed" mid-redirect.
     let challengeInfo: string | null = null;
-    try {
-      challengeInfo = await page.evaluate(() => {
-        const text = (document.body.innerText || '').toLowerCase();
-        const url = location.href.toLowerCase();
-        // 2FA — URL is the most reliable signal (FB renders the body via React)
-        if (
-          url.includes('/two_step_verification/') ||
-          url.includes('/two_factor/') ||
-          url.includes('/login/checkpoint') ||
-          text.includes('two-factor') ||
-          text.includes('two-step verification') ||
-          text.includes('enter security code') ||
-          text.includes('enter the code') ||
-          document.querySelector('input[name="approvals_code"]')
-        ) {
-          return '2fa';
-        }
-        if (
-          text.includes('security check') ||
-          text.includes('captcha') ||
-          text.includes('confirm your identity')
-        ) {
-          return 'captcha';
-        }
-        if (
-          url.includes('/checkpoint') ||
-          text.includes('please confirm') ||
-          text.includes("verify it's you")
-        ) {
-          return 'checkpoint';
-        }
-        return null;
-      });
-    } catch (evalErr) {
-      logger.debug(`[StealthLogin] Challenge probe failed (likely navigation): ${(evalErr as Error).message}`);
-      // Give the navigation another moment then move on to the cookie check
-      await new Promise((r) => setTimeout(r, 2500));
+    const checkUrl = (rawUrl: string): string | null => {
+      const u = rawUrl.toLowerCase();
+      if (
+        u.includes('/two_step_verification/') ||
+        u.includes('/two_factor/') ||
+        u.includes('/login/checkpoint')
+      ) {
+        return '2fa';
+      }
+      if (u.includes('/checkpoint')) {
+        return 'checkpoint';
+      }
+      return null;
+    };
+    challengeInfo = checkUrl(page.url());
+
+    // If URL didn't match a known challenge pattern, attempt the in-page text
+    // probe as a fallback (handles cases where FB renders the challenge UI in
+    // the body without changing the URL). Wrapped in try/catch because the
+    // execution context can vanish mid-navigation.
+    if (!challengeInfo) {
+      try {
+        challengeInfo = await page.evaluate(() => {
+          const text = (document.body.innerText || '').toLowerCase();
+          if (
+            text.includes('two-factor') ||
+            text.includes('two-step verification') ||
+            text.includes('enter security code') ||
+            text.includes('enter the code') ||
+            document.querySelector('input[name="approvals_code"]')
+          ) {
+            return '2fa';
+          }
+          if (
+            text.includes('security check') ||
+            text.includes('captcha') ||
+            text.includes('confirm your identity')
+          ) {
+            return 'captcha';
+          }
+          if (
+            text.includes('please confirm') ||
+            text.includes("verify it's you")
+          ) {
+            return 'checkpoint';
+          }
+          return null;
+        });
+      } catch (evalErr) {
+        logger.debug(`[StealthLogin] Text probe failed (mid-navigation): ${(evalErr as Error).message}`);
+        // Give navigation a moment to settle, then re-check the URL.
+        await new Promise((r) => setTimeout(r, 2500));
+        challengeInfo = checkUrl(page.url());
+      }
     }
 
     if (challengeInfo === '2fa') {
