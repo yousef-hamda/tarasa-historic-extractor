@@ -130,6 +130,8 @@ const SettingsPage: React.FC = () => {
   }, [fetchSessionStatus]);
 
   // Primary one-click flow: server attempts headless login with stored FB credentials.
+  // Note: headless Chromium + FB login can take 40-90s — generous timeout so the
+  // browser doesn't abort while the server is still working.
   const handleAutoRenew = async () => {
     if (renewingSession) return;
     setRenewingSession(true);
@@ -140,6 +142,7 @@ const SettingsPage: React.FC = () => {
       const res = await apiFetch('/api/session/renew', {
         method: 'POST',
         skipAuth: true,
+        timeout: 120_000,
       });
       const data = await res.json();
 
@@ -160,9 +163,13 @@ const SettingsPage: React.FC = () => {
         }
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Network error during renewal.';
+      const isTimeout = /timeout/i.test(msg);
       setSessionRenewResult({
         success: false,
-        message: err instanceof Error ? err.message : 'Network error during renewal.',
+        message: isTimeout
+          ? 'The server is still trying — refresh this page in a minute to check, or use manual upload below.'
+          : msg,
       });
       setShowCookieFallback(true);
     } finally {
@@ -556,7 +563,7 @@ const SettingsPage: React.FC = () => {
             )}
           </button>
           <p className="text-xs text-slate-400">
-            Logs in to Facebook on the server using your saved credentials
+            Logs in to Facebook on the server using your saved credentials. Can take 30-90 seconds.
           </p>
         </div>
 
