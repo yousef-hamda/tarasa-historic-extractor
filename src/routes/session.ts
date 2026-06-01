@@ -12,7 +12,7 @@ import { loadSessionHealth, markSessionValid } from '../session/sessionHealth';
 import { getScrapingStatus } from '../scraper/orchestrator';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { apiKeyAuth } from '../middleware/apiAuth';
-import { refreshFacebookSession } from '../facebook/session';
+import { refreshFacebookSession, stealthRefreshFacebookSession } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import prisma from '../database/prisma';
@@ -164,11 +164,28 @@ router.post(
     // Background work — fire-and-forget. Hard-capped at 2 minutes so a stuck
     // headless Chromium can't permanently pin renewalState.running=true (which
     // would block every future renewal attempt with HTTP 409).
+    //
+    // We try the STEALTH login first (playwright stealth tricks + human-like
+    // typing + persistent fingerprinted profile) because plain Chromium gets
+    // detected by FB's bot signals within seconds from Railway IPs. If stealth
+    // doesn't deliver session cookies, fall back to the plain refresh which is
+    // sometimes accepted on accounts FB already trusts.
     const HARD_TIMEOUT_MS = 120_000;
     (async () => {
       try {
+        const runWithStealthFallback = async () => {
+          const stealth = await stealthRefreshFacebookSession();
+          if (stealth.success) return { success: true as const };
+          logger.warn(`[Session] Stealth login did not succeed (${stealth.error}); trying plain refresh`);
+          const plain = await refreshFacebookSession();
+          if (plain.success) return { success: true as const };
+          // Surface the more informative of the two errors (stealth message
+          // typically tells us about challenge type)
+          return { success: false as const, error: stealth.error || plain.error || 'Unknown' };
+        };
+
         const result = await Promise.race([
-          refreshFacebookSession(),
+          runWithStealthFallback(),
           new Promise<{ success: false; error: string }>((_, reject) =>
             setTimeout(
               () =>

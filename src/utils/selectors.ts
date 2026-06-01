@@ -18,7 +18,19 @@ const querySingle = (root: QueryRoot, selector: string) => root.$(selector);
 export const selectors = {
   loginEmail: ['input[name="email"]', '#email'],
   loginPassword: ['input[name="pass"]', '#pass'],
-  loginButton: ['button[name="login"]', 'button[type="submit"]', 'button:has-text("Log in")', 'button:has-text("Log In")'],
+  loginButton: [
+    // Current Facebook DOM (2025+): input[type=submit] or div[role=button]
+    'input[type="submit"]',
+    'div[role="button"][aria-label="Log In"]',
+    'div[role="button"][aria-label="Log in"]',
+    // Older Facebook DOM (still works on some endpoints)
+    'button[name="login"]',
+    'button[type="submit"]',
+    'button:has-text("Log in")',
+    'button:has-text("Log In")',
+    // Last-resort text match on a div button
+    'div[role="button"]:has-text("Log in")',
+  ],
   loginText: ['text="Log into Facebook"', 'text="Log in to Facebook"', 'text="Log In"'],
   twoFactorInput: ['input[name="approvals_code"]', 'input[autocomplete="one-time-code"]'],
   twoFactorText: ['text="Two-factor authentication"', 'text="Enter security code"', 'text="Enter the code"'],

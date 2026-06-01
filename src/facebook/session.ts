@@ -614,3 +614,302 @@ async function saveSessionFromContext(context: BrowserContext, cookiesFilePath: 
     logger.warn(`[Session] Could not update database: ${(error as Error).message}`);
   }
 }
+
+// ============================================================================
+// Stealth-mode auto-login (no real display required)
+//
+// Uses the repo's existing stealthBrowser configuration (navigator.webdriver
+// override, WebGL spoofing, human-like typing, random mouse movement) to
+// dramatically reduce Facebook's automated-login detection rate compared to
+// the plain Playwright launch that refreshFacebookSession() uses.
+//
+// Verified locally before being wired into the dashboard's renew flow.
+// ============================================================================
+
+export const stealthRefreshFacebookSession = async (): Promise<{
+  success: boolean;
+  error?: string;
+  challenge?: 'captcha' | '2fa' | 'checkpoint' | null;
+}> => {
+  // Dynamic import so importing this file doesn't load the stealth machinery
+  // unless we actually use it (keeps cron startup time down).
+  const {
+    createStealthBrowser,
+    humanType,
+    humanDelay: stealthHumanDelay,
+    randomMouseMovement,
+    checkForBotDetection,
+  } = await import('../scraper/stealthBrowser');
+
+  let context: BrowserContext | null = null;
+  const email = process.env.FB_EMAIL || '';
+  const password = process.env.FB_PASSWORD || '';
+
+  if (!email || !password) {
+    return { success: false, error: 'FB_EMAIL or FB_PASSWORD env vars are not set.' };
+  }
+
+  try {
+    logger.info('[StealthLogin] Launching stealth browser');
+    const result = await createStealthBrowser({
+      headless: true,
+      useRealChrome: false, // Railway only ships Playwright Chromium, no system Chrome
+    });
+    context = result.context;
+
+    const page = await context.newPage();
+    page.setDefaultTimeout(45_000);
+
+    logger.info('[StealthLogin] Navigating to facebook.com');
+    await page.goto('https://www.facebook.com/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 45_000,
+    });
+
+    await stealthHumanDelay(2000, 4000);
+    await randomMouseMovement(page);
+
+    // Did the persistent stealth profile keep us logged in from a prior session?
+    const alreadyIn = await page.evaluate(() => {
+      const cookieMap = document.cookie.split('; ').reduce<Record<string, string>>((acc, c) => {
+        const [k, v] = c.split('=');
+        if (k) acc[k] = v;
+        return acc;
+      }, {});
+      return Boolean(cookieMap.c_user);
+    });
+    if (alreadyIn) {
+      logger.info('[StealthLogin] Already logged in via persistent profile cookies');
+    } else {
+      // Find the email field. FB occasionally renders #email vs input[name="email"].
+      logger.info('[StealthLogin] Waiting for login form');
+      const emailSelector = await page.waitForSelector(
+        'input[name="email"], #email',
+        { timeout: 15_000 }
+      );
+      if (!emailSelector) {
+        return { success: false, error: 'Login form not found on facebook.com.' };
+      }
+
+      // Pick the first selector from each readonly tuple
+      const emailSel = (selectors.loginEmail as readonly string[])[0];
+      const passSel = (selectors.loginPassword as readonly string[])[0];
+
+      logger.info('[StealthLogin] Typing credentials (human-like)');
+      await humanType(page, emailSel, email);
+      await stealthHumanDelay(500, 1500);
+      await humanType(page, passSel, password);
+      await stealthHumanDelay(800, 2000);
+      await randomMouseMovement(page);
+
+      logger.info('[StealthLogin] Clicking login button');
+      await clickFirstMatchingSelector(page, selectors.loginButton);
+
+      // Wait for the post-click navigation to settle. FB's homepage keeps making
+      // background requests so 'networkidle' rarely fires; rely on a generous
+      // 'load' wait + fixed buffer + cookie probe instead.
+      await page.waitForLoadState('load', { timeout: 30_000 }).catch(() => undefined);
+      await stealthHumanDelay(3000, 5000);
+      // One more grace for FB's post-login redirects (login → home → ...).
+      await stealthHumanDelay(2000, 3000);
+    }
+
+    // Did Facebook show a challenge? Wrap in try/catch — the execution context
+    // can disappear mid-navigation and that would otherwise throw.
+    let challengeInfo: string | null = null;
+    try {
+      challengeInfo = await page.evaluate(() => {
+        const text = (document.body.innerText || '').toLowerCase();
+        const url = location.href.toLowerCase();
+        // 2FA — URL is the most reliable signal (FB renders the body via React)
+        if (
+          url.includes('/two_step_verification/') ||
+          url.includes('/two_factor/') ||
+          url.includes('/login/checkpoint') ||
+          text.includes('two-factor') ||
+          text.includes('two-step verification') ||
+          text.includes('enter security code') ||
+          text.includes('enter the code') ||
+          document.querySelector('input[name="approvals_code"]')
+        ) {
+          return '2fa';
+        }
+        if (
+          text.includes('security check') ||
+          text.includes('captcha') ||
+          text.includes('confirm your identity')
+        ) {
+          return 'captcha';
+        }
+        if (
+          url.includes('/checkpoint') ||
+          text.includes('please confirm') ||
+          text.includes("verify it's you")
+        ) {
+          return 'checkpoint';
+        }
+        return null;
+      });
+    } catch (evalErr) {
+      logger.debug(`[StealthLogin] Challenge probe failed (likely navigation): ${(evalErr as Error).message}`);
+      // Give the navigation another moment then move on to the cookie check
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+
+    if (challengeInfo === '2fa') {
+      // 2FA can be solved automatically when the user has shared their TOTP
+      // secret via the FB_TOTP_SECRET env var (extracted once from Facebook's
+      // "set up authenticator app" screen).
+      const totpSecret = process.env.FB_TOTP_SECRET?.trim().replace(/\s+/g, '');
+      if (!totpSecret) {
+        logger.warn('[StealthLogin] 2FA required but FB_TOTP_SECRET is not set');
+        return {
+          success: false,
+          error:
+            'Facebook is asking for a 2FA code. Set FB_TOTP_SECRET env var (TOTP secret from FB → Security → Two-factor authentication → Authentication app) to enable automated 2FA. Or use manual cookie upload.',
+          challenge: '2fa',
+        };
+      }
+
+      try {
+        const otp = await import('otplib');
+        // `plugins` is accepted at runtime (the documented way to bind crypto
+        // + base32 plugins) but missing from otplib v13's type defs.
+        const code = otp.generateSync({
+          secret: totpSecret,
+          plugins: [otp.NobleCryptoPlugin, otp.ScureBase32Plugin],
+        } as Parameters<typeof otp.generateSync>[0] & { plugins: unknown[] });
+        logger.info('[StealthLogin] Submitting TOTP code from FB_TOTP_SECRET');
+
+        // Find the 2FA code input — FB uses several selectors over the years
+        const codeInputSelectors = [
+          'input[name="approvals_code"]',
+          'input[autocomplete="one-time-code"]',
+          'input[name="approvals_code_pin"]',
+          'input[type="text"][maxlength="6"]',
+          'input[id="approvals_code"]',
+        ];
+        let codeInputSel: string | null = null;
+        for (const sel of codeInputSelectors) {
+          if (await page.$(sel)) { codeInputSel = sel; break; }
+        }
+        if (!codeInputSel) {
+          return {
+            success: false,
+            error: 'Detected 2FA page but could not find the code input field. Selectors may have changed; use manual cookie upload.',
+            challenge: '2fa',
+          };
+        }
+        await humanType(page, codeInputSel, code);
+        await stealthHumanDelay(700, 1300);
+
+        // Click Continue / Submit
+        const continueSelectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'div[role="button"][aria-label="Continue"]',
+          'div[role="button"][aria-label="Submit"]',
+          'div[role="button"]:has-text("Continue")',
+          'button:has-text("Continue")',
+        ];
+        let continueClicked = false;
+        for (const sel of continueSelectors) {
+          const el = await page.$(sel);
+          if (el) {
+            await el.click().catch(() => undefined);
+            continueClicked = true;
+            break;
+          }
+        }
+        if (!continueClicked) {
+          return {
+            success: false,
+            error: 'Submitted TOTP code but could not find the Continue button.',
+            challenge: '2fa',
+          };
+        }
+
+        await page.waitForLoadState('load', { timeout: 30_000 }).catch(() => undefined);
+        await stealthHumanDelay(2500, 4000);
+
+        // FB may now show "Save browser?" — try to dismiss with "Not now" or
+        // click Continue if present.
+        try {
+          const saveBrowserBtn = await page.$('div[role="button"]:has-text("Continue")');
+          if (saveBrowserBtn) {
+            await saveBrowserBtn.click().catch(() => undefined);
+            await stealthHumanDelay(2000, 3500);
+          }
+        } catch { /* ignore */ }
+
+        logger.info('[StealthLogin] TOTP submitted, continuing to cookie verification');
+      } catch (totpErr) {
+        return {
+          success: false,
+          error: `Failed during 2FA handling: ${(totpErr as Error).message}. Use manual cookie upload.`,
+          challenge: '2fa',
+        };
+      }
+    } else if (challengeInfo) {
+      logger.warn(`[StealthLogin] Facebook challenge detected: ${challengeInfo}`);
+      return {
+        success: false,
+        error: `Facebook is asking for ${challengeInfo === 'captcha' ? 'a captcha' : 'identity verification'} — the server cannot answer this. Use manual cookie upload.`,
+        challenge: challengeInfo as 'captcha' | 'checkpoint',
+      };
+    }
+
+    // Generic bot-detection sniff (existing helper)
+    if (await checkForBotDetection(page)) {
+      return {
+        success: false,
+        error: 'Facebook bot-detection page reached. Use manual cookie upload.',
+        challenge: 'checkpoint',
+      };
+    }
+
+    // Verify we got the session cookies
+    const cookiesNow = await context.cookies();
+    const cUser = cookiesNow.find((c) => c.name === 'c_user' && c.domain.includes('facebook.com'));
+    const xs = cookiesNow.find((c) => c.name === 'xs' && c.domain.includes('facebook.com'));
+
+    if (!cUser || !xs) {
+      // Capture diagnostics so we can see EXACTLY why FB rejected
+      const diag = await page.evaluate(() => ({
+        url: location.href,
+        title: document.title,
+        // Look for any error-like text near the login form
+        bodyTextPreview: (document.body.innerText || '').slice(0, 600),
+        hasEmailInput: !!document.querySelector('input[name="email"], #email'),
+        hasPassInput: !!document.querySelector('input[name="pass"], #pass'),
+        cookieNames: document.cookie.split('; ').map((c) => c.split('=')[0]).filter(Boolean),
+      }));
+      logger.warn(
+        `[StealthLogin] No session cookies. URL=${diag.url} title="${diag.title}" cookies=[${diag.cookieNames.join(',')}]`
+      );
+      logger.warn(`[StealthLogin] Page text preview: ${diag.bodyTextPreview.replace(/\s+/g, ' ')}`);
+      return {
+        success: false,
+        error: `Login completed but no session cookies were issued (c_user=${!!cUser}, xs=${!!xs}). Facebook URL after login: ${diag.url}. Page title: "${diag.title}".`,
+      };
+    }
+
+    // Persist to the canonical cookies.json the rest of the app reads from.
+    await fs.writeFile(cookiesPath, JSON.stringify(cookiesNow, null, 2));
+    logger.info(
+      `[StealthLogin] SUCCESS — captured ${cookiesNow.length} cookies for user ${cUser.value}`
+    );
+
+    await page.close();
+    return { success: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(`[StealthLogin] Error: ${message}`);
+    return { success: false, error: message };
+  } finally {
+    if (context) {
+      const { safeCloseBrowser } = await import('../scraper/stealthBrowser');
+      await safeCloseBrowser(context).catch(() => undefined);
+    }
+  }
+};
