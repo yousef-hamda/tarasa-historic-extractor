@@ -27,6 +27,10 @@ interface RenewalState {
   startedAt?: Date;
   finishedAt?: Date;
   lastError?: string;
+  /** The kind of challenge Facebook threw, when applicable. Lets the dashboard
+   *  know to prompt for a 2FA code vs. surface the manual cookie fallback. */
+  challenge?: 'captcha' | '2fa' | 'checkpoint' | null;
+  userId?: string | null;
   requiresManualUpload?: boolean;
 }
 const renewalState: RenewalState = { running: false };
@@ -56,6 +60,8 @@ router.get('/api/session/status', async (_req: Request, res: Response) => {
         startedAt: renewalState.startedAt ?? null,
         finishedAt: renewalState.finishedAt ?? null,
         lastError: renewalState.lastError ?? null,
+        challenge: renewalState.challenge ?? null,
+        userId: renewalState.userId ?? null,
         requiresManualUpload: renewalState.requiresManualUpload ?? false,
       },
     });
@@ -133,7 +139,7 @@ router.get('/api/session/groups', async (_req: Request, res: Response) => {
 router.post(
   '/api/session/renew',
   triggerRateLimiter,
-  async (_req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     if (renewalState.running) {
       return res.status(409).json({
         success: false,
@@ -144,14 +150,27 @@ router.post(
       });
     }
 
+    // Credentials supplied by the dashboard modal. All fields are optional —
+    // an empty body still works (cron jobs hit this with no body and fall
+    // through to env vars FB_EMAIL / FB_PASSWORD / FB_TOTP_SECRET).
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+    const reqEmail = typeof body.email === 'string' ? body.email : undefined;
+    const reqPassword = typeof body.password === 'string' ? body.password : undefined;
+    const reqTotpCode = typeof body.totpCode === 'string' ? body.totpCode : undefined;
+
     renewalState.running = true;
     renewalState.startedAt = new Date();
     renewalState.finishedAt = undefined;
     renewalState.lastError = undefined;
+    renewalState.challenge = undefined;
+    renewalState.userId = undefined;
     renewalState.requiresManualUpload = undefined;
 
     logger.info('[Session] Auto-renewal kicked off (async)');
-    await logSystemEvent('auth', 'Auto-renewal triggered - background headless login');
+    await logSystemEvent(
+      'auth',
+      reqEmail ? 'Auto-renewal triggered (credentials from dashboard)' : 'Auto-renewal triggered (env vars)'
+    );
 
     // Send the response NOW so the proxy doesn't time out.
     res.status(202).json({
@@ -174,29 +193,41 @@ router.post(
     (async () => {
       try {
         const result = await Promise.race([
-          stealthRefreshFacebookSession(),
-          new Promise<{ success: false; error: string }>((_, reject) =>
-            setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    `Auto-renewal timed out after ${HARD_TIMEOUT_MS / 1000}s — Facebook likely showed a challenge.`
-                  )
-                ),
-              HARD_TIMEOUT_MS
-            )
+          stealthRefreshFacebookSession({
+            email: reqEmail,
+            password: reqPassword,
+            totpCode: reqTotpCode,
+          }),
+          new Promise<{ success: false; error: string; challenge?: null; userId?: undefined }>(
+            (_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      `Auto-renewal timed out after ${HARD_TIMEOUT_MS / 1000}s — Facebook likely showed a challenge.`
+                    )
+                  ),
+                HARD_TIMEOUT_MS
+              )
           ),
         ]);
 
         if (result.success) {
           await checkAndUpdateSession();
+          renewalState.userId = result.userId ?? null;
           logger.info('[Session] Auto-renewal succeeded');
           await logSystemEvent('auth', 'Auto-renewal succeeded');
         } else {
           const err = result.error || 'Unknown error';
           renewalState.lastError = err;
+          renewalState.challenge = result.challenge ?? null;
+          // 2FA isn't really "needs manual upload" — it just needs another
+          // try with the code. Only flag manual-upload for the unrecoverable
+          // server-side cases (captcha / checkpoint / persistent failure).
           renewalState.requiresManualUpload =
-            /two-factor|2fa|captcha|checkpoint|security check/i.test(err);
+            result.challenge === 'captcha' ||
+            result.challenge === 'checkpoint' ||
+            /captcha|checkpoint|security check/i.test(err);
           logger.warn(`[Session] Auto-renewal failed: ${err}`);
           await logSystemEvent('error', `Auto-renewal failed: ${err}`);
         }

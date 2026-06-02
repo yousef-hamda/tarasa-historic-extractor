@@ -89,6 +89,17 @@ const SettingsPage: React.FC = () => {
   const [showCookieFallback, setShowCookieFallback] = useState(false);
   const [cookieJson, setCookieJson] = useState('');
 
+  // Credentials modal state — primary path for renewing the FB session.
+  // User types FB email + password (and optionally a 2FA code) into a modal;
+  // we POST them to /api/session/renew and poll /api/session/status for the
+  // result. If FB hits us with a captcha/checkpoint, we hand off to the
+  // Cookie Editor manual-upload modal.
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [credentialsEmail, setCredentialsEmail] = useState('');
+  const [credentialsPassword, setCredentialsPassword] = useState('');
+  const [credentialsTotp, setCredentialsTotp] = useState('');
+  const [credentialsShow2fa, setCredentialsShow2fa] = useState(false);
+
   // Reset data state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
@@ -129,105 +140,134 @@ const SettingsPage: React.FC = () => {
     fetchSessionStatus();
   }, [fetchSessionStatus]);
 
-  // Primary one-click flow.
-  //
-  // The server returns 202 IMMEDIATELY and runs the headless login in the
-  // background. We then poll /api/session/status every 3 s to learn the result.
-  // This avoids Railway's proxy 504 timeout that synchronous long requests hit.
-  const handleAutoRenew = async () => {
-    if (renewingSession) return;
-    setRenewingSession(true);
+  // Open the credentials modal. This replaces the old "immediately POST to
+  // /api/session/renew" handler — we now collect FB email + password from
+  // the user first, then submit (the modal owns the POST + polling loop).
+  const openCredentialsModal = () => {
     setSessionRenewResult(null);
     setShowCookieFallback(false);
-
-    try {
-      // 1. Kick off the background renewal (fast response, no proxy timeout risk)
-      const startRes = await apiFetch('/api/session/renew', {
-        method: 'POST',
-        skipAuth: true,
-        timeout: 15_000,
-      });
-
-      if (!startRes.ok && startRes.status !== 202 && startRes.status !== 409) {
-        // Try to read JSON, but tolerate non-JSON responses (e.g., proxy HTML)
-        let msg = `Unable to start renewal (HTTP ${startRes.status})`;
-        try {
-          const data = await startRes.json();
-          msg = data?.message || data?.error || msg;
-        } catch { /* response wasn't JSON — keep status-based message */ }
-        throw new Error(msg);
-      }
-      // status 409 means a previous renewal is still running — that's fine,
-      // we just continue to the polling loop.
-
-      // 2. Poll status until the background job finishes or we hit the cap.
-      // 240s gives the 200s server-side hard timeout time to fire and the
-      // status endpoint time to expose the result.
-      const POLL_TIMEOUT_MS = 240_000;
-      const POLL_INTERVAL_MS = 3_000;
-      const startedAt = Date.now();
-
-      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-
-        let statusData: SessionStatus & {
-          renewal?: {
-            running: boolean;
-            lastError: string | null;
-            requiresManualUpload: boolean;
-          };
-        };
-        try {
-          const statusRes = await apiFetch('/api/session/status');
-          if (!statusRes.ok) continue;
-          statusData = await statusRes.json();
-        } catch {
-          // Network blip — try again next tick
-          continue;
-        }
-
-        // Always refresh the displayed session card while we're polling
-        setSessionStatus(statusData);
-
-        const renewal = statusData.renewal;
-        if (renewal && !renewal.running) {
-          // Background job finished
-          if (renewal.lastError) {
-            setSessionRenewResult({ success: false, message: renewal.lastError });
-            if (renewal.requiresManualUpload) setShowCookieFallback(true);
-          } else if (statusData.sessionHealth?.status === 'valid') {
-            setSessionRenewResult({
-              success: true,
-              message: 'Facebook session renewed successfully.',
-            });
-          } else {
-            setSessionRenewResult({
-              success: false,
-              message: 'Renewal finished but the session is still not valid.',
-            });
-            setShowCookieFallback(true);
-          }
-          return;
-        }
-        // Otherwise it's still running — keep polling.
-      }
-
-      // 3. Hit the soft cap without a definitive result
-      setSessionRenewResult({
-        success: false,
-        message: 'Renewal is taking longer than 3 minutes. It may still complete in the background — refresh this page in a minute, or use manual upload.',
-      });
-      setShowCookieFallback(true);
-    } catch (err) {
-      setSessionRenewResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Failed to start renewal.',
-      });
-      setShowCookieFallback(true);
-    } finally {
-      setRenewingSession(false);
-    }
+    setCredentialsShow2fa(false);
+    setCredentialsTotp('');
+    // Keep email/password if the user already typed them in a prior session
+    // so a "Try again" doesn't make them re-type.
+    setShowCredentialsModal(true);
   };
+
+  // Drives the actual renewal request once the user submits the credentials
+  // modal. Mirrors the old handleAutoRenew flow (202 + status polling) but
+  // sends credentials in the body and threads the result back up to both the
+  // page banner and the modal's local state.
+  const submitCredentialsRenewal = useCallback(
+    async (
+      email: string,
+      password: string,
+      totpCode: string | undefined
+    ): Promise<{
+      ok: boolean;
+      challenge?: 'captcha' | '2fa' | 'checkpoint' | null;
+      userId?: string | null;
+      message: string;
+    }> => {
+      if (renewingSession) {
+        return { ok: false, message: 'Renewal already in flight.' };
+      }
+
+      setRenewingSession(true);
+      setSessionRenewResult(null);
+
+      try {
+        const startRes = await apiFetch('/api/session/renew', {
+          method: 'POST',
+          skipAuth: true,
+          timeout: 15_000,
+          body: JSON.stringify({
+            email,
+            password,
+            ...(totpCode ? { totpCode } : {}),
+          }),
+        });
+
+        if (!startRes.ok && startRes.status !== 202 && startRes.status !== 409) {
+          let msg = `Unable to start renewal (HTTP ${startRes.status})`;
+          try {
+            const data = await startRes.json();
+            msg = data?.message || data?.error || msg;
+          } catch {
+            /* response wasn't JSON — keep status-based message */
+          }
+          setRenewingSession(false);
+          return { ok: false, message: msg };
+        }
+
+        const POLL_TIMEOUT_MS = 240_000;
+        const POLL_INTERVAL_MS = 3_000;
+        const startedAt = Date.now();
+
+        while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+          let statusData: SessionStatus & {
+            renewal?: {
+              running: boolean;
+              lastError: string | null;
+              challenge: 'captcha' | '2fa' | 'checkpoint' | null;
+              userId: string | null;
+              requiresManualUpload: boolean;
+            };
+          };
+          try {
+            const statusRes = await apiFetch('/api/session/status');
+            if (!statusRes.ok) continue;
+            statusData = await statusRes.json();
+          } catch {
+            continue;
+          }
+
+          setSessionStatus(statusData);
+
+          const renewal = statusData.renewal;
+          if (renewal && !renewal.running) {
+            if (renewal.lastError) {
+              setRenewingSession(false);
+              return {
+                ok: false,
+                message: renewal.lastError,
+                challenge: renewal.challenge,
+              };
+            }
+            if (statusData.sessionHealth?.status === 'valid') {
+              setRenewingSession(false);
+              return {
+                ok: true,
+                userId: renewal.userId,
+                message: 'Facebook session renewed successfully.',
+              };
+            }
+            setRenewingSession(false);
+            return {
+              ok: false,
+              message: 'Renewal finished but the session is still not valid.',
+            };
+          }
+        }
+
+        setRenewingSession(false);
+        return {
+          ok: false,
+          message:
+            'Renewal is taking longer than 4 minutes. It may still complete in the background — refresh in a minute, or use the manual cookie path.',
+        };
+      } catch (err) {
+        setRenewingSession(false);
+        return {
+          ok: false,
+          message:
+            err instanceof Error ? err.message : 'Failed to start renewal.',
+        };
+      }
+    },
+    [renewingSession]
+  );
 
   const handleUploadCookies = async () => {
     if (renewingSession) return;
@@ -591,10 +631,13 @@ const SettingsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Renew Button */}
+        {/* Renew Button — opens a modal that asks the user for their FB
+            email + password (+ optional 2FA code). On submit, the modal POSTs
+            to /api/session/renew and polls /api/session/status. If FB rejects
+            with a captcha/checkpoint we hand off to the Cookie Editor modal. */}
         <div className="flex items-center gap-4 flex-wrap">
           <button
-            onClick={handleAutoRenew}
+            onClick={openCredentialsModal}
             disabled={renewingSession}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
               renewingSession
@@ -615,31 +658,93 @@ const SettingsPage: React.FC = () => {
             )}
           </button>
           <p className="text-xs text-slate-400">
-            Server logs in to Facebook with your saved credentials. Usually finishes in 30-90 seconds.
+            You&apos;ll enter your Facebook email + password. We try to log in
+            for you. Usually finishes in 30-90 seconds.
           </p>
         </div>
 
-        {/* Fallback: appears only when auto-login fails (captcha / 2FA / FB block) */}
+        {/* Fallback banner: appears only when auto-login failed (captcha /
+            checkpoint / persistent failure). Points the user at the
+            Cookie Editor flow. */}
         {showCookieFallback && (
-          <div className="mt-4 p-3 rounded-lg border border-slate-200 bg-slate-50 text-sm flex items-center gap-3">
+          <div className="mt-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-sm flex items-center gap-3">
             <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
             <span className="text-slate-700">
-              Facebook blocked the automated login. Upload your cookies manually instead:
+              Facebook blocked the automated login. Switch to <b>Plan B</b> — paste
+              your cookies (~30 sec one-time setup of a free Chrome extension).
             </span>
             <button
               onClick={() => {
                 setSessionRenewResult(null);
                 setShowCookieModal(true);
               }}
-              className="ms-auto px-3 py-1.5 rounded-md text-xs font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-100"
+              className="ms-auto px-3 py-1.5 rounded-md text-xs font-medium bg-white border border-amber-300 text-amber-700 hover:bg-amber-100"
             >
-              Upload cookies manually
+              Use Plan B (paste cookies)
             </button>
           </div>
         )}
       </div>
 
-      {/* Cookie Upload Modal — fallback path only */}
+      {/* Credentials Renewal Modal — primary path. User types FB email +
+          password (+ optional 2FA code). Modal POSTs and polls; on captcha /
+          checkpoint failure it hands off to the Cookie Editor modal. */}
+      {showCredentialsModal && (
+        <CredentialsRenewModal
+          email={credentialsEmail}
+          password={credentialsPassword}
+          totpCode={credentialsTotp}
+          show2fa={credentialsShow2fa}
+          renewing={renewingSession}
+          setEmail={setCredentialsEmail}
+          setPassword={setCredentialsPassword}
+          setTotpCode={setCredentialsTotp}
+          setShow2fa={setCredentialsShow2fa}
+          onClose={() => setShowCredentialsModal(false)}
+          onSubmit={async () => {
+            const result = await submitCredentialsRenewal(
+              credentialsEmail.trim(),
+              credentialsPassword,
+              credentialsTotp.trim() || undefined
+            );
+            if (result.ok) {
+              setSessionRenewResult({
+                success: true,
+                message: result.userId
+                  ? `Facebook session renewed for user ${result.userId}.`
+                  : 'Facebook session renewed successfully.',
+              });
+              setShowCredentialsModal(false);
+              setCredentialsPassword('');
+              setCredentialsTotp('');
+              setCredentialsShow2fa(false);
+              fetchSessionStatus();
+              return { ok: true };
+            }
+            // Renewal failed. Decide UX based on the challenge type.
+            if (result.challenge === '2fa') {
+              setCredentialsShow2fa(true);
+              return {
+                ok: false,
+                message:
+                  'Facebook is asking for a 2FA code. Enter the 6-digit code from your authenticator app and click "Log in" again.',
+                stayOpen: true,
+              };
+            }
+            if (result.challenge === 'captcha' || result.challenge === 'checkpoint') {
+              setShowCredentialsModal(false);
+              setSessionRenewResult({ success: false, message: result.message });
+              setShowCookieFallback(true);
+              setShowCookieModal(true);
+              return { ok: false, message: result.message };
+            }
+            // Generic error — keep modal open, surface message.
+            return { ok: false, message: result.message, stayOpen: true };
+          }}
+        />
+      )}
+
+      {/* Cookie Upload Modal — Plan B (manual paste via Cookie Editor). */}
       {showCookieModal && (
         <CookieUploadModal
           cookieJson={cookieJson}
@@ -965,12 +1070,19 @@ const CookieUploadModal: React.FC<CookieUploadModalProps> = ({
         className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 border-b border-slate-200">
+        <div className="p-6 border-b border-amber-100 bg-amber-50/40">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">Renew Facebook Session</h3>
-              <p className="text-sm text-slate-500 mt-1">
-                Upload fresh cookies from your browser. Takes ~30 seconds.
+              <div className="flex items-center gap-2 mb-1">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-500" />
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Plan B — paste your Facebook cookies
+                </h3>
+              </div>
+              <p className="text-sm text-slate-600">
+                Use this if the automatic login didn&apos;t work. About 30 seconds
+                the first time (installing a free Chrome extension), ~10 seconds
+                every time after.
               </p>
             </div>
             <button
@@ -985,40 +1097,91 @@ const CookieUploadModal: React.FC<CookieUploadModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5">
-          {/* Instructions */}
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-4">
-            <p className="text-sm font-medium text-slate-700 mb-3">How to get your cookies:</p>
-            <ol className="text-sm text-slate-600 space-y-2 list-decimal list-inside">
-              <li>
-                Install{' '}
+          {/* Step-by-step instructions */}
+          <div className="space-y-3">
+            {/* Step 1 — Install Cookie Editor */}
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold flex items-center justify-center">
+                1
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900">
+                  Install <b>Cookie Editor</b> (free, official Chrome store)
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  One click. 2M+ users. No developer mode warnings.
+                </p>
                 <a
-                  href="https://cookie-editor.com/"
+                  href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline font-medium"
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-blue-600 text-white hover:bg-blue-700"
                 >
-                  Cookie-Editor
-                </a>{' '}
-                (free, works in Chrome/Firefox/Safari/Edge). One-time, ~20 sec.
-              </li>
-              <li>
-                Open{' '}
+                  <KeyIcon className="w-3.5 h-3.5" />
+                  Install Cookie Editor
+                </a>
+              </div>
+            </div>
+
+            {/* Step 2 — Log into Facebook */}
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold flex items-center justify-center">
+                2
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900">
+                  Open Facebook in a new tab and log in
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Skip this step if you&apos;re already logged in.
+                </p>
                 <a
                   href="https://www.facebook.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline font-medium"
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                 >
-                  facebook.com
-                </a>{' '}
-                in a new tab and make sure you&apos;re logged in.
-              </li>
-              <li>
-                Click the Cookie-Editor icon in your toolbar → click <b>Export</b> → choose{' '}
-                <b>Export as JSON</b>. It auto-copies to your clipboard.
-              </li>
-              <li>Come back here and paste in the box below, then Save.</li>
-            </ol>
+                  Open facebook.com →
+                </a>
+              </div>
+            </div>
+
+            {/* Step 3 — Export from Cookie Editor */}
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold flex items-center justify-center">
+                3
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900">
+                  While on the Facebook tab, click the Cookie Editor icon
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Look for the cookie icon in your browser toolbar (top-right). If
+                  you don&apos;t see it, click the <b>puzzle-piece</b> icon → pin Cookie
+                  Editor.
+                </p>
+                <p className="text-xs text-slate-700 mt-1.5">
+                  In the popup: click <b>Export</b> (bottom button) → choose{' '}
+                  <b>Export as JSON</b>. Cookies are now copied to your clipboard.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 4 — Paste and save */}
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-600 text-white text-sm font-semibold flex items-center justify-center">
+                4
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900">
+                  Come back here, paste below, then click <b>Save Cookies</b>
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  We&apos;ll check that the right cookies are in there and tell you
+                  if anything is missing.
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Textarea */}
@@ -1080,6 +1243,223 @@ const CookieUploadModal: React.FC<CookieUploadModalProps> = ({
               <>
                 <CheckCircleIcon className="w-4 h-4" />
                 Save Cookies
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// CredentialsRenewModal — primary path. Asks the user for their Facebook
+// email + password (and optionally a 2FA code). On submit the parent does
+// the actual POST + polling and tells us what happened via the onSubmit
+// return value: success closes the modal; 2FA failure shows the code field
+// inline; captcha/checkpoint hands off to the Cookie Editor modal.
+// ============================================================================
+
+interface CredentialsRenewModalProps {
+  email: string;
+  password: string;
+  totpCode: string;
+  show2fa: boolean;
+  renewing: boolean;
+  setEmail: (v: string) => void;
+  setPassword: (v: string) => void;
+  setTotpCode: (v: string) => void;
+  setShow2fa: (v: boolean) => void;
+  onClose: () => void;
+  onSubmit: () => Promise<{ ok: boolean; message?: string; stayOpen?: boolean }>;
+}
+
+const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
+  email,
+  password,
+  totpCode,
+  show2fa,
+  renewing,
+  setEmail,
+  setPassword,
+  setTotpCode,
+  setShow2fa,
+  onClose,
+  onSubmit,
+}) => {
+  const [showPassword, setShowPassword] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setLocalError(null);
+    if (!email.trim() || !password) {
+      setLocalError('Enter your Facebook email and password.');
+      return;
+    }
+    const res = await onSubmit();
+    if (!res.ok && res.stayOpen && res.message) {
+      setLocalError(res.message);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      onClick={renewing ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-6 border-b border-slate-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Renew Facebook Session
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Enter your Facebook credentials. We&apos;ll log in for you and save the cookies.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              disabled={renewing}
+              className="text-slate-400 hover:text-slate-600 p-1 disabled:opacity-40"
+            >
+              <XCircleIcon className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-4">
+          {/* Email */}
+          <div>
+            <label htmlFor="fb-email" className="text-sm font-medium text-slate-700 block mb-1.5">
+              Facebook email
+            </label>
+            <input
+              id="fb-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              disabled={renewing}
+              autoFocus
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
+            />
+          </div>
+
+          {/* Password */}
+          <div>
+            <label htmlFor="fb-pass" className="text-sm font-medium text-slate-700 block mb-1.5">
+              Facebook password
+            </label>
+            <div className="relative">
+              <input
+                id="fb-pass"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                disabled={renewing}
+                className="w-full px-3 py-2 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600"
+              >
+                {showPassword ? (
+                  <EyeSlashIcon className="w-4 h-4" />
+                ) : (
+                  <EyeIcon className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* 2FA code — hidden by default, shown automatically if FB asks
+              for one, or revealed manually via the link below. */}
+          {show2fa ? (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+              <label htmlFor="fb-totp" className="text-sm font-medium text-amber-900 block mb-1">
+                Facebook wants a 2FA code
+              </label>
+              <p className="text-xs text-amber-800 mb-2">
+                Open your authenticator app (Google Authenticator, Authy, etc.) and type the current 6-digit code.
+              </p>
+              <input
+                id="fb-totp"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={8}
+                autoComplete="one-time-code"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                disabled={renewing}
+                className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:bg-amber-100"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShow2fa(true)}
+              disabled={renewing}
+              className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+            >
+              I have 2FA enabled on Facebook →
+            </button>
+          )}
+
+          {/* Inline error */}
+          {localError && (
+            <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 border border-red-200">
+              <ExclamationTriangleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+              <span className="text-xs text-red-700">{localError}</span>
+            </div>
+          )}
+
+          {/* Privacy note */}
+          <p className="text-xs text-slate-500">
+            Your credentials go only to this app&apos;s server, which uses them to log in to Facebook on
+            your behalf. They are not stored — only the resulting session cookies are.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="p-6 border-t border-slate-200 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={renewing}
+            className="px-4 py-2 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={renewing || !email.trim() || !password}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {renewing ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Logging in… (up to ~90s)
+              </>
+            ) : (
+              <>
+                <ShieldCheckIcon className="w-4 h-4" />
+                Log in &amp; save cookies
               </>
             )}
           </button>

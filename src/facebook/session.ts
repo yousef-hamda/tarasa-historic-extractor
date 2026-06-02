@@ -626,10 +626,20 @@ async function saveSessionFromContext(context: BrowserContext, cookiesFilePath: 
 // Verified locally before being wired into the dashboard's renew flow.
 // ============================================================================
 
-export const stealthRefreshFacebookSession = async (): Promise<{
+export interface StealthLoginCredentials {
+  email?: string;
+  password?: string;
+  /** Optional one-time TOTP code supplied by the user for this login attempt. */
+  totpCode?: string;
+}
+
+export const stealthRefreshFacebookSession = async (
+  credentials?: StealthLoginCredentials
+): Promise<{
   success: boolean;
   error?: string;
   challenge?: 'captcha' | '2fa' | 'checkpoint' | null;
+  userId?: string;
 }> => {
   // Dynamic import so importing this file doesn't load the stealth machinery
   // unless we actually use it (keeps cron startup time down).
@@ -642,11 +652,15 @@ export const stealthRefreshFacebookSession = async (): Promise<{
   } = await import('../scraper/stealthBrowser');
 
   let context: BrowserContext | null = null;
-  const email = process.env.FB_EMAIL || '';
-  const password = process.env.FB_PASSWORD || '';
+  const email = (credentials?.email || process.env.FB_EMAIL || '').trim();
+  const password = credentials?.password || process.env.FB_PASSWORD || '';
+  const oneTimeTotpCode = credentials?.totpCode?.replace(/\s+/g, '').trim();
 
   if (!email || !password) {
-    return { success: false, error: 'FB_EMAIL or FB_PASSWORD env vars are not set.' };
+    return {
+      success: false,
+      error: 'Facebook email or password is missing. Enter them in the dashboard or set FB_EMAIL / FB_PASSWORD env vars.',
+    };
   }
 
   try {
@@ -776,29 +790,47 @@ export const stealthRefreshFacebookSession = async (): Promise<{
     }
 
     if (challengeInfo === '2fa') {
-      // 2FA can be solved automatically when the user has shared their TOTP
-      // secret via the FB_TOTP_SECRET env var (extracted once from Facebook's
-      // "set up authenticator app" screen).
-      const totpSecret = process.env.FB_TOTP_SECRET?.trim().replace(/\s+/g, '');
-      if (!totpSecret) {
-        logger.warn('[StealthLogin] 2FA required but FB_TOTP_SECRET is not set');
-        return {
-          success: false,
-          error:
-            'Facebook is asking for a 2FA code. Set FB_TOTP_SECRET env var (TOTP secret from FB → Security → Two-factor authentication → Authentication app) to enable automated 2FA. Or use manual cookie upload.',
-          challenge: '2fa',
-        };
+      // Three ways to satisfy 2FA, in order of preference:
+      //   1. A one-time code the user typed into the dashboard right now.
+      //   2. A TOTP secret stored on the server (FB_TOTP_SECRET env var),
+      //      from which we generate the current code on the fly.
+      //   3. Nothing — bail with a helpful error so the dashboard can prompt
+      //      the user for a code and retry.
+      let code: string | null = null;
+
+      if (oneTimeTotpCode && /^\d{6,8}$/.test(oneTimeTotpCode)) {
+        code = oneTimeTotpCode;
+        logger.info('[StealthLogin] Using one-time TOTP code from request body');
+      } else {
+        const totpSecret = process.env.FB_TOTP_SECRET?.trim().replace(/\s+/g, '');
+        if (!totpSecret) {
+          logger.warn('[StealthLogin] 2FA required but no code or FB_TOTP_SECRET available');
+          return {
+            success: false,
+            error:
+              'Facebook is asking for a 2FA code. Enter the 6-digit code from your authenticator app and try again.',
+            challenge: '2fa',
+          };
+        }
+        try {
+          const otp = await import('otplib');
+          // `plugins` is accepted at runtime (the documented way to bind crypto
+          // + base32 plugins) but missing from otplib v13's type defs.
+          code = otp.generateSync({
+            secret: totpSecret,
+            plugins: [otp.NobleCryptoPlugin, otp.ScureBase32Plugin],
+          } as Parameters<typeof otp.generateSync>[0] & { plugins: unknown[] });
+          logger.info('[StealthLogin] Submitting TOTP code generated from FB_TOTP_SECRET');
+        } catch (genErr) {
+          return {
+            success: false,
+            error: `Could not generate TOTP code: ${(genErr as Error).message}. Enter the 6-digit code from your authenticator app instead.`,
+            challenge: '2fa',
+          };
+        }
       }
 
       try {
-        const otp = await import('otplib');
-        // `plugins` is accepted at runtime (the documented way to bind crypto
-        // + base32 plugins) but missing from otplib v13's type defs.
-        const code = otp.generateSync({
-          secret: totpSecret,
-          plugins: [otp.NobleCryptoPlugin, otp.ScureBase32Plugin],
-        } as Parameters<typeof otp.generateSync>[0] & { plugins: unknown[] });
-        logger.info('[StealthLogin] Submitting TOTP code from FB_TOTP_SECRET');
 
         // Find the 2FA code input — FB uses several selectors over the years
         const codeInputSelectors = [
@@ -920,7 +952,7 @@ export const stealthRefreshFacebookSession = async (): Promise<{
     );
 
     await page.close();
-    return { success: true };
+    return { success: true, userId: cUser.value };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error(`[StealthLogin] Error: ${message}`);
