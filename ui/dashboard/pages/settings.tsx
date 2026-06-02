@@ -701,6 +701,13 @@ const SettingsPage: React.FC = () => {
           setTotpCode={setCredentialsTotp}
           setShow2fa={setCredentialsShow2fa}
           onClose={() => setShowCredentialsModal(false)}
+          onSwitchToPlanB={() => {
+            // User wants to bail out of the credentials flow and paste
+            // cookies instead. Close this modal, open the Cookie Editor one.
+            setShowCredentialsModal(false);
+            setSessionRenewResult(null);
+            setShowCookieModal(true);
+          }}
           onSubmit={async () => {
             const result = await submitCredentialsRenewal(
               credentialsEmail.trim(),
@@ -1271,6 +1278,10 @@ interface CredentialsRenewModalProps {
   setTotpCode: (v: string) => void;
   setShow2fa: (v: boolean) => void;
   onClose: () => void;
+  /** Closes this modal and opens the Cookie Editor paste modal. Escape hatch
+   *  the user can take any time — useful when FB throws a challenge they
+   *  don't want to / can't satisfy here. */
+  onSwitchToPlanB: () => void;
   onSubmit: () => Promise<{ ok: boolean; message?: string; stayOpen?: boolean }>;
 }
 
@@ -1285,6 +1296,7 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
   setTotpCode,
   setShow2fa,
   onClose,
+  onSwitchToPlanB,
   onSubmit,
 }) => {
   const [showPassword, setShowPassword] = useState(false);
@@ -1420,11 +1432,22 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
             </button>
           )}
 
-          {/* Inline error */}
+          {/* Inline error — includes a one-click escape to Plan B (cookie
+              paste) so the user is never trapped here if FB keeps refusing. */}
           {localError && (
-            <div className="flex items-start gap-2 p-3 rounded-md bg-red-50 border border-red-200">
-              <ExclamationTriangleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-              <span className="text-xs text-red-700">{localError}</span>
+            <div className="rounded-md bg-red-50 border border-red-200 p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <ExclamationTriangleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <span className="text-xs text-red-700">{localError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onSwitchToPlanB}
+                disabled={renewing}
+                className="text-xs font-medium text-red-700 hover:text-red-900 underline disabled:opacity-50"
+              >
+                Or skip this and paste your cookies manually (Plan B) →
+              </button>
             </div>
           )}
 
@@ -1436,33 +1459,47 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-slate-200 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={renewing}
-            className="px-4 py-2 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={renewing || !email.trim() || !password}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {renewing ? (
-              <>
-                <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                Logging in… (up to ~90s)
-              </>
-            ) : (
-              <>
-                <ShieldCheckIcon className="w-4 h-4" />
-                Log in &amp; save cookies
-              </>
-            )}
-          </button>
+        <div className="p-6 border-t border-slate-200 space-y-3">
+          {/* Always-visible Plan B escape hatch — small, low-emphasis, but
+              never hidden. The user should never feel trapped in this modal. */}
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={onSwitchToPlanB}
+              disabled={renewing}
+              className="text-xs text-slate-500 hover:text-slate-700 underline disabled:opacity-50"
+            >
+              Don&apos;t want to log in here? Paste your Facebook cookies instead →
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={renewing}
+              className="px-4 py-2 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={renewing || !email.trim() || !password}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {renewing ? (
+                <>
+                  <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                  Logging in… (up to ~90s)
+                </>
+              ) : (
+                <>
+                  <ShieldCheckIcon className="w-4 h-4" />
+                  Log in &amp; save cookies
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
