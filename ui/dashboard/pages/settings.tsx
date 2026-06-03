@@ -731,11 +731,14 @@ const SettingsPage: React.FC = () => {
             // Renewal failed. Decide UX based on the challenge type.
             if (result.challenge === '2fa') {
               setCredentialsShow2fa(true);
+              // Pass the backend's message through; the modal renders it
+              // INSIDE the yellow 2FA box (not a separate red banner) when
+              // show2fa is true, which keeps the prompt and the feedback in
+              // the same visual unit.
               return {
                 ok: false,
-                message:
-                  'Facebook is asking for a 2FA code. Enter the 6-digit code from your authenticator app and click "Log in" again.',
                 stayOpen: true,
+                message: result.message,
               };
             }
             if (result.challenge === 'captcha' || result.challenge === 'checkpoint') {
@@ -1301,6 +1304,15 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const totpInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Auto-focus the 2FA field the moment it appears, so the user gets a clear
+  // visual signal ("type your code here") instead of having to find it.
+  React.useEffect(() => {
+    if (show2fa && totpInputRef.current) {
+      totpInputRef.current.focus();
+    }
+  }, [show2fa]);
 
   const handleSubmit = async () => {
     setLocalError(null);
@@ -1313,6 +1325,13 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
       setLocalError(res.message);
     }
   };
+
+  // When show2fa is true the error belongs INSIDE the yellow box (the
+  // yellow box and the error message are about the same thing — the 2FA
+  // code — so they should sit visually together rather than as a red
+  // banner below).
+  const errorBelongsInYellowBox = show2fa && Boolean(localError);
+  const errorBelongsInRedBanner = !show2fa && Boolean(localError);
 
   return (
     <div
@@ -1405,10 +1424,11 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
                 Facebook wants a 2FA code
               </label>
               <p className="text-xs text-amber-800 mb-2">
-                Open your authenticator app (Google Authenticator, Authy, etc.) and type the current 6-digit code.
+                Open your authenticator app (Google Authenticator, Authy, etc.) and type the current 6-digit code below, then click <b>Log in &amp; save cookies</b>.
               </p>
               <input
                 id="fb-totp"
+                ref={totpInputRef}
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]{6}"
@@ -1420,6 +1440,15 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
                 disabled={renewing}
                 className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:bg-amber-100"
               />
+              {/* When a 2FA-related error comes back (most often "code was
+                  wrong, try again"), show it inside the yellow box so the
+                  prompt and the feedback sit together. */}
+              {errorBelongsInYellowBox && (
+                <p className="mt-2 text-xs text-amber-900 flex items-start gap-1.5">
+                  <ExclamationTriangleIcon className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>{localError}</span>
+                </p>
+              )}
             </div>
           ) : (
             <button
@@ -1432,9 +1461,11 @@ const CredentialsRenewModal: React.FC<CredentialsRenewModalProps> = ({
             </button>
           )}
 
-          {/* Inline error — includes a one-click escape to Plan B (cookie
-              paste) so the user is never trapped here if FB keeps refusing. */}
-          {localError && (
+          {/* Red banner — only for errors that AREN'T about 2FA (e.g. wrong
+              email/password, network error). When 2FA is the topic the error
+              renders inside the yellow box above instead. Always includes the
+              Plan B escape hatch. */}
+          {errorBelongsInRedBanner && (
             <div className="rounded-md bg-red-50 border border-red-200 p-3 space-y-2">
               <div className="flex items-start gap-2">
                 <ExclamationTriangleIcon className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />

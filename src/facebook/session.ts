@@ -671,6 +671,21 @@ export const stealthRefreshFacebookSession = async (
     });
     context = result.context;
 
+    // Wipe any cookies from prior failed attempts. The stealth browser uses a
+    // persistent context (browser-data/) so state survives across calls; if a
+    // previous attempt left us mid-login (e.g. a /two_step_verification/ page),
+    // navigating back to facebook.com would redirect us into the same partial
+    // state instead of showing the login form. Clearing cookies guarantees a
+    // fresh login flow each time. The browser fingerprint (UA, viewport, etc.)
+    // is preserved since that lives in browser-data/ as profile prefs, not as
+    // cookies.
+    try {
+      await context.clearCookies();
+      logger.info('[StealthLogin] Cleared cookies from persistent context');
+    } catch (clearErr) {
+      logger.warn(`[StealthLogin] Could not clear cookies (continuing anyway): ${(clearErr as Error).message}`);
+    }
+
     const page = await context.newPage();
     page.setDefaultTimeout(45_000);
 
@@ -892,6 +907,25 @@ export const stealthRefreshFacebookSession = async (
             await stealthHumanDelay(2000, 3500);
           }
         } catch { /* ignore */ }
+
+        // If we're STILL on the 2FA page after submitting the code, Facebook
+        // rejected it (wrong code, or code expired before we typed it). Tell
+        // the user clearly so they know to grab a fresh code from their
+        // authenticator app — the generic "no session cookies" error below
+        // would be confusing.
+        const postSubmitUrl = page.url().toLowerCase();
+        if (
+          postSubmitUrl.includes('/two_step_verification/') ||
+          postSubmitUrl.includes('/two_factor/') ||
+          postSubmitUrl.includes('/login/checkpoint')
+        ) {
+          logger.warn(`[StealthLogin] Still on 2FA page after submitting code (URL: ${postSubmitUrl}). FB rejected the code.`);
+          return {
+            success: false,
+            error: "Facebook didn't accept that 2FA code. Open your authenticator app, grab the CURRENT 6-digit code (codes rotate every 30 seconds), enter it, and try again.",
+            challenge: '2fa',
+          };
+        }
 
         logger.info('[StealthLogin] TOTP submitted, continuing to cookie verification');
       } catch (totpErr) {
