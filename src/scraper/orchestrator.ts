@@ -19,6 +19,7 @@ import { isApifyConfigured, scrapeGroupWithApify, NormalizedPost } from './apify
 import { scrapeGroupWithMBasic, isMBasicAvailable } from './mbasicScraper';
 import { scrapeGroupWithPlaywright } from './playwrightScraper';
 import { isSessionValid } from '../session/sessionManager';
+import { getCookieHealth } from '../facebook/session';
 import { loadSessionHealth } from '../session/sessionHealth';
 import {
   markGroupScraped,
@@ -191,7 +192,11 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
 
     // Step 3: Playwright - the reliable fallback (or the known working method)
     if (posts.length === 0) {
-      const sessionValid = await isSessionValid();
+      // Use getCookieHealth() — it actually checks the cookies on disk for
+      // c_user + xs presence + expiry. isSessionValid() only reads the
+      // in-memory health flag, which can be stale.
+      const cookieHealth = await getCookieHealth();
+      const sessionValid = cookieHealth.hasSession;
 
       if (sessionValid) {
         try {
@@ -205,7 +210,9 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
             // This avoids wasting time on Apify/MBasic that don't work for this group
             await updateGroupCache(groupId, { accessMethod: 'playwright', isAccessible: true, errorMessage: null });
           } else {
-            logger.warn(`[Orchestrator] Playwright returned 0 posts for ${groupId}`);
+            const msg = `Playwright returned 0 posts for ${groupId} — likely a login wall or empty feed`;
+            logger.warn(`[Orchestrator] ${msg}`);
+            await logSystemEvent('error', msg);
             result.errorMessage = 'No new posts found in feed';
             // Still mark playwright as the method - it loaded the page successfully
             await updateGroupCache(groupId, { accessMethod: 'playwright', isAccessible: true });
@@ -213,6 +220,8 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
         } catch (playwrightError) {
           const errorMsg = (playwrightError as Error).message;
           logger.error(`[Orchestrator] Playwright failed for ${groupId}: ${errorMsg}`);
+          // Surface to the dashboard logs — previously this was logger-only.
+          await logSystemEvent('error', `Playwright failed for ${groupId}: ${errorMsg}`);
           result.errorMessage = errorMsg;
 
           // Only mark as inaccessible if it's a clear access error
@@ -221,7 +230,9 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
           }
         }
       } else {
-        logger.warn(`[Orchestrator] No valid session for Playwright - skipping ${groupId}`);
+        const msg = `No valid Facebook session - skipping Playwright for ${groupId}`;
+        logger.warn(`[Orchestrator] ${msg}`);
+        await logSystemEvent('error', msg);
         result.errorMessage = 'No valid Facebook session';
       }
     }

@@ -98,9 +98,20 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
 
     try {
       logger.info(`[Playwright] Browser launch attempt ${attempt}/${MAX_BROWSER_RETRIES}`);
-      // Use publicGroupMode for scraping - cookies interfere with URL rendering for public groups
-      // For private groups, this may need to be revisited
-      const ctx = await createFacebookContext({ publicGroupMode: true });
+      // Decide cookie behaviour based on whether we actually have a session.
+      // If a valid session exists we MUST use it — without auth cookies
+      // Facebook strips the feed content (or shows a login wall) and the
+      // scraper silently extracts 0 posts.
+      // If no session exists (cron firing before first login, etc.) fall
+      // back to the unauthenticated public-only mode the old code used.
+      const sessionHealth = await getCookieHealth();
+      const useAuthCookies = sessionHealth.hasSession;
+      if (useAuthCookies) {
+        logger.info(`[Playwright] Scraping with authenticated session (user ${sessionHealth.userId})`);
+      } else {
+        logger.info('[Playwright] No FB session available — scraping in public-only mode');
+      }
+      const ctx = await createFacebookContext({ publicGroupMode: !useAuthCookies });
       browser = ctx.browser;
       context = ctx.context;
 
