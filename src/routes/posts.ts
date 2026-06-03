@@ -10,6 +10,7 @@ import { logSystemEvent } from '../utils/systemLog';
 import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { apiKeyAuth } from '../middleware/apiAuth';
 import { parsePositiveInt, parseNonNegativeInt } from '../utils/validation';
+import { isLocked, withLock } from '../utils/cronLock';
 
 const router = Router();
 
@@ -45,8 +46,18 @@ router.get('/api/posts', async (req: Request, res: Response) => {
 
 router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
-    // Using hybrid scraper: Apify for public groups, Playwright fallback for private groups
-    await scrapeAllGroups();
+    // Acquire the same lock the cron uses, so a manual trigger can't race
+    // against an in-flight cron scrape (which would double-hit Facebook and
+    // race on the post upserts).
+    if (await isLocked('scrape')) {
+      return res.status(409).json({
+        error: 'Scrape already in progress',
+        message: 'A scrape is already running (cron or another manual trigger). Try again in a few minutes.',
+      });
+    }
+    await withLock('scrape', async () => {
+      await scrapeAllGroups();
+    });
     res.json({ status: 'completed' });
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';

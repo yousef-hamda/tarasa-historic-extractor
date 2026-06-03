@@ -328,6 +328,15 @@ router.post('/api/session/upload-cookies', triggerRateLimiter, async (req: Reque
     const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
     await fs.writeFile(cookiesPath, JSON.stringify(normalized, null, 2));
 
+    // Mirror to DB so cookies survive Railway redeploys (which wipe the
+    // container filesystem). Best-effort — file write is the primary path.
+    try {
+      const { persistCookiesArrayToDb } = await import('../facebook/session');
+      await persistCookiesArrayToDb(normalized as never);
+    } catch (e) {
+      logger.warn(`[Session] DB cookie mirror failed (cookies still saved on disk): ${(e as Error).message}`);
+    }
+
     // Mark session healthy + persist user id
     await markSessionValid(cUser.value);
 

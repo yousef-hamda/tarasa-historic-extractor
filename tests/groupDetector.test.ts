@@ -10,6 +10,7 @@ vi.mock('../src/database/prisma', () => ({
     groupInfo: {
       findUnique: vi.fn(),
       upsert: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -451,7 +452,7 @@ describe('markGroupScraped()', () => {
     vi.mocked(prisma.groupInfo.upsert).mockResolvedValue({} as any);
   });
 
-  it('should update group with scrape info', async () => {
+  it('should update group with scrape info and reset consecutiveErrors', async () => {
     await markGroupScraped('123456', 'playwright');
 
     expect(prisma.groupInfo.upsert).toHaveBeenCalledWith(
@@ -462,6 +463,7 @@ describe('markGroupScraped()', () => {
           lastScraped: expect.any(Date),
           isAccessible: true,
           errorMessage: null,
+          consecutiveErrors: 0,
           lastChecked: expect.any(Date),
         },
       })
@@ -492,34 +494,55 @@ describe('markGroupScraped()', () => {
 describe('markGroupError()', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(prisma.groupInfo.upsert).mockResolvedValue({} as any);
+    vi.mocked(prisma.groupInfo.upsert).mockResolvedValue({
+      consecutiveErrors: 1,
+      isAccessible: true,
+    } as any);
   });
 
-  it('should update group with error info', async () => {
+  it('should increment consecutiveErrors and record error message', async () => {
     await markGroupError('123456', 'Failed to load page');
 
     expect(prisma.groupInfo.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { groupId: '123456' },
         update: {
-          isAccessible: false,
           errorMessage: 'Failed to load page',
+          consecutiveErrors: { increment: 1 },
           lastChecked: expect.any(Date),
         },
       })
     );
   });
 
-  it('should mark group as inaccessible', async () => {
-    await markGroupError('123456', 'Error');
+  it('should NOT mark group as inaccessible on a single error (below threshold)', async () => {
+    // Mock the upsert to return consecutiveErrors=1 (still under threshold of 3)
+    vi.mocked(prisma.groupInfo.upsert).mockResolvedValue({
+      consecutiveErrors: 1,
+      isAccessible: true,
+    } as any);
 
-    expect(prisma.groupInfo.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: expect.objectContaining({
-          isAccessible: false,
-        }),
-      })
-    );
+    await markGroupError('123456', 'Single transient error');
+
+    // First call increments. There should NOT be a second prisma.groupInfo.update
+    // call setting isAccessible: false because we haven't hit the threshold yet.
+    expect(prisma.groupInfo.update).not.toHaveBeenCalled();
+  });
+
+  it('should mark group as inaccessible once consecutiveErrors hits the threshold', async () => {
+    // Mock the upsert to return consecutiveErrors=3 (threshold reached)
+    vi.mocked(prisma.groupInfo.upsert).mockResolvedValue({
+      consecutiveErrors: 3,
+      isAccessible: true,
+    } as any);
+    vi.mocked(prisma.groupInfo.update).mockResolvedValue({} as any);
+
+    await markGroupError('123456', 'Persistent failure');
+
+    expect(prisma.groupInfo.update).toHaveBeenCalledWith({
+      where: { groupId: '123456' },
+      data: { isAccessible: false },
+    });
   });
 
   it('should handle empty error message', async () => {

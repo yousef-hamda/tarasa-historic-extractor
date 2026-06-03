@@ -88,6 +88,10 @@ model SessionState {
   userId       String?
   userName     String?
   expiresAt    DateTime?
+  // Serialized cookies array (the same shape src/config/cookies.json holds).
+  // Persisting here means we survive Railway redeploys, which wipe the
+  // container filesystem.
+  cookiesJson  String?       @db.Text
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -96,19 +100,24 @@ model SessionState {
 }
 
 model GroupInfo {
-  id           Int          @id @default(autoincrement())
-  groupId      String       @unique
-  groupType    GroupType    @default(unknown)
-  groupName    String?
-  memberCount  Int?
-  lastChecked  DateTime     @default(now())
-  lastScraped  DateTime?
-  accessMethod AccessMethod @default(none)
-  isAccessible Boolean      @default(true)
-  isEnabled    Boolean      @default(true)
-  errorMessage String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id                Int          @id @default(autoincrement())
+  groupId           String       @unique
+  groupType         GroupType    @default(unknown)
+  groupName         String?
+  memberCount       Int?
+  lastChecked       DateTime     @default(now())
+  lastScraped       DateTime?
+  accessMethod      AccessMethod @default(none)
+  isAccessible      Boolean      @default(true)
+  isEnabled         Boolean      @default(true)
+  errorMessage      String?
+  // Consecutive failure counter. Incremented on each scrape error, reset to
+  // 0 on success. Only when this hits the threshold (3) do we flip
+  // isAccessible to false — protects against a single transient failure
+  // (network blip, FB rate-limiting) permanently muting a group.
+  consecutiveErrors Int          @default(0)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@index([groupType])
   @@index([accessMethod])

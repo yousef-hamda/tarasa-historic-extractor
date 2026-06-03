@@ -49,6 +49,88 @@ const shouldSkipMessage = async (postId: number, authorLink: string): Promise<{ 
   return { skip: false };
 };
 
+/**
+ * After pressing Enter, Facebook's composer clears the textarea ONLY if the
+ * message was actually sent. Reading the textarea's value/innerText back is
+ * the most reliable confirmation we can get without a network probe.
+ *
+ * Returns true if the textarea is now empty (= message sent). Returns false
+ * if it still contains text (= Enter was swallowed and we need to click).
+ */
+const wasTextareaCleared = async (
+  textAreaHandle: import('playwright').ElementHandle
+): Promise<boolean> => {
+  try {
+    // The composer uses a contenteditable div, not a real <textarea>. Both
+    // .value (real textarea) and innerText (contenteditable) are checked so
+    // we don't care which variant Facebook is serving today.
+    const remaining = await textAreaHandle.evaluate((el) => {
+      const node = el as HTMLElement & { value?: string };
+      const value = (node.value || '').trim();
+      const text = (node.innerText || '').trim();
+      return (value + text).trim();
+    });
+    return remaining.length === 0;
+  } catch {
+    // If we can't read the textarea at all (it might've been detached after a
+    // successful send), treat that as "cleared" — the optimistic-by-default
+    // call is to trust the Enter press worked.
+    return true;
+  }
+};
+
+/**
+ * Find a Send button SCOPED to the composer container. We walk up from the
+ * textarea handle to find the nearest dialog / form / role=presentation
+ * container and search for a Send-labeled button inside that subtree only.
+ *
+ * Returns null if no scoped Send button is found. We do NOT fall back to a
+ * page-wide selector — that's exactly the bug we're fixing. If Enter didn't
+ * work and there's no scoped button, the message attempt fails fast and the
+ * outer retry loop decides what to do.
+ */
+const findSendButtonNearTextarea = async (
+  page: import('playwright').Page,
+  textAreaHandle: import('playwright').ElementHandle
+): Promise<import('playwright').ElementHandle | null> => {
+  try {
+    // Resolve the closest container. We use evaluateHandle so we can return
+    // a DOM node back to Node. Prefer dialog > form > the textarea's parent.
+    const containerHandle = await textAreaHandle.evaluateHandle((el) => {
+      const node = el as HTMLElement;
+      const dialog = node.closest('[role="dialog"]');
+      if (dialog) return dialog;
+      const form = node.closest('form');
+      if (form) return form;
+      // Fall back to a couple of levels up so we have a useful subtree.
+      return node.parentElement?.parentElement?.parentElement || node.parentElement || node;
+    });
+    const container = containerHandle.asElement();
+    if (!container) {
+      return null;
+    }
+
+    // Look for a Send-labeled actionable element WITHIN the container.
+    // Order matters: prefer aria-label hits (most reliable), then specific
+    // role=button with text, then plain submit buttons.
+    const candidates = [
+      'div[role="button"][aria-label="Send"]',
+      'button[aria-label="Send"]',
+      'div[role="button"]:has-text("Send")',
+      'button:has-text("Send")',
+      'button[type="submit"]',
+    ];
+    for (const sel of candidates) {
+      const found = await container.$(sel).catch(() => null);
+      if (found) return found;
+    }
+    return null;
+  } catch (err) {
+    logger.debug(`[Messenger] findSendButtonNearTextarea error: ${(err as Error).message}`);
+    return null;
+  }
+};
+
 export const dispatchMessages = async (): Promise<void> => {
   // Check if messaging is enabled
   if (!getMessagingEnabled()) {
@@ -156,17 +238,41 @@ export const dispatchMessages = async (): Promise<void> => {
             await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
             await humanDelay();
 
-            // Try sending via Enter, then fallback to explicit send button
+            // Send strategy: press Enter first (succeeds ~95% of the time),
+            // then VERIFY by checking whether the textarea was cleared. Only
+            // if it wasn't cleared do we fall back to a Send-button click —
+            // and even then we scope the selector to the same container as
+            // the textarea so we never click an unrelated "Send" on the page
+            // (e.g. a "Send via Messenger" share-sheet behind a modal).
             await page.keyboard.press('Enter');
             await humanDelay();
 
-            const sendButton = await page.$('div[role="button"]:has-text("Send"), button:has-text("Send")');
-            if (sendButton) {
-              await sendButton.click();
+            const enterWorked = await wasTextareaCleared(textAreaHandle).catch(() => false);
+
+            let sentVia: 'enter' | 'send-button' | 'unknown' = enterWorked ? 'enter' : 'unknown';
+
+            if (!enterWorked) {
+              logger.info(`[Messenger] Enter did not clear textarea for post ${candidate.postId}; trying Send button (scoped)`);
+              // Look for a Send button inside the same container as the
+              // textarea. This avoids the page-wide selector that previously
+              // matched unrelated buttons behind FB modal overlays.
+              const sendButton = await findSendButtonNearTextarea(page, textAreaHandle);
+              if (!sendButton) {
+                throw new Error('Enter did not send the message and no Send button was found near the composer');
+              }
+              try {
+                // force: true bypasses any benign overlay (cookie banners,
+                // "save chat?" backdrops). 5s cap means we don't burn 30s
+                // per attempt on a click that's never going to land.
+                await sendButton.click({ force: true, timeout: 5_000 });
+                sentVia = 'send-button';
+              } catch (clickErr) {
+                throw new Error(`Send button click failed: ${(clickErr as Error).message}`);
+              }
             }
 
             await humanDelay();
-            logger.info(`Message attempt ${attempt} sent for post ${candidate.postId}`);
+            logger.info(`[Messenger] Message attempt ${attempt} sent for post ${candidate.postId} (via ${sentVia})`);
           },
           {
             attempts: 3,

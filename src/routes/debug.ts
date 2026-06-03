@@ -13,6 +13,8 @@ import { getEventHistory } from '../debug/eventEmitter';
 import { runFullDiagnostics, getLastDiagnosticResult, setLastDiagnosticResult, DiagnosticResult } from '../debug/diagnostics';
 import logger from '../utils/logger';
 import { apiKeyAuth } from '../middleware/apiAuth';
+import { resetAllCircuitBreakers, getCircuitBreakerStatus } from '../utils/circuitBreaker';
+import { logSystemEvent } from '../utils/systemLog';
 
 const router = Router();
 
@@ -246,6 +248,34 @@ router.get('/api/debug/circuit-breakers', (req: Request, res: Response) => {
   res.json({
     circuitBreakers: getCircuitBreakers(),
   });
+});
+
+/**
+ * POST /api/debug/circuit-breakers/reset
+ *
+ * Manually reset all circuit breakers to CLOSED. Useful when an external
+ * service was failing (OpenAI quota / Apify) and the user has fixed the
+ * underlying issue — without this endpoint the only recovery is a Railway
+ * redeploy (which also wipes session cookies, a much heavier hammer).
+ *
+ * Gated by the existing apiKeyAuth on /api/debug (see router.use above).
+ */
+router.post('/api/debug/circuit-breakers/reset', async (_req: Request, res: Response) => {
+  try {
+    resetAllCircuitBreakers();
+    const status = getCircuitBreakerStatus();
+    await logSystemEvent('admin', 'Circuit breakers manually reset via /api/debug').catch(() => undefined);
+    logger.info('[Debug] Circuit breakers manually reset');
+    res.json({
+      success: true,
+      message: 'All circuit breakers reset to CLOSED state.',
+      circuitBreakers: status,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`[Debug] Circuit breaker reset failed: ${message}`);
+    res.status(500).json({ success: false, error: message });
+  }
 });
 
 /**

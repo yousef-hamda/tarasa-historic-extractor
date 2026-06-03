@@ -253,7 +253,13 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
       result.success = result.postsSaved > 0;
       await markGroupScraped(groupId, result.method);
 
-      logger.info(`[Orchestrator] Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method}`);
+      const summary = `Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method}`;
+      logger.info(`[Orchestrator] ${summary}`);
+      // Make per-group success visible on the dashboard Logs page, not just
+      // in stdout. Previously only the per-group ERROR path was logSystemEvent'd.
+      if (result.success) {
+        await logSystemEvent('scrape', summary);
+      }
     } else {
       if (!result.errorMessage) {
         result.errorMessage = 'No new posts found';
@@ -266,6 +272,10 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
         // Keep isAccessible: true - 0 posts doesn't mean inaccessible
       });
       logger.warn(`[Orchestrator] Group ${groupId}: ${result.errorMessage}`);
+      // Surface 0-posts cases to the dashboard too. If we see the same group
+      // posting "no new posts" for many cycles in a row, that's a hint to
+      // investigate even though it isn't strictly an error.
+      await logSystemEvent('scrape', `Group ${groupId} loaded but feed had no new posts`);
     }
 
   } catch (error) {

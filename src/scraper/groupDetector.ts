@@ -235,30 +235,86 @@ export const getGroupsWithAccessInfo = async (): Promise<
 
 /**
  * Mark a group as successfully scraped
- * IMPORTANT: Always clears errorMessage - a successful scrape means no error
+ * IMPORTANT: Always clears errorMessage and resets the consecutiveErrors
+ * counter — a successful scrape erases the failure streak.
  */
 export const markGroupScraped = async (
   groupId: string,
   method: AccessMethod
 ): Promise<void> => {
-  await updateGroupCache(groupId, {
-    accessMethod: method,
-    lastScraped: new Date(),
-    isAccessible: true,
-    errorMessage: null,  // Always clear - success means no error
-  });
-  logger.debug(`Group ${groupId} marked as successfully scraped via ${method}`);
+  try {
+    await prisma.groupInfo.upsert({
+      where: { groupId },
+      update: {
+        accessMethod: method,
+        lastScraped: new Date(),
+        isAccessible: true,
+        errorMessage: null,
+        consecutiveErrors: 0, // reset on success
+        lastChecked: new Date(),
+      },
+      create: {
+        groupId,
+        accessMethod: method,
+        lastScraped: new Date(),
+        isAccessible: true,
+        consecutiveErrors: 0,
+      },
+    });
+    logger.debug(`Group ${groupId} marked as successfully scraped via ${method}`);
+  } catch (error) {
+    logger.error(`Failed to mark group scraped: ${(error as Error).message}`);
+  }
 };
 
+// After this many CONSECUTIVE failed scrape attempts, we flip the group to
+// isAccessible: false. Below the threshold we just bump the counter and
+// keep trying — protects against transient network blips / FB rate-limits
+// permanently muting a group.
+const INACCESSIBLE_THRESHOLD = 3;
+
 /**
- * Mark a group as having an error
+ * Mark a group as having an error. Increments the consecutiveErrors counter
+ * but only flips isAccessible to false once the streak reaches the threshold.
+ * Used to be: any single exception → group is dead forever. Now: takes ≥3
+ * consecutive failures to mute a group.
  */
 export const markGroupError = async (
   groupId: string,
   error: string
 ): Promise<void> => {
-  await updateGroupCache(groupId, {
-    isAccessible: false,
-    errorMessage: error,
-  });
+  try {
+    // Increment counter atomically and read the new value
+    const updated = await prisma.groupInfo.upsert({
+      where: { groupId },
+      update: {
+        errorMessage: error,
+        consecutiveErrors: { increment: 1 },
+        lastChecked: new Date(),
+      },
+      create: {
+        groupId,
+        errorMessage: error,
+        consecutiveErrors: 1,
+        isAccessible: true, // first error doesn't mute
+      },
+    });
+
+    if (updated.consecutiveErrors >= INACCESSIBLE_THRESHOLD && updated.isAccessible) {
+      // Streak hit the threshold for the first time — flip the flag.
+      await prisma.groupInfo.update({
+        where: { groupId },
+        data: { isAccessible: false },
+      });
+      logger.warn(
+        `[GroupDetector] Group ${groupId} marked inaccessible after ${updated.consecutiveErrors} consecutive errors. Latest: ${error}`
+      );
+    } else {
+      logger.warn(
+        `[GroupDetector] Group ${groupId} error #${updated.consecutiveErrors} (threshold ${INACCESSIBLE_THRESHOLD}): ${error}`
+      );
+    }
+  } catch (e) {
+    logger.error(`Failed to mark group error: ${(e as Error).message}`);
+  }
 };

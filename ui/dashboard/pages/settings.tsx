@@ -55,6 +55,7 @@ const SettingsPage: React.FC = () => {
   const [apiKeyStatus, setApiKeyStatus] = useState<{ kind: 'saved' | 'cleared' } | null>(null);
   const [triggering, setTriggering] = useState<TriggerType | null>(null);
   const [triggerResult, setTriggerResult] = useState<{ type: TriggerType; success: boolean; message: string } | null>(null);
+  const [resettingBreaker, setResettingBreaker] = useState(false);
 
   // Hydrate the input from localStorage on mount so users see what's already saved.
   useEffect(() => {
@@ -396,6 +397,37 @@ const SettingsPage: React.FC = () => {
       });
     } finally {
       setTriggering(null);
+    }
+  };
+
+  // Manually reset the OpenAI circuit breaker. The breaker auto-opens for 15
+  // minutes after a burst of failures (e.g. when OpenAI billing is in a bad
+  // state). Once the user has fixed the underlying issue, this button lets
+  // them recover instantly instead of waiting out the cooldown.
+  const handleResetBreaker = async () => {
+    if (resettingBreaker) return;
+    setResettingBreaker(true);
+    try {
+      const res = await apiFetch('/api/debug/circuit-breakers/reset', {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data?.error || data?.message || `Reset failed (HTTP ${res.status})`);
+      }
+      setTriggerResult({
+        type: 'classification',
+        success: true,
+        message: 'OpenAI circuit breaker reset — next classify/generate tick will retry the API.',
+      });
+    } catch (err) {
+      setTriggerResult({
+        type: 'classification',
+        success: false,
+        message: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setResettingBreaker(false);
     }
   };
 
@@ -908,6 +940,20 @@ const SettingsPage: React.FC = () => {
               <ChatBubbleLeftRightIcon className="w-4 h-4" />
             )}
             {triggering === 'message' ? 'Sending...' : 'Trigger Messages'}
+          </button>
+
+          <button
+            onClick={handleResetBreaker}
+            disabled={resettingBreaker}
+            className="btn-secondary justify-center"
+            title="Force-reset the OpenAI circuit breaker to CLOSED. Useful after fixing OpenAI billing or transient quota issues — otherwise you'd wait 15 minutes for auto-recovery."
+          >
+            {resettingBreaker ? (
+              <ArrowPathIcon className="w-4 h-4 animate-spin" />
+            ) : (
+              <BoltIcon className="w-4 h-4" />
+            )}
+            {resettingBreaker ? 'Resetting…' : 'Reset OpenAI Breaker'}
           </button>
         </div>
       </div>

@@ -39,7 +39,61 @@ interface Cookie {
   sameSite?: 'Strict' | 'Lax' | 'None';
 }
 
+// ---------------------------------------------------------------------------
+// Cookie persistence
+//
+// Railway's container filesystem is ephemeral — every redeploy wipes
+// src/config/cookies.json, so without DB persistence the FB session is lost
+// on every push. We solve this by ALSO writing cookies to a TEXT column on
+// the SessionState row. On startup we restore the JSON file from DB if the
+// file is missing.
+// ---------------------------------------------------------------------------
+
+const persistCookiesToDb = async (cookies: Cookie[]): Promise<void> => {
+  if (!cookies || cookies.length === 0) return;
+  try {
+    const prisma = (await import('../database/prisma')).default;
+    const cookiesJson = JSON.stringify(cookies);
+    const existing = await prisma.sessionState.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (existing) {
+      await prisma.sessionState.update({
+        where: { id: existing.id },
+        data: { cookiesJson, updatedAt: new Date() },
+      });
+    } else {
+      await prisma.sessionState.create({
+        data: { status: 'valid', cookiesJson, lastValid: new Date() },
+      });
+    }
+    logger.debug(`Persisted ${cookies.length} cookies to SessionState.cookiesJson`);
+  } catch (error) {
+    // Persistence to DB is best-effort. We don't fail the operation if it
+    // hiccups — the JSON file write is the primary path.
+    logger.warn(`Failed to persist cookies to DB (continuing): ${(error as Error).message}`);
+  }
+};
+
+const restoreCookiesFromDb = async (): Promise<Cookie[] | null> => {
+  try {
+    const prisma = (await import('../database/prisma')).default;
+    const row = await prisma.sessionState.findFirst({
+      where: { cookiesJson: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!row || !row.cookiesJson) return null;
+    const parsed = JSON.parse(row.cookiesJson) as Cookie[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    logger.info(`[Session] Restored ${parsed.length} cookies from DB (file was missing or empty)`);
+    return parsed;
+  } catch (error) {
+    logger.warn(`Failed to restore cookies from DB: ${(error as Error).message}`);
+    return null;
+  }
+};
+
 export const loadCookies = async (): Promise<Cookie[]> => {
+  // Primary path: read the on-disk JSON file. Fast and avoids hitting the
+  // DB on every scrape attempt.
   try {
     const raw = await fs.readFile(cookiesPath, 'utf-8');
     const cookies: Cookie[] = JSON.parse(raw);
@@ -49,12 +103,30 @@ export const loadCookies = async (): Promise<Cookie[]> => {
     if (cookies.length !== validCookies.length) {
       logger.warn(`Pruned ${cookies.length - validCookies.length} expired cookies from saved session`);
     }
-    return validCookies;
+    if (validCookies.length > 0) {
+      return validCookies;
+    }
+    // File exists but has no valid cookies — fall through to DB restore
+    logger.warn('cookies.json has 0 valid cookies; falling back to DB restore');
   } catch (error) {
-    // File doesn't exist or is invalid - start with fresh session
-    logger.debug(`No existing cookies found: ${(error as Error).message}`);
-    return [];
+    logger.debug(`No existing cookies file (${(error as Error).message}); checking DB`);
   }
+
+  // Fallback: file missing or empty — restore from DB (Railway redeploy case).
+  const restored = await restoreCookiesFromDb();
+  if (restored && restored.length > 0) {
+    // Write restored cookies back to the JSON file so subsequent reads are
+    // fast and the rest of the app sees the canonical file.
+    try {
+      await fs.writeFile(cookiesPath, JSON.stringify(restored, null, 2));
+      logger.info('[Session] Wrote DB-restored cookies back to cookies.json');
+    } catch (e) {
+      logger.warn(`Could not write DB-restored cookies to file: ${(e as Error).message}`);
+    }
+    return restored;
+  }
+
+  return [];
 };
 
 export const saveCookies = async (context: BrowserContext): Promise<void> => {
@@ -63,6 +135,8 @@ export const saveCookies = async (context: BrowserContext): Promise<void> => {
     if (cookies && cookies.length > 0) {
       await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
       logger.info(`Cookies saved (${cookies.length} cookies)`);
+      // Mirror to DB so the session survives Railway redeploys
+      await persistCookiesToDb(cookies as Cookie[]);
     } else {
       logger.warn('No cookies to save');
     }
@@ -71,6 +145,10 @@ export const saveCookies = async (context: BrowserContext): Promise<void> => {
     logger.warn(`Failed to save cookies: ${(error as Error).message}`);
   }
 };
+
+// Exported so the upload-cookies route can mirror to DB directly without
+// having to spin up a BrowserContext just to save.
+export const persistCookiesArrayToDb = persistCookiesToDb;
 
 /**
  * Check if we have a valid Facebook session
@@ -981,6 +1059,8 @@ export const stealthRefreshFacebookSession = async (
 
     // Persist to the canonical cookies.json the rest of the app reads from.
     await fs.writeFile(cookiesPath, JSON.stringify(cookiesNow, null, 2));
+    // Mirror to DB so cookies survive Railway container restarts.
+    await persistCookiesToDb(cookiesNow as Cookie[]);
     logger.info(
       `[StealthLogin] SUCCESS — captured ${cookiesNow.length} cookies for user ${cUser.value}`
     );
