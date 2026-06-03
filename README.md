@@ -352,6 +352,18 @@ GROUP_IDS=136596023614231,987654321,123456789
 # Message Quota (prevents Facebook from flagging spam)
 MAX_MESSAGES_PER_DAY=20
 
+# How long to wait before messaging the same Facebook authorLink again.
+# Default 30. Catches phantom-duplicate posts and prevents author spam even
+# when the dedup logic misses something.
+MESSAGE_AUTHOR_COOLDOWN_DAYS=30
+
+# Optional: TOTP secret for hands-off 2FA during Renew Session.
+# Leave blank to require the user to enter the 6-digit code in the dashboard
+# modal manually (recommended default — most users won't need TOTP).
+# Get this from FB → Security → Two-factor authentication → Authentication app
+# (when the QR appears, click "Show secret key" — paste the base32 string).
+FB_TOTP_SECRET=
+
 # Email Alerts (Optional - for 2FA/Captcha notifications)
 # Use Gmail App Password: https://support.google.com/accounts/answer/185833
 SYSTEM_EMAIL_ALERT=your_email@gmail.com
@@ -361,7 +373,7 @@ SYSTEM_EMAIL_PASSWORD=your_app_password
 #### Step 5: Generate Prisma Client
 
 ```bash
-npx prisma generate --schema=src/database/schema.prisma
+npx prisma generate --schema=prisma/schema.prisma
 ```
 
 #### Step 6: Run Database Migrations
@@ -369,7 +381,7 @@ npx prisma generate --schema=src/database/schema.prisma
 This creates all the necessary tables in your database:
 
 ```bash
-npx prisma migrate dev --name init --schema=src/database/schema.prisma
+npx prisma migrate dev --name init --schema=prisma/schema.prisma
 ```
 
 You should see output like:
@@ -437,7 +449,7 @@ Now open your browser and navigate to:
 #### Optional: Prisma Studio (Database Viewer)
 
 ```bash
-npx prisma studio --schema=src/database/schema.prisma --port 5556
+npx prisma studio --schema=prisma/schema.prisma --port 5556
 ```
 
 Opens a visual database browser at http://localhost:5556
@@ -538,26 +550,40 @@ The extractor uses multiple fallback strategies to maximize data extraction:
 
 The classifier:
 1. Fetches unclassified posts from database
-2. Sends each post to OpenAI with classification prompt
+2. Sends each post to OpenAI with a strict classification prompt
 3. Receives structured JSON response:
    ```json
    {
      "is_historic": true,
      "confidence": 95,
-     "reason": "Post describes personal memory of 1948 events"
+     "reason": "Detailed first-hand memory of 1967 with specific people and places"
    }
    ```
-4. Only posts with confidence ≥ 75% proceed to message generation
+4. Only posts with confidence **strictly greater than 75** proceed to message
+   generation (intentionally tight — see Strict Story Criteria below).
 5. Saves classification results to database
 
-**Classification Criteria:**
-- Historical events
-- Personal memories related to past events
-- Narratives referencing history or old times
+**Strict Story Criteria (confidence > 75 requires ALL of these):**
+- **Narrative** — the post tells a story, recounts a memory, describes an
+  experience (chronological or descriptive arc).
+- **Specificity** — names a concrete event, person, place, or period
+  (not a generic gesture toward history).
+- **Substance** — several sentences of actual content (not a single line,
+  caption, or question).
+- **Personal or community memory** — first-hand, second-hand, or local oral
+  history.
+
+If even one of the four is missing, the classifier returns confidence ≤ 75
+and the post is NOT messaged. This explicitly excludes event announcements,
+group rules, "share your photos" requests, single-line captions, and
+commercial content — even when they mention history themed topics.
+
+The classifier prompt and scale are documented in
+[`src/ai/classifier.ts`](./src/ai/classifier.ts).
 
 ### 3. Message Generation (Every 5 Minutes)
 
-For valid historic posts (confidence ≥ 75%):
+For valid historic posts (confidence > 75 — strictly greater than):
 1. Detects the language of the original post
 2. Generates personalized message **in the same language** using OpenAI
 3. Creates pre-filled Tarasa submission link with post data
@@ -604,14 +630,36 @@ The messenger bot:
 - Browser fingerprint masking
 - Cookie-based session persistence
 
-### 5. Auto-Login System (Daily)
+### 5. Session Renewal
 
-Maintains Facebook session:
-1. Checks if cookies are still valid
-2. Detects login screen, 2FA, or captcha
-3. Auto-fills credentials if needed
-4. Saves fresh cookies
-5. Sends email alert if manual intervention required (2FA/Captcha)
+The Facebook session is the dashboard's most operationally sensitive piece —
+without it, the scraper can't read group content. Two complementary paths:
+
+**Path A — Credentials modal (primary).** User clicks **Renew Session** on
+the Settings page. A modal asks for FB email + password (and reveals a 2FA
+code field when Facebook challenges with two-factor). Backend uses the
+stealth headless Playwright login. Realistic success rate from Railway IPs
+is 40–70% per attempt — Facebook anti-bot rejects some attempts. When 2FA
+is detected and the user enters a code, success rate jumps; the modal also
+detects when Facebook rejects a stale code and prompts for a fresh one.
+
+**Path B — Cookie Editor paste (fallback).** The credentials modal always
+shows a small *"Don't want to log in here? Paste your Facebook cookies
+instead →"* link. Works 100% of the time: user installs the free Cookie
+Editor browser extension (one-click from the Chrome Web Store, no
+developer mode), exports cookies from facebook.com as JSON, pastes into
+the dashboard. Takes ~30 seconds the first time, ~10 seconds after.
+
+**Cookies survive Railway redeploys.** Whenever cookies are written to the
+on-disk `src/config/cookies.json`, they're mirrored to the Postgres
+`SessionState.cookiesJson` column. On server start, if the file is missing
+(common after a Railway redeploy — container filesystem is ephemeral),
+cookies are restored from the database row. User no longer needs to
+re-renew after every code push.
+
+The daily `login-refresh` cron is still around for unattended fallback
+when env-var creds are set (`FB_EMAIL` / `FB_PASSWORD`), but it's no
+longer the primary path.
 
 ---
 
@@ -2659,7 +2707,7 @@ Major feature update with AI-powered Telegram bot, A/B testing, advanced search,
 - ✅ Fixed unsafe error casting in posts route handlers
 
 **Testing:**
-- ✅ Expanded test suite to 838+ unit tests
+- ✅ Expanded test suite to 846+ unit tests
 - ✅ All tests passing
 - ✅ TypeScript compilation clean
 - ✅ Dashboard build successful
@@ -2980,7 +3028,7 @@ if (rssMB > 1500) { /* fail - only if RSS exceeds 1.5GB */ }
 
 **Solution:** Use explicit port flag:
 ```bash
-npx prisma studio --schema=src/database/schema.prisma --port 5556
+npx prisma studio --schema=prisma/schema.prisma --port 5556
 ```
 
 ---
