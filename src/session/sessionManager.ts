@@ -109,6 +109,27 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
     logger.debug('Could not load saved storage state');
   }
 
+  // ALSO load cookies from the canonical cookies.json — this is the file the
+  // rest of the app reads from (set by the credentials renewal flow and the
+  // manual cookie-upload modal). Without this merge step, the session-check
+  // cron opens a browser that doesn't know the user just renewed and ends up
+  // re-marking the session invalid 30 minutes after a successful renewal.
+  try {
+    const path = await import('path');
+    const fs = await import('fs/promises');
+    const cookiesJsonPath = path.resolve(__dirname, '../config/cookies.json');
+    const raw = await fs.readFile(cookiesJsonPath, 'utf-8').catch(() => null);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        await browser.addCookies(parsed);
+        logger.debug(`Loaded ${parsed.length} cookies from cookies.json into persistent context`);
+      }
+    }
+  } catch (e) {
+    logger.debug(`Could not merge cookies.json into persistent context: ${(e as Error).message}`);
+  }
+
   // The persistent context is both browser and context
   return { browser: browser as unknown as Browser, context: browser };
 };
