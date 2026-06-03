@@ -245,21 +245,29 @@ const GroupsPage: React.FC = () => {
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null);
   const [resettingGroup, setResettingGroup] = useState<string | null>(null);
   const [resettingAll, setResettingAll] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchGroups = useCallback(async () => {
+    setRefreshing(true);
     try {
-      const res = await apiFetch('/api/groups');
+      // Cache-bust so the user sees fresh data immediately after clicking
+      // Refresh — without `t=`, intermediate caches (browser, CDN) can serve
+      // a stale response and make the button feel unresponsive.
+      const res = await apiFetch(`/api/groups?t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         setGroups(data.groups || []);
+        setLastRefreshedAt(new Date());
       }
     } catch (err) {
       console.error('Failed to fetch groups:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -444,12 +452,19 @@ const GroupsPage: React.FC = () => {
           </button>
           <button
             onClick={fetchGroups}
+            disabled={refreshing}
             className="btn-secondary"
+            title={lastRefreshedAt ? `Last refreshed at ${lastRefreshedAt.toLocaleTimeString()}` : 'Click to refresh group list'}
           >
-            <ArrowPathIcon className="h-4 w-4" />
-            Refresh
+            <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
+        {lastRefreshedAt && (
+          <p className="text-xs text-slate-400 mt-2 text-right">
+            Last refreshed {lastRefreshedAt.toLocaleTimeString()}
+          </p>
+        )}
       </div>
 
       {/* Stats Cards */}

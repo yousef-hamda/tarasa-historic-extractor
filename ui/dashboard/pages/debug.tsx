@@ -466,47 +466,45 @@ export default function DebugPage() {
     }
   };
 
-  const runDiagnostics = () => {
+  const runDiagnostics = async () => {
     if (isDiagnosticRunning) return;
 
-    // Close any existing event source
+    // Close any leftover SSE connection from a previous attempt — the SSE
+    // path is no longer used (see below) but the ref may still hold one.
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
     setIsDiagnosticRunning(true);
     setDiagnosticResult(null);
 
-    // Create EventSource for SSE (pass API key as query param since EventSource can't set headers)
-    const apiKey = typeof window !== 'undefined'
-      ? (localStorage.getItem('tarasa_api_key') || process.env.NEXT_PUBLIC_API_KEY || '')
-      : '';
-    const sseUrl = `http://${window.location.hostname}:4000/api/debug/diagnostics/stream${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
-    const eventSource = new EventSource(sseUrl);
-    eventSourceRef.current = eventSource;
-
-    eventSource.addEventListener('progress', (event) => {
-      const data = JSON.parse(event.data);
+    // Switched from SSE (EventSource) to a plain POST. EventSource can't set
+    // custom headers, so the X-API-Key auth on /api/debug/* never worked —
+    // the connection failed silently and the user saw "No Diagnostics Run Yet".
+    // The POST endpoint /api/debug/diagnostics/run does the same work and
+    // goes through apiFetch (which sets X-API-Key correctly). We lose live
+    // progress streaming but gain a reliable result.
+    try {
+      const res = await apiFetch('/api/debug/diagnostics/run', {
+        method: 'POST',
+        timeout: 120_000, // diagnostics may run a while
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Diagnostics request failed (HTTP ${res.status}): ${errText.slice(0, 200)}`);
+      }
+      const data = await res.json();
       setDiagnosticResult(data);
-    });
-
-    eventSource.addEventListener('complete', (event) => {
-      const data = JSON.parse(event.data);
-      setDiagnosticResult(data);
+    } catch (err) {
+      console.error('Diagnostics run error:', err);
+      setDiagnosticResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Diagnostics request failed',
+      } as unknown as DiagnosticResult);
+    } finally {
       setIsDiagnosticRunning(false);
-      eventSource.close();
-    });
-
-    eventSource.addEventListener('error', (event) => {
-      console.error('Diagnostic SSE error:', event);
-      setIsDiagnosticRunning(false);
-      eventSource.close();
-    });
-
-    eventSource.onerror = () => {
-      setIsDiagnosticRunning(false);
-      eventSource.close();
-    };
+    }
   };
 
   // Cleanup event source on unmount

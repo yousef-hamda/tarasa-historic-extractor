@@ -48,6 +48,63 @@ const getGroupIds = async (): Promise<string[]> => {
 };
 
 /**
+ * Known group-rule / pinned-announcement / group-description text patterns.
+ * If a scraped post's text BEGINS with any of these (case-insensitive), we
+ * drop it — these are not user-generated content. Extend this list as we
+ * encounter new patterns.
+ *
+ * Conservative: only matches start-of-string anchors, not substrings, so we
+ * don't drop legitimate posts that quote rule text.
+ */
+const GROUP_RULE_PATTERNS: RegExp[] = [
+  /^Please be respectful/i,
+  /^When posting photographs/i,
+  /^הקבוצה מיועדת/, // "This group is intended for…" (group description starter)
+  /^חוקי הקבוצה/, // "Group rules"
+  /^Group rules/i,
+  /^Welcome to the group/i,
+  /^This is a group for/i,
+  /^Read the rules before posting/i,
+];
+
+/**
+ * Returns true if a post should be SKIPPED (not saved to DB). Reasons:
+ *   - Author is the logged-in user themselves (page chrome picked up as author)
+ *   - Post has no author at all (rare — usually means we caught a page widget)
+ *   - Post text starts with a known group-rule/description pattern
+ */
+const shouldSkipPost = (post: NormalizedPost, selfUserId: string | null): { skip: boolean; reason?: string } => {
+  // Filter 1: posts authored by the logged-in user. The extractor sometimes
+  // picks up the sticky header / left-sidebar avatar as the post author.
+  if (selfUserId && post.authorLink) {
+    // Match either profile.php?id={selfUserId} or /{selfUserId}/ patterns.
+    const link = post.authorLink;
+    if (
+      link.includes(`profile.php?id=${selfUserId}`) ||
+      new RegExp(`/${selfUserId}(/|$|\\?)`).test(link)
+    ) {
+      return { skip: true, reason: `author is the logged-in scraping account (${selfUserId})` };
+    }
+  }
+
+  // Filter 2: posts with no author at all are almost always page-chrome bits
+  // (group description, "What's on your mind?" widget, etc.).
+  if (!post.authorName && !post.authorLink) {
+    return { skip: true, reason: 'post has no author attribution' };
+  }
+
+  // Filter 3: post text starts with a known group-rule pattern.
+  const text = (post.text || '').trim();
+  for (const pattern of GROUP_RULE_PATTERNS) {
+    if (pattern.test(text)) {
+      return { skip: true, reason: `matches group-rule pattern ${pattern}` };
+    }
+  }
+
+  return { skip: false };
+};
+
+/**
  * Upsert a single post into the database
  * Note: Only updates authorName/authorLink/authorPhoto if new values are provided,
  * preserving existing data when extraction doesn't find these fields
@@ -206,15 +263,17 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
           if (posts.length > 0) {
             result.method = 'playwright';
             logger.info(`[Orchestrator] Playwright SUCCESS for ${groupId}: ${posts.length} posts`);
-            // Cache 'playwright' as the working method - future scrapes will use it directly
-            // This avoids wasting time on Apify/MBasic that don't work for this group
-            await updateGroupCache(groupId, { accessMethod: 'playwright', isAccessible: true, errorMessage: null });
+            // markGroupScraped at the end of this function will set
+            // accessMethod=playwright and lastScraped — no need to update
+            // the cache here.
           } else {
             const msg = `Playwright returned 0 posts for ${groupId} — likely a login wall or empty feed`;
             logger.warn(`[Orchestrator] ${msg}`);
             await logSystemEvent('error', msg);
             result.errorMessage = 'No new posts found in feed';
-            // Still mark playwright as the method - it loaded the page successfully
+            // Playwright reached the group page successfully, just no new
+            // posts — cache that fact so we keep using Playwright next time
+            // instead of re-probing other methods.
             await updateGroupCache(groupId, { accessMethod: 'playwright', isAccessible: true });
           }
         } catch (playwrightError) {
@@ -224,10 +283,21 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
           await logSystemEvent('error', `Playwright failed for ${groupId}: ${errorMsg}`);
           result.errorMessage = errorMsg;
 
-          // Only mark as inaccessible if it's a clear access error
-          if (errorMsg.includes('not a member') || errorMsg.includes('private') || errorMsg.includes('Join group') || errorMsg.includes('Content isn') || errorMsg.includes('not available')) {
-            await updateGroupCache(groupId, { isAccessible: false, errorMessage: errorMsg });
-          }
+          // Always update the cache so we know this group has been attempted.
+          // Mark inaccessible only on clear access errors (membership /
+          // privacy / takedown); for transient errors (timeouts, network),
+          // keep isAccessible:true so the next cycle retries.
+          const isAccessError =
+            errorMsg.includes('not a member') ||
+            errorMsg.includes('private') ||
+            errorMsg.includes('Join group') ||
+            errorMsg.includes('Content isn') ||
+            errorMsg.includes('not available');
+          await updateGroupCache(groupId, {
+            accessMethod: 'playwright', // we tried this method — remember it
+            isAccessible: !isAccessError,
+            errorMessage: errorMsg,
+          });
         }
       } else {
         const msg = `No valid Facebook session - skipping Playwright for ${groupId}`;
@@ -241,7 +311,20 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
     if (posts.length > 0) {
       result.postsFound = posts.length;
 
+      // Resolve the current FB user once per scrape so we can filter out
+      // posts the extractor mistakenly attributed to the logged-in account
+      // itself (a common DOM-heuristic failure mode).
+      const selfHealth = await getCookieHealth();
+      const selfUserId = selfHealth?.userId || null;
+
+      let skipped = 0;
       for (const post of posts) {
+        const skipDecision = shouldSkipPost(post, selfUserId);
+        if (skipDecision.skip) {
+          skipped++;
+          logger.info(`[Orchestrator] Dropping post in ${groupId} — ${skipDecision.reason}`);
+          continue;
+        }
         const saved = await upsertPost(post);
         if (saved) {
           result.postsSaved++;
@@ -253,11 +336,13 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
       result.success = result.postsSaved > 0;
       await markGroupScraped(groupId, result.method);
 
-      const summary = `Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method}`;
+      const summary = skipped > 0
+        ? `Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method} (${skipped} filtered out: self-author / rule-text / unauthored)`
+        : `Group ${groupId}: ${result.postsSaved}/${result.postsFound} posts saved via ${result.method}`;
       logger.info(`[Orchestrator] ${summary}`);
       // Make per-group success visible on the dashboard Logs page, not just
       // in stdout. Previously only the per-group ERROR path was logSystemEvent'd.
-      if (result.success) {
+      if (result.success || skipped > 0) {
         await logSystemEvent('scrape', summary);
       }
     } else {

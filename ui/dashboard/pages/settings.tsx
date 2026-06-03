@@ -335,7 +335,13 @@ const SettingsPage: React.FC = () => {
     setResetResult(null);
 
     try {
-      const res = await apiFetch('/api/data/reset', { method: 'DELETE' });
+      // The backend requires the X-Confirm-Delete header as a second factor
+      // beyond typing "DELETE ALL DATA" in the textbox. Without this header
+      // the route returns 400 ("Send X-Confirm-Delete: DELETE-ALL-DATA…").
+      const res = await apiFetch('/api/data/reset', {
+        method: 'DELETE',
+        headers: { 'X-Confirm-Delete': 'DELETE-ALL-DATA' },
+      });
       const data = await res.json();
 
       if (res.ok && data.success) {

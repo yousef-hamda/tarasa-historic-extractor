@@ -197,15 +197,20 @@ const extractAuthorFromObj = (obj: any): string | undefined => {
 
 /**
  * Get intercepted full text that matches truncated text
+ *
+ * Lowered the minimum text length from 30 → 20 chars so shorter posts (which
+ * are exactly the ones most often truncated in the feed) can still be looked
+ * up in the GraphQL intercept cache. The prefix-comparison still uses 20
+ * chars, which is plenty to disambiguate typical FB posts.
  */
 export const getInterceptedFullText = (truncatedText: string): string | null => {
-  if (!truncatedText || truncatedText.length < 30) return null;
+  if (!truncatedText || truncatedText.length < 20) return null;
 
   // Try to match by the beginning of the text
   const searchKey = truncatedText.substring(0, 50).toLowerCase().trim();
 
   for (const [key, post] of interceptedPosts) {
-    if (key.startsWith(searchKey.substring(0, 30)) || searchKey.startsWith(key.substring(0, 30))) {
+    if (key.startsWith(searchKey.substring(0, 20)) || searchKey.startsWith(key.substring(0, 20))) {
       logger.debug(`[FullText] Found intercepted full text match`);
       return post.fullText;
     }
@@ -219,14 +224,15 @@ export const getInterceptedFullText = (truncatedText: string): string | null => 
  * This is crucial for constructing post URLs when the DOM doesn't expose IDs
  */
 export const getInterceptedPostId = (text: string): string | null => {
-  if (!text || text.length < 30) return null;
+  if (!text || text.length < 20) return null;
 
   // Try to match by the beginning of the text
   const searchKey = text.substring(0, 50).toLowerCase().trim();
 
   for (const [key, post] of interceptedPosts) {
-    // Check if the text matches
-    if (key.startsWith(searchKey.substring(0, 30)) || searchKey.startsWith(key.substring(0, 30))) {
+    // Check if the text matches (20-char prefix — covers shorter posts that
+    // were previously missing this lookup with the old 30-char minimum)
+    if (key.startsWith(searchKey.substring(0, 20)) || searchKey.startsWith(key.substring(0, 20))) {
       // Return the post ID if it looks valid (numeric or pfbid format)
       if (post.postId && (post.postId.match(/^\d{10,}$/) || post.postId.startsWith('pfbid'))) {
         logger.debug(`[FullText] Found intercepted post ID: ${post.postId}`);
@@ -317,9 +323,17 @@ export const expandAllSeeMoreButtons = async (page: Page, container?: ElementHan
     };
 
     // Check if text matches "See more" pattern EXACTLY
+    // Normalize whitespace (including non-breaking space and zero-width
+    // chars) before comparing — FB localized variants often differ from
+    // the canonical patterns only by whitespace, and exact-equality match
+    // was silently failing on them.
     const isSeeMoreText = (text: string): boolean => {
       if (!text) return false;
-      const lowerText = text.toLowerCase().trim();
+      const lowerText = text
+        .toLowerCase()
+        .replace(/[\u00A0\u200B-\u200F\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
       // Must be a short text (just "See more" or similar)
       if (lowerText.length > 30) return false;
@@ -453,8 +467,10 @@ export const extractFullTextFromContainer = async (
     });
 
     if (clicked > 0) {
-      // Wait for expansion
-      await page.waitForTimeout(600);
+      // Wait for expansion — bumped from 600ms because FB's content
+      // re-render after "See more" can take 1+ second on slow networks,
+      // and a too-short wait was leaving us with the still-truncated text.
+      await page.waitForTimeout(1500);
       logger.debug(`[FullText] Clicked ${clicked} "See more" in container`);
     }
   } catch (e) {
