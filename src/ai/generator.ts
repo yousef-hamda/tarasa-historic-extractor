@@ -61,10 +61,16 @@ const buildLink = (postId: number, text: string) => {
 
 
 export const generateMessages = async (): Promise<void> => {
+  // Only generate outreach messages for posts the classifier is HIGHLY confident
+  // are full historical stories. The classifier prompt was tightened so that
+  // confidence > 75 means "yes, this is a real story worth preserving" — short
+  // event listings, group rules, photo captions, etc. all get ≤75 and are
+  // intentionally skipped here. Threshold is strictly greater-than per the
+  // updated requirements ("only stories with grade MORE than 75").
   const classifiedPosts = await prisma.postClassified.findMany({
     where: {
       isHistoric: true,
-      confidence: { gte: 75 },
+      confidence: { gt: 75 },
       post: {
         authorLink: { not: null }, // Only fetch posts with author links
         generated: { none: {} },
