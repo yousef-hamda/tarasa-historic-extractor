@@ -254,12 +254,25 @@ const MessagesPage: React.FC = () => {
         </div>
       )}
 
+      {/* How dispatch works — explains the difference between "in queue" and
+          "sent (24h)" that's been confusing. Messages live in the queue until
+          the next 5-min cron tick, then dispatch in batches capped by the
+          daily quota. Both ON-and-pending and ALREADY-SENT can coexist. */}
+      {messagingEnabled && (data.stats?.queue ?? 0) > 0 && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
+          <InboxStackIcon className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-slate-600">
+            <b>{data.stats?.queue ?? 0}</b> messages are in the queue. They&apos;ll dispatch on the next 5-minute cron tick (capped by the daily quota). Toggle <b>Messaging OFF</b> above to halt dispatch entirely.
+          </p>
+        </div>
+      )}
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Queue Size"
           value={data.stats?.queue ?? 0}
-          subtitle="Awaiting dispatch"
+          subtitle={messagingEnabled ? 'Sends in next 5-min cycle' : 'Paused — toggle ON to dispatch'}
           icon={<InboxStackIcon className="w-5 h-5 text-slate-600" />}
         />
         <StatCard

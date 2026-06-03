@@ -16,6 +16,13 @@ import { getMessagingEnabled } from '../routes/settings';
 // Maximum retry attempts before marking a message as permanently failed
 const MAX_RETRY_ATTEMPTS = 3;
 
+// Defensive: don't message the same authorLink twice within this window,
+// regardless of which post triggered the second attempt. Catches both
+// "phantom duplicate post" cases (where the dedup hash fails) and the
+// genuine "same author posted two historic things" case where we shouldn't
+// spam them.
+const AUTHOR_COOLDOWN_DAYS = Number(process.env.MESSAGE_AUTHOR_COOLDOWN_DAYS) || 30;
+
 const getRemainingMessageQuota = async (): Promise<number> => {
   const max = Number(process.env.MAX_MESSAGES_PER_DAY) || QUOTA.DEFAULT_MAX_PER_DAY;
   const since = new Date(Date.now() - QUOTA.WINDOW_MS);
@@ -27,23 +34,44 @@ const getRemainingMessageQuota = async (): Promise<number> => {
 };
 
 /**
- * Check if a message has already been sent or has exceeded retry limits
+ * Check if a message has already been sent or has exceeded retry limits.
+ *
+ * Two layers of "should skip":
+ *   1. Per-(post, author) — already sent OR exceeded retry count
+ *   2. Per-author within cooldown window — protects against duplicate
+ *      messages to the same person across different posts (incl. phantom
+ *      duplicates produced by content-hash drift)
  */
 const shouldSkipMessage = async (postId: number, authorLink: string): Promise<{ skip: boolean; reason?: string }> => {
+  // Layer 1: same (post, author) — already sent or maxed out retries.
   const existing = await prisma.messageSent.findUnique({
     where: { postId_authorLink: { postId, authorLink } },
   });
-
-  if (!existing) {
-    return { skip: false };
+  if (existing) {
+    if (existing.status === 'sent') {
+      return { skip: true, reason: 'already sent' };
+    }
+    if (existing.retryCount >= MAX_RETRY_ATTEMPTS) {
+      return { skip: true, reason: `exceeded ${MAX_RETRY_ATTEMPTS} retry attempts` };
+    }
   }
 
-  if (existing.status === 'sent') {
-    return { skip: true, reason: 'already sent' };
-  }
-
-  if (existing.retryCount >= MAX_RETRY_ATTEMPTS) {
-    return { skip: true, reason: `exceeded ${MAX_RETRY_ATTEMPTS} retry attempts` };
+  // Layer 2: same authorLink, sent within cooldown window.
+  // We DON'T want to spam the same person — once per cooldown, ever.
+  const cooldownSince = new Date(Date.now() - AUTHOR_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+  const recentToAuthor = await prisma.messageSent.findFirst({
+    where: {
+      authorLink,
+      status: 'sent',
+      sentAt: { gte: cooldownSince },
+    },
+    orderBy: { sentAt: 'desc' },
+  });
+  if (recentToAuthor && recentToAuthor.postId !== postId) {
+    return {
+      skip: true,
+      reason: `already messaged this author within last ${AUTHOR_COOLDOWN_DAYS} days (post ${recentToAuthor.postId})`,
+    };
   }
 
   return { skip: false };
@@ -234,6 +262,14 @@ export const dispatchMessages = async (): Promise<void> => {
             if (!textAreaHandle) {
               throw new Error('Messenger text area not found');
             }
+
+            // Diagnostic: log the first 200 chars of the message text so we
+            // can debug rendering issues (e.g. URL-encoded Hebrew showing up
+            // weirdly in the recipient's chat). Goes to stdout only, NOT
+            // systemLog — these are user-visible message contents.
+            logger.debug(
+              `[Messenger] Sending message for post ${candidate.postId} to ${post.authorLink} (first 200 chars): ${candidate.messageText.slice(0, 200)}`
+            );
 
             await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
             await humanDelay();

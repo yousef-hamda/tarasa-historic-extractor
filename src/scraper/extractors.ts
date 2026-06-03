@@ -106,8 +106,42 @@ const cleanPostText = (text: string | null | undefined): string => {
     .trim();
 };
 
+/**
+ * Strip Facebook's "X minutes ago" / "X hours ago" / "Just now" trailing
+ * line if present. This suffix is appended to the scraped text and changes
+ * every time we re-scrape the same post — so without removing it, the
+ * content hash drifts and the same real post gets stored multiple times.
+ *
+ * Conservative: only strips the LAST line, and only if that line matches a
+ * known time-indicator pattern. Won't accidentally strip "5m" if it's part
+ * of the post's real content (e.g. inside a paragraph).
+ */
+const stripTimeAgoSuffix = (text: string): string => {
+  const lines = text.split('\n');
+  if (lines.length === 0) return text;
+  const lastLine = lines[lines.length - 1].trim();
+  if (!lastLine) return text;
+
+  const isTimeIndicator =
+    // English: 4m, 13m, 1h, 2d, 1w, 1y, 30s
+    /^\d+\s*[smhdwy]$/i.test(lastLine) ||
+    // English explicit: 1 hr, 2 days, etc.
+    /^\d+\s*(min|mins|hr|hrs|hour|hours|day|days|wk|wks|week|weeks|yr|yrs|year|years|sec|secs|second|seconds)\b/i.test(lastLine) ||
+    // English keywords
+    /^Just\s+now$/i.test(lastLine) ||
+    /^Yesterday$/i.test(lastLine) ||
+    // Hebrew variants ("לפני 5 דקות", "אתמול", "עכשיו", standalone "דקות")
+    /^(?:לפני\s+)?(?:\d+\s*)?(?:דקה|דקות|שעה|שעות|יום|ימים|שבוע|שבועות|חודש|חודשים|שנה|שנים)\s*(?:אחרונים?|אחורה)?$/.test(lastLine) ||
+    /^(?:אתמול|עכשיו|זה\s+עתה|לאחרונה)$/.test(lastLine) ||
+    // Arabic variants
+    /^(?:منذ\s+)?(?:\d+\s*)?(?:دقيقة|دقائق|ساعة|ساعات|يوم|أيام|أسبوع|شهر|سنة)/.test(lastLine);
+
+  return isTimeIndicator ? lines.slice(0, -1).join('\n').trim() : text;
+};
+
 const generateContentHash = (text: string, authorLink?: string): string => {
-  const content = `${text}|${authorLink || ''}`;
+  const stableText = stripTimeAgoSuffix(text);
+  const content = `${stableText}|${authorLink || ''}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 32);
 };
 

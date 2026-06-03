@@ -108,9 +108,29 @@ const cleanPostText = (text: string | null | undefined): string => {
     .trim();
 };
 
+// Recreate stripTimeAgoSuffix logic for testing — MUST stay in sync with
+// src/scraper/extractors.ts. The hash relies on this normalization to keep
+// the same post stable across re-scrapes.
+const stripTimeAgoSuffix = (text: string): string => {
+  const lines = text.split('\n');
+  if (lines.length === 0) return text;
+  const lastLine = lines[lines.length - 1].trim();
+  if (!lastLine) return text;
+  const isTimeIndicator =
+    /^\d+\s*[smhdwy]$/i.test(lastLine) ||
+    /^\d+\s*(min|mins|hr|hrs|hour|hours|day|days|wk|wks|week|weeks|yr|yrs|year|years|sec|secs|second|seconds)\b/i.test(lastLine) ||
+    /^Just\s+now$/i.test(lastLine) ||
+    /^Yesterday$/i.test(lastLine) ||
+    /^(?:לפני\s+)?(?:\d+\s*)?(?:דקה|דקות|שעה|שעות|יום|ימים|שבוע|שבועות|חודש|חודשים|שנה|שנים)\s*(?:אחרונים?|אחורה)?$/.test(lastLine) ||
+    /^(?:אתמול|עכשיו|זה\s+עתה|לאחרונה)$/.test(lastLine) ||
+    /^(?:منذ\s+)?(?:\d+\s*)?(?:دقيقة|دقائق|ساعة|ساعات|يوم|أيام|أسبوع|شهر|سنة)/.test(lastLine);
+  return isTimeIndicator ? lines.slice(0, -1).join('\n').trim() : text;
+};
+
 // Recreate generateContentHash logic for testing
 const generateContentHash = (text: string, authorLink?: string): string => {
-  const content = `${text}|${authorLink || ''}`;
+  const stableText = stripTimeAgoSuffix(text);
+  const content = `${stableText}|${authorLink || ''}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 32);
 };
 
@@ -410,6 +430,58 @@ describe('generateContentHash()', () => {
   it('should be hexadecimal string', () => {
     const hash = generateContentHash('test');
     expect(hash).toMatch(/^[a-f0-9]+$/);
+  });
+
+  // The bug this fixes: scraping the SAME post on two different cron ticks
+  // produces text that differs only by the trailing "X minutes ago" line
+  // ("4m" vs "13m"). Without normalizing that out, the hash drifts and we
+  // create a phantom-duplicate row → user gets multiple messages for one post.
+  describe('stable across re-scrapes of the same post', () => {
+    it('should produce the same hash for English "4m" vs "13m" suffix', () => {
+      const a = 'Yael Shilo\nהכלביה היתה בהתחלת העלייה להר ציון.\n4m';
+      const b = 'Yael Shilo\nהכלביה היתה בהתחלת העלייה להר ציון.\n13m';
+      const link = 'https://www.facebook.com/profile.php?id=100000360272645';
+      expect(generateContentHash(a, link)).toBe(generateContentHash(b, link));
+    });
+
+    it('should produce the same hash for English "1h" vs "2h"', () => {
+      const a = 'Some historic post content here.\n1h';
+      const b = 'Some historic post content here.\n2h';
+      expect(generateContentHash(a)).toBe(generateContentHash(b));
+    });
+
+    it('should produce the same hash for "Just now" vs "Yesterday"', () => {
+      const a = 'Historic content.\nJust now';
+      const b = 'Historic content.\nYesterday';
+      expect(generateContentHash(a)).toBe(generateContentHash(b));
+    });
+
+    it('should produce the same hash for Hebrew "לפני 5 דקות" vs "אתמול"', () => {
+      const a = 'תוכן היסטורי כאן.\nלפני 5 דקות';
+      const b = 'תוכן היסטורי כאן.\nאתמול';
+      expect(generateContentHash(a)).toBe(generateContentHash(b));
+    });
+
+    it('should produce the same hash whether or not the suffix is present', () => {
+      const withSuffix = 'Real post content.\n4m';
+      const without = 'Real post content.';
+      expect(generateContentHash(withSuffix)).toBe(generateContentHash(without));
+    });
+
+    it('should NOT strip a non-time-indicator last line', () => {
+      // Make sure "5m" inside the actual post content (not a trailing line)
+      // is preserved.
+      const a = 'I biked 5m today.\nThat was tough.';
+      const b = 'I biked 10m today.\nThat was tough.';
+      // Different post content → different hashes
+      expect(generateContentHash(a)).not.toBe(generateContentHash(b));
+    });
+
+    it('should still differentiate genuinely different posts', () => {
+      const a = 'First post about history.\n4m';
+      const b = 'Second post about history.\n4m';
+      expect(generateContentHash(a)).not.toBe(generateContentHash(b));
+    });
   });
 });
 
