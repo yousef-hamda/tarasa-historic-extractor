@@ -169,12 +169,18 @@ const LogsPage: React.FC = () => {
               <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Connection Error</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Couldn&apos;t load logs</h2>
               <p className="text-slate-600 text-sm">{error}</p>
-              <p className="text-slate-400 text-sm mt-1">Make sure the API server is running on port 4000.</p>
-              <button onClick={() => loadLogs(0)} className="btn-primary mt-4">
+              <p className="text-slate-400 text-sm mt-1">
+                Usually transient — most often this happens during a Railway redeploy when the
+                server briefly restarts. Click <b>Retry</b>.
+              </p>
+              <button
+                onClick={() => loadLogs(0, typeFilter || undefined)}
+                className="btn-primary mt-4"
+              >
                 <ArrowPathIcon className="w-4 h-4" />
-                Retry Connection
+                Retry
               </button>
             </div>
           </div>
