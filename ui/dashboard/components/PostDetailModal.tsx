@@ -16,16 +16,24 @@ interface PostDetailModalProps {
   post: Post | null;
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * Operator-configurable confidence threshold. Posts must score STRICTLY
+   * GREATER than this to be considered historic. Defaults to 75 for
+   * backwards compatibility with callers that haven't been updated.
+   */
+  threshold?: number;
 }
 
-const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose }) => {
+const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose, threshold = 75 }) => {
   if (!post) return null;
 
   const confidence = post.classified?.confidence ?? 0;
+  const aboveThreshold = Boolean(post.classified?.isHistoric && confidence > threshold);
+  const isBelowThreshold = Boolean(post.classified?.isHistoric && confidence <= threshold);
 
-  // Compute effective post URL:
-  // 1. Use postUrl if available
-  // 2. Otherwise, construct from fbPostId and groupId if fbPostId is a valid Facebook ID (not hash-based)
+  // Compute effective post URL — shared with the posts table via ui utils.
+  // (Kept inline here to avoid adding a new import to the modal-only
+  // component; logic is identical to utils/postUrl.ts).
   const effectivePostUrl = post.postUrl || (
     post.fbPostId &&
     post.groupId &&
@@ -121,15 +129,24 @@ const PostDetailModal: React.FC<PostDetailModalProps> = ({ post, isOpen, onClose
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Historic Status */}
+              {/* Historic Status — threshold-aware. A post the classifier
+                  marked historic but with confidence ≤ threshold is shown
+                  as "Below threshold" so the UI agrees with the messenger's
+                  eligibility gate. */}
               <div className="space-y-1">
                 <span className="text-xs text-gray-600 uppercase tracking-wider">Classification</span>
                 <div>
-                  <StatusBadge
-                    status={post.classified.isHistoric ? 'ok' : 'degraded'}
-                    label={post.classified.isHistoric ? 'Historic Content' : 'Not Historic'}
-                    size="lg"
-                  />
+                  {aboveThreshold ? (
+                    <StatusBadge status="ok" label="Historic Content" size="lg" />
+                  ) : isBelowThreshold ? (
+                    <StatusBadge
+                      status="pending"
+                      label={`Below threshold (${confidence}% ≤ ${threshold}%)`}
+                      size="lg"
+                    />
+                  ) : (
+                    <StatusBadge status="degraded" label="Not Historic" size="lg" />
+                  )}
                 </div>
               </div>
 

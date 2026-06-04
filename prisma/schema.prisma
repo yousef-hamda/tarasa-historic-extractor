@@ -289,3 +289,18 @@ model UserPreference {
 
   @@index([language])
 }
+
+// Generic key/value store for operator-facing settings that need to survive
+// Railway redeploys (the container filesystem is ephemeral, so file-based
+// settings like messaging-state.json get wiped on every push).
+//
+// `value` is a JSON-encoded string so we can store numbers, booleans, strings,
+// or small objects through the same column. Use the typed helpers in
+// `src/utils/settings.ts` rather than reading this model directly — they
+// handle caching, defaulting, and JSON encoding consistently.
+model SystemSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

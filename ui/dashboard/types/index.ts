@@ -138,12 +138,42 @@ export interface GroupsResponse {
   };
 }
 
+export interface ThresholdConfig {
+  value: number;
+  min: number;
+  max: number;
+  default: number;
+}
+
+export type SpeedPreset = 'conservative' | 'normal' | 'fast' | 'aggressive';
+
+export interface SpeedPresetDefinition {
+  preset: SpeedPreset;
+  label: string;
+  description: string;
+  warning?: string;
+  danger?: string;
+  schedules: {
+    scrape: string;
+    classify: string;
+    message: string;
+  };
+}
+
+export interface SpeedConfig {
+  preset: SpeedPreset;
+  presets: Record<SpeedPreset, SpeedPresetDefinition>;
+}
+
 export interface Settings {
   groups: string[];
   messageLimit: number;
   baseTarasaUrl: string;
   emailConfigured: boolean;
   apifyConfigured?: boolean;
+  messagingEnabled?: boolean;
+  historicThreshold?: ThresholdConfig;
+  speed?: SpeedConfig;
 }
 
 export interface PaginationInfo {

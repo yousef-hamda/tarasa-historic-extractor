@@ -1,23 +1,21 @@
-import cron from 'node-cron';
+import cron, { ScheduledTask } from 'node-cron';
 // Using the new orchestrator for intelligent scraping
 import { scrapeAllGroupsOrchestrated } from '../scraper/orchestrator';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { withLock } from '../utils/cronLock';
 
-const SCRAPE_SCHEDULE = process.env.SCRAPE_CRON_SCHEDULE || '*/10 * * * *';
-
-cron.schedule(SCRAPE_SCHEDULE, () => {
-  // Wrap in immediately invoked async function with error boundary
+/**
+ * Build the scrape cron's tick handler. Factored out so unit tests can fire it
+ * directly without spinning up the cron scheduler.
+ */
+const scrapeTick = (): void => {
   (async () => {
     try {
       await withLock('scrape', async () => {
         logger.info('Running orchestrated scrape cron');
         try {
-          // Use the new orchestrator which intelligently picks the best method
           const result = await scrapeAllGroupsOrchestrated();
-
-          // Log results
           if (result.totalGroups > 0) {
             logger.info(
               `Scrape cron complete: ${result.successfulGroups}/${result.totalGroups} groups, ${result.totalPosts} posts`
@@ -29,8 +27,22 @@ cron.schedule(SCRAPE_SCHEDULE, () => {
         }
       });
     } catch (error) {
-      // Catch any errors from withLock itself
       logger.error(`Scrape cron outer error: ${(error as Error).message}`);
     }
   })();
-});
+};
+
+/**
+ * Register the scrape cron with the given schedule. Returns the live handle
+ * so the scheduler can `.stop()` it before re-registering on a preset change.
+ *
+ * The env var `SCRAPE_CRON_SCHEDULE` overrides any schedule passed in — useful
+ * for ops to pin a specific cadence regardless of the dashboard preset.
+ */
+export const registerScrapeCron = (schedule: string): ScheduledTask => {
+  const effective = process.env.SCRAPE_CRON_SCHEDULE || schedule;
+  if (!cron.validate(effective)) {
+    throw new Error(`Invalid scrape cron schedule: ${effective}`);
+  }
+  return cron.schedule(effective, scrapeTick);
+};

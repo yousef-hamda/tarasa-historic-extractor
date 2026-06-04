@@ -21,8 +21,16 @@ import {
   KeyIcon,
 } from '@heroicons/react/24/outline';
 
+interface HealthChecks {
+  database: boolean;
+  facebookSession: boolean;
+  openaiKey: boolean;
+  apifyToken: boolean;
+}
+
 interface HealthStatus {
   status: 'ok' | 'degraded' | 'unhealthy';
+  checks?: HealthChecks;
 }
 
 const navLinks = [
@@ -51,7 +59,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       const res = await apiFetch('/api/health');
       if (res.ok) {
         const data = await res.json();
-        setHealth({ status: data.status });
+        setHealth({ status: data.status, checks: data.checks });
       }
     } catch {
       setHealth({ status: 'unhealthy' });
@@ -77,17 +85,59 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     };
   }, []);
 
+  // Compose a truthful status by looking at the granular `checks` object.
+  // The bare `status` field from /api/health can claim "ok" even when one
+  // check fails (e.g. facebookSession=false during a zombie-session window),
+  // which would mislead operators. Trust the checks first; fall back to the
+  // top-level status if `checks` is absent (older container or network blip).
   const getStatusConfig = () => {
-    if (!health) return { color: 'bg-slate-400', text: t('common.loading') };
-    switch (health.status) {
+    if (!health) {
+      return {
+        color: 'bg-slate-400',
+        text: t('common.loading'),
+        tooltip: 'Loading system health...',
+      };
+    }
+
+    const failedChecks: string[] = [];
+    if (health.checks) {
+      if (!health.checks.database) failedChecks.push('Database');
+      if (!health.checks.facebookSession) failedChecks.push('Facebook session');
+      if (!health.checks.openaiKey) failedChecks.push('OpenAI key');
+      // apifyToken is intentionally disabled in this deployment, so don't
+      // count it as a failed check that would flip the pill red.
+    }
+
+    // Synthesize the displayed status: if any check failed, treat as degraded
+    // even when /api/health reports "ok".
+    const effectiveStatus: 'ok' | 'degraded' | 'unhealthy' =
+      failedChecks.length === 0
+        ? health.status
+        : failedChecks.length >= 2
+          ? 'unhealthy'
+          : 'degraded';
+
+    const tooltip = (() => {
+      if (!health.checks) return `Status: ${health.status}`;
+      const passed: string[] = [];
+      if (health.checks.database) passed.push('Database');
+      if (health.checks.facebookSession) passed.push('Facebook session');
+      if (health.checks.openaiKey) passed.push('OpenAI key');
+      const lines: string[] = [];
+      if (passed.length) lines.push(`OK: ${passed.join(', ')}`);
+      if (failedChecks.length) lines.push(`Failing: ${failedChecks.join(', ')}`);
+      return lines.join(' • ');
+    })();
+
+    switch (effectiveStatus) {
       case 'ok':
-        return { color: 'bg-emerald-500', text: t('dashboard.healthy') };
+        return { color: 'bg-emerald-500', text: t('dashboard.healthy'), tooltip };
       case 'degraded':
-        return { color: 'bg-amber-500', text: t('dashboard.degraded') };
+        return { color: 'bg-amber-500', text: t('dashboard.degraded'), tooltip };
       case 'unhealthy':
-        return { color: 'bg-red-500', text: t('dashboard.unhealthy') };
+        return { color: 'bg-red-500', text: t('dashboard.unhealthy'), tooltip };
       default:
-        return { color: 'bg-slate-400', text: t('common.unknown') };
+        return { color: 'bg-slate-400', text: t('common.unknown'), tooltip };
     }
   };
 
@@ -98,9 +148,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Top Navigation Bar */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-14">
+          <div className="flex justify-between h-14 gap-3">
             {/* Left side - Logo & Navigation */}
-            <div className="flex items-center">
+            <div className="flex items-center min-w-0">
               {/* Logo */}
               <Link href="/" className="flex items-center gap-2.5 me-8">
                 <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center">
@@ -132,15 +182,20 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
             </div>
 
-            {/* Right side - Status, Language & Mobile Menu */}
-            <div className="flex items-center gap-3">
+            {/* Right side - Status, Language & Mobile Menu.
+                `flex-shrink-0` on this and on each child stops the navbar
+                items on the left from squeezing this group off-screen at
+                narrow viewports — without it, the System Status pill ends up
+                half-clipped at certain widths (the bug the user reported). */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               {/* Language Switcher */}
               <LanguageSwitcher compact />
 
-              {/* API Key Status */}
+              {/* API Key Status. `hidden md:flex` so it doesn't crowd the
+                  System Status pill on small-tablet sizes. */}
               <Link
                 href="/settings"
-                className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors ${
                   apiKeyPresent
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                     : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
@@ -152,13 +207,25 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 }
               >
                 <KeyIcon className="w-3.5 h-3.5" />
-                {apiKeyPresent ? 'Connected' : 'API Key needed'}
+                <span className="hidden lg:inline">
+                  {apiKeyPresent ? 'Connected' : 'API Key needed'}
+                </span>
               </Link>
 
-              {/* System Status */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
-                <div className={`w-2 h-2 rounded-full ${statusConfig.color}`} />
-                <span className="text-xs font-medium text-slate-600">
+              {/* System Status — responsive pill.
+                  - `<sm`: hidden (mobile keeps nav clean).
+                  - `sm..lg`: just the colored dot in a small pill — no
+                    label, so it can't run out of frame.
+                  - `lg+`: dot + label, full pill.
+                  The `whitespace-nowrap` + `flex-shrink-0` combo keeps the
+                  pill from being clipped when neighbors expand. */}
+              <div
+                className="hidden sm:inline-flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200 flex-shrink-0 whitespace-nowrap"
+                title={statusConfig.tooltip}
+                aria-label={`System status: ${statusConfig.text}. ${statusConfig.tooltip}`}
+              >
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusConfig.color}`} />
+                <span className="hidden lg:inline text-xs font-medium text-slate-600">
                   {statusConfig.text}
                 </span>
               </div>

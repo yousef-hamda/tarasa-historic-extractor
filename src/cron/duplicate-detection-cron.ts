@@ -186,12 +186,16 @@ export const detectDuplicates = async (): Promise<void> => {
   }
 
   try {
-    // Get recent historic posts that haven't been checked for duplicates
+    // Get recent historic posts that haven't been checked for duplicates.
+    // Threshold follows the operator's Settings-page slider so all consumers
+    // agree on what counts as historic.
+    const { getHistoricThreshold } = await import('../utils/settings');
+    const threshold = await getHistoricThreshold();
     const recentPosts = await prisma.postRaw.findMany({
       where: {
         classified: {
           isHistoric: true,
-          confidence: { gte: 75 },
+          confidence: { gte: threshold },
         },
         // Posts not already in a duplicate group
         AND: {

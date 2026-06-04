@@ -72,12 +72,16 @@ export const rateQuality = async (): Promise<void> => {
   }
 
   try {
-    // Find historic posts that haven't been rated yet
+    // Find historic posts that haven't been rated yet. Threshold is the same
+    // one operators see in the Settings page slider — keeps the "what counts
+    // as historic" definition consistent across the whole pipeline.
+    const { getHistoricThreshold } = await import('../utils/settings');
+    const threshold = await getHistoricThreshold();
     const unratedPosts = await prisma.postRaw.findMany({
       where: {
         classified: {
           isHistoric: true,
-          confidence: { gte: 75 },
+          confidence: { gte: threshold },
         },
         quality: null, // Not yet rated
       },

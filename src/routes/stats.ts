@@ -6,6 +6,7 @@ import { triggerRateLimiter } from '../middleware/rateLimiter';
 import { safeErrorMessage } from '../middleware/errorHandler';
 import { logSystemEvent } from '../utils/systemLog';
 import logger from '../utils/logger';
+import { getHistoricThreshold } from '../utils/settings';
 
 const router = Router();
 
@@ -86,7 +87,13 @@ router.get('/api/stats/activity', async (req: Request, res: Response) => {
 
 router.get('/api/stats', async (_req: Request, res: Response) => {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // `historicTotal` counts posts the operator considers historic — that's
+    // `isHistoric: true AND confidence > threshold`, matching the badge logic
+    // in the UI and the generator's eligibility filter. Without this gate, a
+    // post with `isHistoric: true, confidence: 50` (which the classifier
+    // emitted but is below threshold) would inflate this number while never
+    // actually reaching the messenger — confusing operators.
+    const threshold = await getHistoricThreshold();
 
     const [
       postsTotal,
@@ -100,7 +107,9 @@ router.get('/api/stats', async (_req: Request, res: Response) => {
     ] = await Promise.all([
       prisma.postRaw.count(),
       prisma.postClassified.count(),
-      prisma.postClassified.count({ where: { isHistoric: true } }),
+      prisma.postClassified.count({
+        where: { isHistoric: true, confidence: { gt: threshold } },
+      }),
       prisma.messageGenerated.count(),
       prisma.systemLog.count(),
       prisma.systemLog.findFirst({ where: { type: 'scrape' }, orderBy: { createdAt: 'desc' } }),
@@ -112,6 +121,7 @@ router.get('/api/stats', async (_req: Request, res: Response) => {
       postsTotal,
       classifiedTotal,
       historicTotal,
+      historicThreshold: threshold,
       queueCount,
       sentLast24h: usage.sentLast24h,
       quotaRemaining: usage.remaining,

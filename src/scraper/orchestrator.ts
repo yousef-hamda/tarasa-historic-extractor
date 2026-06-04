@@ -58,37 +58,94 @@ const getGroupIds = async (): Promise<string[]> => {
  */
 const GROUP_RULE_PATTERNS: RegExp[] = [
   /^Please be respectful/i,
+  /^Please refrain from/i, // observed in prod: "Please refrain from hate speech..."
   /^When posting photographs/i,
   /^הקבוצה מיועדת/, // "This group is intended for…" (group description starter)
   /^חוקי הקבוצה/, // "Group rules"
   /^Group rules/i,
   /^Welcome to the group/i,
+  /^Welcome to History of Israel/i, // observed in prod: pinned welcome / instructions
+  /^Our group has several guidelines/i, // observed in prod: pinned group-norms
   /^This is a group for/i,
   /^Read the rules before posting/i,
 ];
 
 /**
- * Returns true if a post should be SKIPPED (not saved to DB). Reasons:
- *   - Author is the logged-in user themselves (page chrome picked up as author)
- *   - Post has no author at all (rare — usually means we caught a page widget)
- *   - Post text starts with a known group-rule/description pattern
+ * Real authorName values are human names. Strings ending in things like
+ * "'s profile" or "'s timeline" are chrome artifacts the extractor sometimes
+ * picks up from the sticky navbar / left sidebar — never a real post author.
+ * Pattern is locale-tolerant: matches straight or curly apostrophes, English
+ * "profile/timeline", and the leading whitespace FB tends to insert.
  */
-const shouldSkipPost = (post: NormalizedPost, selfUserId: string | null): { skip: boolean; reason?: string } => {
+const CHROME_NAME_SUFFIX = /[''']s\s+(profile|timeline|page)\s*$/i;
+
+/**
+ * Resolves the logged-in user's identity for self-author filtering. Returns
+ * both the cookie's c_user value AND the DB-tracked userName so the filter
+ * still fires even when one signal is degraded (e.g. cookies wiped on
+ * redeploy but SessionState.userName persists in Postgres).
+ */
+const getSelfIdentity = async (): Promise<{ userId: string | null; userName: string | null }> => {
+  let userId: string | null = null;
+  let userName: string | null = null;
+  try {
+    const health = await getCookieHealth();
+    userId = health?.userId || null;
+  } catch {
+    // ignore — fall through to DB
+  }
+  try {
+    const row = await prisma.sessionState.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (row) {
+      // Don't trust DB userId === "0" — that was the zombie-valid bug. The
+      // sessionManager fix prevents new "0" rows but old rows may linger.
+      if (row.userId && /^\d{5,}$/.test(row.userId) && row.userId !== '0') {
+        userId = userId || row.userId;
+      }
+      if (row.userName) userName = row.userName;
+    }
+  } catch {
+    // ignore
+  }
+  return { userId, userName };
+};
+
+interface SkipDecision {
+  skip: boolean;
+  reason?: string;
+}
+
+/**
+ * Returns true if a post should be SKIPPED (not saved to DB). Layered:
+ *   1. Author is the logged-in user themselves (cookie-based id match)
+ *   2. Post has no author at all
+ *   3. Post text starts with a known group-rule/description pattern
+ *   4. Author name has chrome-artifact suffix ("X's profile", etc.)
+ *   5. Author name exactly matches SessionState.userName (covers the case
+ *      where cookie-based id matching fails — e.g. selfUserId is null —
+ *      but we still know who the operator is from the DB)
+ *   6. Skeptical: hash-fallback fbPostId AND no postUrl AND authorLink points
+ *      to the logged-in user. This is the exact signature of the phantom
+ *      posts in prod — three of four saved rows match this.
+ */
+const shouldSkipPost = (
+  post: NormalizedPost,
+  self: { userId: string | null; userName: string | null }
+): SkipDecision => {
+  const { userId, userName } = self;
+
   // Filter 1: posts authored by the logged-in user. The extractor sometimes
   // picks up the sticky header / left-sidebar avatar as the post author.
-  if (selfUserId && post.authorLink) {
-    // Match either profile.php?id={selfUserId} or /{selfUserId}/ patterns.
-    const link = post.authorLink;
-    if (
-      link.includes(`profile.php?id=${selfUserId}`) ||
-      new RegExp(`/${selfUserId}(/|$|\\?)`).test(link)
-    ) {
-      return { skip: true, reason: `author is the logged-in scraping account (${selfUserId})` };
-    }
+  const linkMatchesSelf =
+    userId && post.authorLink
+      ? post.authorLink.includes(`profile.php?id=${userId}`) ||
+        new RegExp(`/${userId}(/|$|\\?)`).test(post.authorLink)
+      : false;
+  if (linkMatchesSelf) {
+    return { skip: true, reason: `author is the logged-in scraping account (${userId})` };
   }
 
-  // Filter 2: posts with no author at all are almost always page-chrome bits
-  // (group description, "What's on your mind?" widget, etc.).
+  // Filter 2: posts with no author at all are almost always page-chrome bits.
   if (!post.authorName && !post.authorLink) {
     return { skip: true, reason: 'post has no author attribution' };
   }
@@ -101,8 +158,34 @@ const shouldSkipPost = (post: NormalizedPost, selfUserId: string | null): { skip
     }
   }
 
+  // Filter 4: chrome-artifact suffix in the author name.
+  if (post.authorName && CHROME_NAME_SUFFIX.test(post.authorName.trim())) {
+    return { skip: true, reason: `chrome-artifact author name: "${post.authorName}"` };
+  }
+
+  // Filter 5: author name exact-matches the operator's known userName. This
+  // catches the case where cookie state is degraded but we still know who
+  // the operator is from SessionState.
+  if (userName && post.authorName && post.authorName.trim() === userName.trim()) {
+    return { skip: true, reason: `author name matches the logged-in operator (${userName})` };
+  }
+
+  // Filter 6: skeptical bundle. A post with no postUrl AND a content-hash
+  // fbPostId AND a self-profile authorLink is the exact signature the
+  // production extractor produced for nav-chrome elements. Each signal alone
+  // can be legitimate; together they're almost certainly chrome.
+  const hasHashId = post.fbPostId.startsWith('hash_');
+  const hasNoUrl = !post.postUrl;
+  if (hasHashId && hasNoUrl && linkMatchesSelf) {
+    return { skip: true, reason: 'hash-fallback id + no postUrl + self-profile link = chrome' };
+  }
+
   return { skip: false };
 };
+
+/** Visible for tests. */
+export const _shouldSkipPostForTests = shouldSkipPost;
+export const _chromeNameSuffix = CHROME_NAME_SUFFIX;
 
 /**
  * Upsert a single post into the database
@@ -313,13 +396,14 @@ export const scrapeGroup = async (groupId: string): Promise<ScrapeResult> => {
 
       // Resolve the current FB user once per scrape so we can filter out
       // posts the extractor mistakenly attributed to the logged-in account
-      // itself (a common DOM-heuristic failure mode).
-      const selfHealth = await getCookieHealth();
-      const selfUserId = selfHealth?.userId || null;
+      // itself (a common DOM-heuristic failure mode). Now uses BOTH the
+      // cookie c_user value AND the DB-tracked SessionState.userName as
+      // secondary signal — degraded cookies don't disarm the filter.
+      const self = await getSelfIdentity();
 
       let skipped = 0;
       for (const post of posts) {
-        const skipDecision = shouldSkipPost(post, selfUserId);
+        const skipDecision = shouldSkipPost(post, self);
         if (skipDecision.skip) {
           skipped++;
           logger.info(`[Orchestrator] Dropping post in ${groupId} — ${skipDecision.reason}`);

@@ -11,7 +11,7 @@ import { withRetries } from '../utils/retry';
 import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS, QUOTA } from '../config/constants';
-import { getMessagingEnabled } from '../routes/settings';
+import { getMessagingEnabledAsync } from '../utils/settings';
 
 // Maximum retry attempts before marking a message as permanently failed
 const MAX_RETRY_ATTEMPTS = 3;
@@ -160,8 +160,8 @@ const findSendButtonNearTextarea = async (
 };
 
 export const dispatchMessages = async (): Promise<void> => {
-  // Check if messaging is enabled
-  if (!getMessagingEnabled()) {
+  // Check if messaging is enabled (DB-backed — survives Railway redeploys).
+  if (!(await getMessagingEnabledAsync())) {
     logger.info('Messaging is paused by admin. Messages will be queued.');
     await logSystemEvent('message', 'Messaging paused - messages queued but not sent.');
     return;

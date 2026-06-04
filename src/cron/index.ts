@@ -32,10 +32,11 @@ import { seedGroupsFromEnv } from '../scraper/groupRegistry';
   }
 })();
 
-// Register cron jobs
-import './scrape-cron';
-import './classify-cron';
-import './message-cron';
+// Register the three speed-presetable crons (scrape/classify/message) via the
+// scheduler so a dashboard speed change can re-register them at runtime.
+// The other crons (session-check, login-refresh, log-cleanup, backup, etc.)
+// stay side-effect imports because they're not user-tunable.
+import { initializeScheduler } from './scheduler';
 import './login-refresh';
 import './session-check-cron';
 import './log-cleanup-cron';
@@ -43,6 +44,16 @@ import { startBackupCron } from './backup-cron';
 import { startQualityRatingCron } from './quality-rating-cron';
 import { startReportCron } from './report-cron';
 import { startDuplicateDetectionCron } from './duplicate-detection-cron';
+
+// Boot the speed-presetable crons. Fire-and-forget — failures fall back to the
+// 'normal' preset via the scheduler's internal default.
+(async () => {
+  try {
+    await initializeScheduler();
+  } catch (error) {
+    logger.error(`Scheduler initialization failed: ${(error as Error).message}`);
+  }
+})();
 
 // Start backup cron
 startBackupCron();

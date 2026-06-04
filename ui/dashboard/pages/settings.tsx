@@ -20,11 +20,35 @@ import {
   EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 
+type SpeedPreset = 'conservative' | 'normal' | 'fast' | 'aggressive';
+const SPEED_ORDER: SpeedPreset[] = ['conservative', 'normal', 'fast', 'aggressive'];
+
+interface SpeedPresetDefinition {
+  preset: SpeedPreset;
+  label: string;
+  description: string;
+  warning?: string;
+  danger?: string;
+  schedules: { scrape: string; classify: string; message: string };
+}
+
 interface Settings {
   groups: string[];
   messageLimit: number;
   baseTarasaUrl: string;
   emailConfigured: boolean;
+  apifyConfigured?: boolean;
+  messagingEnabled?: boolean;
+  historicThreshold?: {
+    value: number;
+    min: number;
+    max: number;
+    default: number;
+  };
+  speed?: {
+    preset: SpeedPreset;
+    presets: Record<SpeedPreset, SpeedPresetDefinition>;
+  };
 }
 
 interface SessionStatus {
@@ -107,6 +131,21 @@ const SettingsPage: React.FC = () => {
   const [resetting, setResetting] = useState(false);
   const [resetResult, setResetResult] = useState<{ success: boolean; message: string; deleted?: Record<string, number> } | null>(null);
 
+  // Threshold slider state — local copy of the value so the slider can drag
+  // smoothly; we POST only when the user releases (onMouseUp / onTouchEnd /
+  // onChange-after-mouseup), debounced to avoid hammering the API.
+  const [thresholdDraft, setThresholdDraft] = useState<number | null>(null);
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [thresholdSaveResult, setThresholdSaveResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // System speed state
+  const [speedSaving, setSpeedSaving] = useState<SpeedPreset | null>(null);
+  const [speedResult, setSpeedResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Phantom-cleanup state
+  const [cleaningPhantoms, setCleaningPhantoms] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{ success: boolean; message: string; reasons?: Record<string, number> } | null>(null);
+
   const fetchSessionStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/session/status');
@@ -121,25 +160,108 @@ const SettingsPage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const res = await apiFetch('/api/settings');
-        if (!res.ok) {
-          throw new Error('Failed to fetch settings');
-        }
-        const data = await res.json();
-        setSettings(data);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/settings');
+      if (!res.ok) {
+        throw new Error('Failed to fetch settings');
       }
-    };
+      const data = await res.json();
+      setSettings(data);
+      // Seed the threshold slider draft from the server value on first load.
+      if (data.historicThreshold && thresholdDraft === null) {
+        setThresholdDraft(data.historicThreshold.value);
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }, [thresholdDraft]);
+
+  useEffect(() => {
     loadSettings();
     fetchSessionStatus();
-  }, [fetchSessionStatus]);
+  }, [loadSettings, fetchSessionStatus]);
+
+  const commitThreshold = useCallback(async (value: number) => {
+    setThresholdSaving(true);
+    setThresholdSaveResult(null);
+    try {
+      const res = await apiFetch('/api/settings/threshold', {
+        method: 'POST',
+        body: JSON.stringify({ value }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      }
+      setThresholdSaveResult({ success: true, message: `Threshold saved: ${data.historicThreshold.value}%` });
+      // Update settings so other reads (e.g. badge label) reflect immediately.
+      setSettings((s) => (s ? { ...s, historicThreshold: data.historicThreshold } : s));
+    } catch (err) {
+      setThresholdSaveResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to save threshold',
+      });
+    } finally {
+      setThresholdSaving(false);
+    }
+  }, []);
+
+  const commitSpeedPreset = useCallback(async (preset: SpeedPreset) => {
+    setSpeedSaving(preset);
+    setSpeedResult(null);
+    try {
+      const res = await apiFetch('/api/settings/speed', {
+        method: 'POST',
+        body: JSON.stringify({ preset }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      }
+      setSpeedResult({ success: true, message: `Speed preset changed to "${preset}". New schedules apply immediately.` });
+      setSettings((s) => (s ? { ...s, speed: data.speed } : s));
+    } catch (err) {
+      setSpeedResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to change speed preset',
+      });
+    } finally {
+      setSpeedSaving(null);
+    }
+  }, []);
+
+  const handleCleanupPhantoms = useCallback(async () => {
+    if (cleaningPhantoms) return;
+    const ok = typeof window !== 'undefined' && window.confirm(
+      'Run the phantom-post cleanup? This deletes any post currently in the DB that the scrape filter would reject today (self-author chrome, group rules, etc.). Cannot be undone.'
+    );
+    if (!ok) return;
+    setCleaningPhantoms(true);
+    setCleanupResult(null);
+    try {
+      const res = await apiFetch('/api/admin/cleanup-phantoms', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      }
+      setCleanupResult({
+        success: true,
+        message: data.deleted === 0 ? 'No phantom posts found.' : `Removed ${data.deleted} phantom posts.`,
+        reasons: data.reasons,
+      });
+    } catch (err) {
+      setCleanupResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Cleanup failed',
+      });
+    } finally {
+      setCleaningPhantoms(false);
+    }
+  }, [cleaningPhantoms]);
 
   // Open the credentials modal. This replaces the old "immediately POST to
   // /api/session/renew" handler — we now collect FB email + password from
@@ -582,6 +704,177 @@ const SettingsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Classification Threshold Card.
+          Slider sets the minimum confidence a post must score (strictly
+          greater than) for it to count as historic everywhere: the messenger
+          eligibility filter, the dashboard "Historic Posts" stat, and the
+          "Historic" badge on the Posts page. Default 75; range 50-100. */}
+      {settings.historicThreshold && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+              <SparklesIcon className="w-5 h-5 text-slate-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Classification Threshold</h2>
+              <p className="text-sm text-slate-500">Minimum confidence for a post to be treated as historic</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="threshold-slider" className="text-sm font-medium text-slate-700">
+                  Threshold
+                </label>
+                <span className="text-2xl font-semibold text-slate-900 tabular-nums">
+                  {thresholdDraft ?? settings.historicThreshold.value}%
+                </span>
+              </div>
+              <input
+                id="threshold-slider"
+                type="range"
+                min={settings.historicThreshold.min}
+                max={settings.historicThreshold.max}
+                step={1}
+                value={thresholdDraft ?? settings.historicThreshold.value}
+                onChange={(e) => setThresholdDraft(Number(e.target.value))}
+                onMouseUp={(e) => commitThreshold(Number((e.target as HTMLInputElement).value))}
+                onTouchEnd={(e) => commitThreshold(Number((e.target as HTMLInputElement).value))}
+                onKeyUp={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    commitThreshold(Number((e.target as HTMLInputElement).value));
+                  }
+                }}
+                disabled={thresholdSaving}
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <div className="flex justify-between text-xs text-slate-400 mt-1">
+                <span>{settings.historicThreshold.min}% (looser)</span>
+                <span>Default {settings.historicThreshold.default}%</span>
+                <span>{settings.historicThreshold.max}% (stricter)</span>
+              </div>
+            </div>
+
+            {(thresholdDraft ?? settings.historicThreshold.value) <= 60 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  Below 60% will let event listings, photo captions, and one-liners through. Only loosen if you have a clear reason — the messenger will then attempt outreach on those posts.
+                </p>
+              </div>
+            )}
+
+            {thresholdSaveResult && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+                thresholdSaveResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+              }`}>
+                {thresholdSaveResult.success ? <CheckCircleIcon className="w-5 h-5" /> : <XCircleIcon className="w-5 h-5" />}
+                {thresholdSaveResult.message}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* System Speed Card.
+          Four-tick segmented selector for the scrape / classify / message
+          cron cadence. "Normal" is the production default. "Fast" and
+          "Aggressive" carry escalating warnings — Facebook's anti-bot will
+          push back at higher cadences. */}
+      {settings.speed && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+              <BoltIcon className="w-5 h-5 text-slate-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">System Speed</h2>
+              <p className="text-sm text-slate-500">How often the scrape, classify, and message crons run</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {SPEED_ORDER.map((p) => {
+                const def = settings.speed!.presets[p];
+                const isActive = settings.speed!.preset === p;
+                const isAggressive = p === 'aggressive';
+                const isFast = p === 'fast';
+                const tone = isActive
+                  ? isAggressive
+                    ? 'bg-red-600 text-white border-red-600'
+                    : isFast
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300';
+                return (
+                  <button
+                    key={p}
+                    onClick={() => commitSpeedPreset(p)}
+                    disabled={speedSaving !== null || isActive}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${tone}`}
+                    title={`${def.label}: scrape ${def.schedules.scrape}, classify ${def.schedules.classify}, message ${def.schedules.message}`}
+                  >
+                    {speedSaving === p ? '…' : def.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Show details for the currently active preset. */}
+            {(() => {
+              const def = settings.speed!.presets[settings.speed!.preset];
+              const tone = def.danger
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : def.warning
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-700';
+              return (
+                <div className={`p-4 rounded-lg border ${tone}`}>
+                  <p className="text-sm">{def.description}</p>
+                  {def.warning && (
+                    <div className="mt-2 flex items-start gap-2 text-sm">
+                      <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <span>{def.warning}</span>
+                    </div>
+                  )}
+                  {def.danger && (
+                    <div className="mt-2 flex items-start gap-2 text-sm font-semibold">
+                      <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <span>{def.danger}</span>
+                    </div>
+                  )}
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <p className="text-slate-500">Scrape</p>
+                      <p className="font-mono">{def.schedules.scrape}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">Classify</p>
+                      <p className="font-mono">{def.schedules.classify}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">Message</p>
+                      <p className="font-mono">{def.schedules.message}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {speedResult && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+                speedResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+              }`}>
+                {speedResult.success ? <CheckCircleIcon className="w-5 h-5" /> : <XCircleIcon className="w-5 h-5" />}
+                {speedResult.message}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Facebook Session Section */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-5">
@@ -1002,6 +1295,50 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Phantom-post cleanup. Runs the same `shouldSkipPost` filter the
+            scraper uses against every row currently in the DB and removes
+            anything that matches today's stricter criteria. Surfaces the
+            reason histogram so the operator can see WHY rows were removed. */}
+        <div className="p-4 bg-red-50 rounded-lg border border-red-100 mb-4">
+          <h3 className="font-semibold text-red-900 mb-2">Clean Phantom Posts</h3>
+          <p className="text-sm text-red-700 mb-4">
+            Removes posts that the current scraper filter would reject (operator-self chrome, group rules, no-author rows). Useful after a stricter filter ships — runs the live filter against existing data so it can&apos;t drift.
+          </p>
+
+          {cleanupResult && (
+            <div className={`mb-3 p-3 rounded-lg text-sm ${
+              cleanupResult.success ? 'bg-white border border-emerald-200 text-emerald-800' : 'bg-white border border-red-200 text-red-800'
+            }`}>
+              <p className="font-medium">{cleanupResult.message}</p>
+              {cleanupResult.reasons && Object.keys(cleanupResult.reasons).length > 0 && (
+                <ul className="mt-2 text-xs space-y-1">
+                  {Object.entries(cleanupResult.reasons).map(([reason, count]) => (
+                    <li key={reason}>• {count}× {reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={handleCleanupPhantoms}
+            disabled={cleaningPhantoms}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {cleaningPhantoms ? (
+              <>
+                <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                Scanning posts…
+              </>
+            ) : (
+              <>
+                <TrashIcon className="w-4 h-4" />
+                Run phantom cleanup
+              </>
+            )}
+          </button>
+        </div>
 
         {/* Reset Data Section */}
         <div className="p-4 bg-red-50 rounded-lg border border-red-100">

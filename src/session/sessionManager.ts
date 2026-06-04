@@ -54,6 +54,26 @@ interface SessionValidationResult {
 }
 
 /**
+ * True only when `id` looks like a real Facebook user id.
+ *
+ * Facebook serves its logged-out marketing homepage with `"USER_ID":"0"` (and
+ * occasionally `"1"`) baked into inline script. Before this guard,
+ * `extractUserId` happily returned `"0"`, `validateSession` saw a non-null
+ * userId and marked the session valid, and the session-check cron kept
+ * reporting "Session valid for user 0" every 30 minutes while the scraper —
+ * which uses the actual cookie state via `getCookieHealth()` — kept failing
+ * 9/9 groups per cycle. Real account IDs are at least 5 digits; "0" / "1" /
+ * empty strings all fail this check and are rejected upstream.
+ */
+export const isValidFbUserId = (id: string | null | undefined): id is string => {
+  if (typeof id !== 'string') return false;
+  if (!/^\d+$/.test(id)) return false;
+  if (id === '0') return false;
+  if (id.length < 5) return false;
+  return true;
+};
+
+/**
  * Create a browser instance with persistent profile
  *
  * IMPORTANT: Headless mode is enabled by default for stability.
@@ -209,6 +229,25 @@ export const validateSession = async (page: Page): Promise<SessionValidationResu
     const userName = await extractUserName(page);
 
     if (userId) {
+      // Cross-check the extracted userId against the browser's actual c_user
+      // cookie. If FB served a logged-out marketing page, page-content scrapes
+      // can still surface placeholder USER_ID values; the c_user cookie is the
+      // authoritative session token. We require BOTH to agree before declaring
+      // the session valid. This is the structural fix for the zombie-valid bug
+      // — `extractUserId` now also rejects "0" via `isValidFbUserId`, but the
+      // cookie cross-check catches any remaining drift between what the page
+      // says and what the browser actually carries.
+      const ctxCookies = await page.context().cookies().catch(() => []);
+      const cUser = ctxCookies.find(
+        (c) => c.name === 'c_user' && c.domain.includes('facebook.com')
+      );
+      if (!cUser || !isValidFbUserId(cUser.value) || cUser.value !== userId) {
+        logger.warn(
+          `Session validation: extracted userId=${userId} but c_user cookie=${cUser?.value ?? 'MISSING'}. Treating as needsLogin to avoid zombie-valid state.`
+        );
+        result.needsLogin = true;
+        return result;
+      }
       result.isValid = true;
       result.userId = userId;
       result.userName = userName;
@@ -240,13 +279,13 @@ const extractUserId = async (page: Page): Promise<string | null> => {
 
     if (metaContent) {
       const match = metaContent.match(/fb:\/\/profile\/(\d+)/);
-      if (match) return match[1];
+      if (match && isValidFbUserId(match[1])) return match[1];
     }
 
     // Try to get from page content
     const pageContent = await page.content();
     const userIdMatch = pageContent.match(/"USER_ID":"(\d+)"/);
-    if (userIdMatch) return userIdMatch[1];
+    if (userIdMatch && isValidFbUserId(userIdMatch[1])) return userIdMatch[1];
 
     // Try to get from profile link
     const profileLink = await page.$('[aria-label="Your profile"] a, [data-pagelet="ProfileActions"] a');
@@ -254,7 +293,7 @@ const extractUserId = async (page: Page): Promise<string | null> => {
       const href = await profileLink.getAttribute('href');
       if (href) {
         const idMatch = href.match(/\/profile\.php\?id=(\d+)/) || href.match(/\/(\d+)\/?$/);
-        if (idMatch) return idMatch[1];
+        if (idMatch && isValidFbUserId(idMatch[1])) return idMatch[1];
       }
     }
 
@@ -340,6 +379,25 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
     }
 
     if (validation.isValid && validation.userId) {
+      // Belt-and-suspenders: the scraper makes its scrape/skip decision based
+      // on `getCookieHealth()` (which reads cookies.json + DB mirror). If
+      // validateSession says "valid" but getCookieHealth says no — for example
+      // because cookies.json was wiped by a Railway redeploy and the DB
+      // mirror is empty too — surfacing "valid" to the dashboard would create
+      // exactly the zombie-valid divergence we just fixed at a different layer.
+      // Trust the scraper-facing signal and downgrade.
+      const { getCookieHealth } = await import('../facebook/session');
+      const cookieHealth = await getCookieHealth().catch(() => null);
+      if (cookieHealth && !cookieHealth.hasSession) {
+        logger.warn(
+          `Session validation said valid for ${validation.userId}, but getCookieHealth reports no session (total=${cookieHealth.total}, valid=${cookieHealth.valid}). Downgrading to expired so the dashboard surfaces the real state.`
+        );
+        await logSystemEvent('auth', 'Session downgraded: page-scrape and cookie-probe disagreed');
+        const health = await markSessionExpired('Cookie probe disagreed with page-scrape');
+        await updateSessionStateInDb('expired', 'Cookie probe disagreed with page-scrape');
+        return health;
+      }
+
       const health = await markSessionValid(validation.userId, validation.userName || undefined);
       await logSystemEvent('auth', `Session valid for user ${validation.userName || validation.userId}`);
 

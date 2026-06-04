@@ -5,6 +5,7 @@ import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
 import { normalizeMessageContent, validateGeneratedMessage, sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
 import { URLS } from '../config/constants';
+import { getHistoricThreshold } from '../utils/settings';
 
 const TEMPLATE_PROMPT = `You write short, friendly messages to people on Facebook who shared a historical story or memory.
 
@@ -62,15 +63,14 @@ const buildLink = (postId: number, text: string) => {
 
 export const generateMessages = async (): Promise<void> => {
   // Only generate outreach messages for posts the classifier is HIGHLY confident
-  // are full historical stories. The classifier prompt was tightened so that
-  // confidence > 75 means "yes, this is a real story worth preserving" — short
-  // event listings, group rules, photo captions, etc. all get ≤75 and are
-  // intentionally skipped here. Threshold is strictly greater-than per the
-  // updated requirements ("only stories with grade MORE than 75").
+  // are full historical stories. Threshold is operator-tunable via Settings
+  // (default 75, strictly greater than). Short event listings, group rules,
+  // photo captions, etc. all score ≤ threshold and are intentionally skipped.
+  const threshold = await getHistoricThreshold();
   const classifiedPosts = await prisma.postClassified.findMany({
     where: {
       isHistoric: true,
-      confidence: { gt: 75 },
+      confidence: { gt: threshold },
       post: {
         authorLink: { not: null }, // Only fetch posts with author links
         generated: { none: {} },
