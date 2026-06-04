@@ -68,6 +68,21 @@ const GROUP_RULE_PATTERNS: RegExp[] = [
   /^Our group has several guidelines/i, // observed in prod: pinned group-norms
   /^This is a group for/i,
   /^Read the rules before posting/i,
+  // Hebrew patterns observed on prod rows 654-657 (group-rules box that
+  // FB inlined at top of feed when there were no recent posts). All four
+  // rows had null authorName and the same admin avatar — clearly bullet
+  // points of one rules block being picked up as individual "posts".
+  /^[•·*-]\s*לא\s+נאפשר/, // "• we will not allow..."
+  /^[•·*-]\s*זוהי\s+קבוצה/, // "• this is a group..."
+  /^קבענו\s+כמה\s+כללי/, // "we set basic rules..."
+  /^רצוי\s+שהרשומות/, // "it is recommended that posts..."
+  // Hebrew copyright/about disclaimers observed on rows 652-653.
+  /^מי\s+שהוא\s+בעל\s+זכויות/, // "whoever owns rights..."
+  /^מאחר\s+והתמונות/, // "since the photos are historical..."
+  // Generic bullet-prefixed rule-style opener — catches anything that
+  // STARTS with • / · / * / - followed by a typical disclaimer verb. Safe
+  // because real user posts almost never lead with a bullet character.
+  /^[•·*]\s+(לא|זוהי|אין|אסור|please|do not)/i,
 ];
 
 /**
@@ -178,6 +193,21 @@ const shouldSkipPost = (
   const hasNoUrl = !post.postUrl;
   if (hasHashId && hasNoUrl && linkMatchesSelf) {
     return { skip: true, reason: 'hash-fallback id + no postUrl + self-profile link = chrome' };
+  }
+
+  // Filter 7: triple-null structural signature. Six rows in production
+  // matched this exact pattern: null authorName + hash_<sha> fbPostId +
+  // null postUrl — every one was a bullet-point from an inlined group
+  // rules box, all from the same admin avatar across the same group. Real
+  // posts always have at least one of these three populated (real authors
+  // have names, real posts have either a numeric id or a captured URL).
+  // The combination of all three being missing is a structural certainty
+  // that this isn't a user post.
+  if (!post.authorName && hasHashId && hasNoUrl) {
+    return {
+      skip: true,
+      reason: 'triple-null signature (no name + hash id + no url) — group-chrome bullet',
+    };
   }
 
   return { skip: false };

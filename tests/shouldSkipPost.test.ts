@@ -134,6 +134,114 @@ describe('shouldSkipPost — Filter 5: name matches operator userName', () => {
   });
 });
 
+describe('shouldSkipPost — Filter 7: triple-null structural signature (the bullet-rules bug)', () => {
+  it('drops a triple-null row even when its text does NOT match any rule pattern', () => {
+    // Use generic non-rule text to ISOLATE Filter 7 from Filter 3. In
+    // production, the same post would also match Filter 3 (rule pattern)
+    // and Filter 3 would catch it first — but Filter 7 is the safety net
+    // for any rule text we haven't added a regex for yet.
+    const post = basePost({
+      authorName: null,
+      authorLink: 'https://www.facebook.com/profile.php?id=1553358724',
+      fbPostId: 'hash_07bf3aac73f7514bcc8a',
+      postUrl: null,
+      text: 'some random text that no pattern matches',
+    });
+    const result = shouldSkipPost(post, { userId: null, userName: null });
+    expect(result.skip).toBe(true);
+    expect(result.reason).toMatch(/triple-null/);
+  });
+
+  it('also drops the exact prod row 657 (matches Filter 3 or 7 — either way, skip)', () => {
+    const post = basePost({
+      authorName: null,
+      authorLink: 'https://www.facebook.com/profile.php?id=1553358724',
+      fbPostId: 'hash_07bf3aac73f7514bcc8a',
+      postUrl: null,
+      text: '• לא נאפשר פרסום הפוגע ומעליב אישית במישהו...',
+    });
+    expect(shouldSkipPost(post, { userId: null, userName: null }).skip).toBe(true);
+  });
+
+  it('keeps a hash-id post if it has a real authorName (e.g. extractor got author but not id)', () => {
+    const post = basePost({
+      authorName: 'מיטל קליין-גז',
+      fbPostId: 'hash_a433ea3c504dd7e0038c',
+      postUrl: null,
+      text: 'היום לפני 80 שנה, התקיימה הפעולה הגדולה...',
+    });
+    expect(shouldSkipPost(post, { userId: null, userName: null }).skip).toBe(false);
+  });
+
+  it('keeps a null-name post if it at least has a postUrl', () => {
+    const post = basePost({
+      authorName: null,
+      fbPostId: 'hash_x',
+      postUrl: 'https://www.facebook.com/groups/X/posts/123456789',
+      text: 'Some text',
+    });
+    expect(shouldSkipPost(post, { userId: null, userName: null }).skip).toBe(false);
+  });
+
+  it('keeps a null-name post if it at least has a numeric id', () => {
+    const post = basePost({
+      authorName: null,
+      fbPostId: '2017717945502020',
+      postUrl: null,
+      text: 'Some text',
+    });
+    expect(shouldSkipPost(post, { userId: null, userName: null }).skip).toBe(false);
+  });
+});
+
+describe('shouldSkipPost — Filter 3 extended: Hebrew bullet-rule patterns', () => {
+  it('drops "• לא נאפשר" (won\'t allow ...)', () => {
+    const post = basePost({ text: '• לא נאפשר פרסום הפוגע במישהו...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('drops "• זוהי קבוצה" (this is a group ...)', () => {
+    const post = basePost({ text: '• זוהי קבוצה ללא מטרות רווח...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('drops "קבענו כמה כללי יסוד" (we set basic rules)', () => {
+    const post = basePost({ text: 'קבענו כמה כללי יסוד למשתתפים...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('drops "רצוי שהרשומות" (recommended posts ...)', () => {
+    const post = basePost({ text: 'רצוי שהרשומות (הפוסטים) המועלים לקבוצה...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('drops "מי שהוא בעל זכויות" (whoever owns rights ...)', () => {
+    const post = basePost({ text: 'מי שהוא בעל זכויות על תמונה...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('drops "מאחר והתמונות" (since the photos ...)', () => {
+    const post = basePost({ text: 'מאחר והתמונות הן תמונות היסטוריות...' });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(true);
+  });
+
+  it('keeps a legitimate Hebrew historical story that starts with a date', () => {
+    const post = basePost({
+      authorName: 'מיטל קליין-גז',
+      text: 'היום לפני 80 שנה, בי"ט בסיוון תש"ו (1946), התקיימה הפעולה הגדולה...',
+    });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(false);
+  });
+
+  it('keeps a Hebrew post whose bullet point is just a list inside (not at start)', () => {
+    const post = basePost({
+      authorName: 'David Cohen',
+      text: 'מה שראיתי בילדותי הזכיר לי את:\n• הסיפור של סבא\n• המסע שלנו לכפר',
+    });
+    expect(shouldSkipPost(post, noSelf).skip).toBe(false);
+  });
+});
+
 describe('shouldSkipPost — Filter 6: skeptical bundle (hash id + no url + self link)', () => {
   it('drops the exact phantom-post signature seen in prod', () => {
     const post = basePost({
