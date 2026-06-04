@@ -203,7 +203,9 @@ const handleChallenge = async (type: '2fa' | 'captcha') => {
       ? 'Facebook triggered two-factor authentication. Manual approval required.'
       : 'Facebook presented a security captcha. Automation paused.';
 
-  await logSystemEvent('auth', message);
+  // telegram: true — FB challenges are the highest-urgency alert; the
+  // operator must intervene NOW or scraping stays dark until they do.
+  await logSystemEvent('auth', message, { telegram: true });
   await sendAlertEmail('Tarasa Facebook session requires attention', message);
 };
 

@@ -683,6 +683,56 @@ Like`;
 });
 
 // ============================================================================
+// parseFbPostIdFromUrl — the helper used both by the feed-children path
+// (when it has a captured URL but couldn't parse the id) AND by the
+// permalink-fetch resolver in playwrightScraper.ts after navigating to a
+// candidate URL. Every URL shape we accept needs a test so accidental
+// regex weakening can't slip through.
+// ============================================================================
+import { parseFbPostIdFromUrl } from '../src/scraper/extractors';
+
+describe('parseFbPostIdFromUrl', () => {
+  it('extracts numeric id from /groups/X/posts/<id>/', () => {
+    const url = 'https://www.facebook.com/groups/136596023614231/posts/2017717945502020/';
+    expect(parseFbPostIdFromUrl(url)).toBe('2017717945502020');
+  });
+
+  it('extracts pfbid id from /posts/pfbid<...>/', () => {
+    const url = 'https://www.facebook.com/groups/X/posts/pfbid02X6EAgJQaCxigJJ1U8VeKQsV2P6S';
+    expect(parseFbPostIdFromUrl(url)).toBe('pfbid02X6EAgJQaCxigJJ1U8VeKQsV2P6S');
+  });
+
+  it('extracts numeric id from /permalink/<id>', () => {
+    expect(parseFbPostIdFromUrl('https://m.facebook.com/permalink/2017717945502020')).toBe('2017717945502020');
+  });
+
+  it('extracts id from ?story_fbid=<id>', () => {
+    expect(parseFbPostIdFromUrl('https://www.facebook.com/groups/X/?story_fbid=2017717945502020')).toBe('2017717945502020');
+  });
+
+  it('extracts id from photo-album set=pcb.<id>', () => {
+    const url = 'https://www.facebook.com/photo.php?fbid=999&set=pcb.2017717945502020&type=3';
+    expect(parseFbPostIdFromUrl(url)).toBe('2017717945502020');
+  });
+
+  it('returns null for URLs with no recognizable id pattern', () => {
+    expect(parseFbPostIdFromUrl('https://www.facebook.com/')).toBeNull();
+    expect(parseFbPostIdFromUrl('https://example.com/posts/2017717945502020')).toBe('2017717945502020'); // hostname-agnostic
+    expect(parseFbPostIdFromUrl('https://www.facebook.com/login/')).toBeNull();
+  });
+
+  it('rejects ids that fail isValidFbPostId (too short)', () => {
+    expect(parseFbPostIdFromUrl('https://www.facebook.com/posts/12345')).toBeNull();
+  });
+
+  it('returns null for null / undefined / empty / non-string', () => {
+    expect(parseFbPostIdFromUrl(null)).toBeNull();
+    expect(parseFbPostIdFromUrl(undefined)).toBeNull();
+    expect(parseFbPostIdFromUrl('')).toBeNull();
+  });
+});
+
+// ============================================================================
 // isValidFbPostId — the safety gate for the new in-DOM post-id strategies.
 // If this regresses, the new extractors could emit malformed ids
 // (member counts, group ids, dates) and corrupt the dedup constraint

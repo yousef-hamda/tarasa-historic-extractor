@@ -248,7 +248,11 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
     });
 
     if (!result.ok) {
-      await logSystemEvent('error', `Email export failed: ${result.error}`).catch(() => undefined);
+      // telegram: true — operator clicked "Send Approved Posts" and the
+      // email didn't go out. They expect that mail; a Telegram alert lets
+      // them know why it failed (SMTP, Resend validation, etc.) without
+      // needing to refresh the dashboard.
+      await logSystemEvent('error', `Email export failed: ${result.error}`, { telegram: true }).catch(() => undefined);
 
       // Map provider-side error categories to appropriate HTTP statuses.
       // Returning 502 for everything was hiding the actual message: Railway's

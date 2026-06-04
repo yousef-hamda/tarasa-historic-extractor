@@ -185,6 +185,34 @@ export const isValidFbPostId = (id: string | null | undefined): id is string => 
 };
 
 /**
+ * Parse a Facebook post id out of any URL we have. Tries the standard
+ * permalink shapes (`/posts/<id>`, `/permalink/<id>`, `?story_fbid=<id>`,
+ * `set=pcb.<id>`). Returns the id if it passes `isValidFbPostId`,
+ * otherwise null.
+ *
+ * Used by both the feed-children extractor (when it has a partial URL but
+ * couldn't parse an id) AND by the permalink-fetch resolver in
+ * playwrightScraper.ts (after navigating to a candidate URL and reading
+ * the final `window.location`).
+ */
+export const parseFbPostIdFromUrl = (url: string | null | undefined): string | null => {
+  if (!url || typeof url !== 'string') return null;
+  // /posts/<numeric-or-pfbid>
+  let m = url.match(/\/posts\/(pfbid[a-zA-Z0-9]+|\d{10,})/);
+  if (m && isValidFbPostId(m[1])) return m[1];
+  // /permalink/<numeric>
+  m = url.match(/\/permalink\/(\d{10,})/);
+  if (m && isValidFbPostId(m[1])) return m[1];
+  // ?story_fbid=<id>
+  m = url.match(/[?&]story_fbid=(pfbid[a-zA-Z0-9]+|\d{10,})/);
+  if (m && isValidFbPostId(m[1])) return m[1];
+  // photo album set=pcb.<id>
+  m = url.match(/set=pcb\.(\d{10,})/);
+  if (m && isValidFbPostId(m[1])) return m[1];
+  return null;
+};
+
+/**
  * Extract the canonical Facebook post id directly from a post container's
  * DOM, trying five strategies that look in places modern React-rendered FB
  * actually stores the id (the legacy `data-ft` / container.id paths

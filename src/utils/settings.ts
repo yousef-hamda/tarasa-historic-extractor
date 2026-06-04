@@ -255,3 +255,27 @@ export const getMessagingEnabledAsync = async (): Promise<boolean> => {
 export const setMessagingEnabled = async (enabled: boolean): Promise<void> => {
   await setSetting<boolean>(MESSAGING_ENABLED_KEY, Boolean(enabled));
 };
+
+/**
+ * Telegram bot's authenticated chat ids — persisted across redeploys so
+ * non-admin users don't have to re-enter the password every time we push.
+ * Stored as a JSON-encoded `string[]` under `telegram_authenticated_chats`.
+ */
+export const TELEGRAM_AUTH_KEY = 'telegram_authenticated_chats';
+
+export const getAuthenticatedTelegramChats = async (): Promise<string[]> => {
+  const raw = await getSetting<string[]>(TELEGRAM_AUTH_KEY, []);
+  return Array.isArray(raw) ? raw.filter((s) => typeof s === 'string') : [];
+};
+
+/**
+ * Add a chat-id to the persisted authenticated list. Idempotent — if the
+ * id is already present, this is a no-op (avoids unnecessary DB writes
+ * under a spam-auth pattern).
+ */
+export const addAuthenticatedTelegramChat = async (chatId: string): Promise<void> => {
+  if (!chatId || typeof chatId !== 'string') return;
+  const current = await getAuthenticatedTelegramChats();
+  if (current.includes(chatId)) return;
+  await setSetting<string[]>(TELEGRAM_AUTH_KEY, [...current, chatId]);
+};

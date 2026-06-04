@@ -138,6 +138,25 @@ export const rateQuality = async (): Promise<void> => {
           },
         });
 
+        // 5-star posts are rare and worth surfacing immediately — ping the
+        // operator's Telegram so they don't have to keep refreshing the
+        // dashboard. Wrapped so a Telegram outage never breaks the rating
+        // cron itself.
+        if (Math.round(result.rating) === 5) {
+          try {
+            const { notifyHighQualityStory } = await import('../utils/telegram');
+            await notifyHighQualityStory({
+              id: post.id,
+              authorName: post.authorName,
+              text: post.text,
+              groupId: post.groupId,
+              rating: 5,
+            });
+          } catch (notifyErr) {
+            logger.warn(`[Quality Rating] Telegram notify failed for post ${post.id}: ${(notifyErr as Error).message}`);
+          }
+        }
+
         rated++;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -152,7 +171,9 @@ export const rateQuality = async (): Promise<void> => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error(`[Quality Rating] Error: ${message}`);
-    await logSystemEvent('error', `Quality rating failed: ${message}`);
+    // Telegram-alert this — quality rating crashes mean the system is
+    // running blind on which posts are worth surfacing.
+    await logSystemEvent('error', `Quality rating cron failed: ${message}`, { telegram: true });
   } finally {
     await releaseLock(LOCK_NAME);
   }

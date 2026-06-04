@@ -11,7 +11,7 @@
 
 import { Browser, BrowserContext } from 'playwright';
 import logger from '../utils/logger';
-import { extractPosts } from './extractors';
+import { extractPosts, parseFbPostIdFromUrl, isValidFbPostId } from './extractors';
 import { createFacebookContext, saveCookies, getCookieHealth } from '../facebook/session';
 import { NormalizedPost } from './apifyScraper';
 import { browserPool } from '../utils/browserPool';
@@ -54,6 +54,111 @@ const safeCloseBrowser = async (browser: Browser | BrowserContext | null): Promi
  * Wait helper with timeout
  */
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// =====================================================================
+// Permalink-fetch resolver
+//
+// For posts where the in-DOM extractor came up with `fbPostId =
+// hash_<sha>` (no canonical FB id could be parsed from the feed DOM) but
+// we DID capture a partial URL fragment (e.g. a photo album link), we
+// can open a sub-page in the same BrowserContext, navigate to that URL,
+// and read `page.url()` after FB's redirects settle. The final URL
+// almost always contains `/posts/<numeric>` or `/posts/pfbid<...>` —
+// `parseFbPostIdFromUrl` digs the id out.
+//
+// Bounded aggressively so this never wedges a scrape cycle:
+//   - 60 second budget for the whole pass; bail past that
+//   - 8 second timeout per sub-page navigation
+//   - 3 sub-pages in parallel max (avoids FB rate-limit cliff)
+//   - 50 posts max per pass (matches feed extraction sizes; prevents
+//     unbounded sub-page allocation in pathological cases)
+// =====================================================================
+
+const PERMALINK_BUDGET_MS = 60_000;
+const PERMALINK_PER_PAGE_MS = 8_000;
+const PERMALINK_CONCURRENCY = 3;
+const PERMALINK_MAX_POSTS_PER_PASS = 50;
+
+interface PostLike {
+  fbPostId: string;
+  postUrl?: string;
+}
+
+const resolveHashIdsViaPermalink = async (
+  posts: PostLike[],
+  context: BrowserContext,
+): Promise<void> => {
+  // Filter to candidates: hash-id posts that still have a usable URL
+  // fragment to navigate to. Posts with no URL fragment are
+  // irrecoverable — we can't make a request to "somewhere unknown".
+  const candidates = posts
+    .filter((p) => p.fbPostId.startsWith('hash_') && p.postUrl)
+    .slice(0, PERMALINK_MAX_POSTS_PER_PASS);
+
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  logger.info(`[Playwright] permalink-resolver: ${candidates.length} hash-id posts to retry`);
+
+  let resolved = 0;
+  let rejected = 0;
+  let skippedBudget = 0;
+
+  // Process in chunks so we don't open dozens of sub-pages simultaneously.
+  for (let i = 0; i < candidates.length; i += PERMALINK_CONCURRENCY) {
+    if (Date.now() - startedAt > PERMALINK_BUDGET_MS) {
+      skippedBudget = candidates.length - i;
+      break;
+    }
+
+    const chunk = candidates.slice(i, i + PERMALINK_CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (post) => {
+        let subPage = null;
+        try {
+          subPage = await context.newPage();
+          await subPage.goto(post.postUrl!, {
+            waitUntil: 'domcontentloaded',
+            timeout: PERMALINK_PER_PAGE_MS,
+          });
+          // Read the final URL after redirects. We don't wait for full
+          // network idle because FB's feed pages never settle (background
+          // requests fire forever).
+          const finalUrl = subPage.url();
+          const recoveredId = parseFbPostIdFromUrl(finalUrl);
+          if (isValidFbPostId(recoveredId)) {
+            // Mutate in place — caller's posts array is the same object.
+            post.fbPostId = recoveredId;
+            // Also patch postUrl to the canonical permalink so downstream
+            // consumers (email, dashboard) use a clean URL instead of the
+            // photo-album hack we navigated FROM.
+            post.postUrl = finalUrl;
+            resolved++;
+          } else {
+            rejected++;
+          }
+        } catch (err) {
+          // Page detached, navigation timeout, FB redirected to a login
+          // wall — all expected. Leave the post as-is (still hash_) and
+          // move on.
+          rejected++;
+          logger.debug(`[Playwright] permalink-resolver: ${(err as Error).message}`);
+        } finally {
+          if (subPage) {
+            await subPage.close().catch(() => undefined);
+          }
+        }
+      }),
+    );
+  }
+
+  const elapsed = Date.now() - startedAt;
+  logger.info(
+    `[Playwright] permalink-resolver done in ${elapsed}ms: resolved=${resolved} rejected=${rejected} skipped-budget=${skippedBudget}`,
+  );
+};
 
 /**
  * Scrape a single Facebook group using Playwright
@@ -479,6 +584,19 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       }
 
       logger.info(`[Playwright] Extracted ${posts.length} posts from group ${groupId}`);
+
+      // Phase A: permalink-fetch fallback. For posts where the in-DOM
+      // extractor came up with a hash_<sha> fbPostId but we still
+      // captured a partial URL (e.g. a /set=pcb.<id> photo link), open a
+      // sub-page in the same browser context, navigate, and read the
+      // final URL after FB's redirects — that final URL almost always
+      // contains the canonical post id. Strictly bounded so it can't
+      // wedge the scrape: 60s total budget, 8s per page, 3 concurrent.
+      try {
+        await resolveHashIdsViaPermalink(posts, context);
+      } catch (resolveErr) {
+        logger.warn(`[Playwright] permalink resolver crashed (continuing with extracted posts): ${(resolveErr as Error).message}`);
+      }
 
       // Clear the intercepted cache after extraction to prevent memory leaks
       clearInterceptedCache();

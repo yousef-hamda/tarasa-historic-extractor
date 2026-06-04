@@ -205,7 +205,9 @@ export const dispatchMessages = async (): Promise<void> => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Failed to create Facebook context: ${errorMessage}`);
-    await logSystemEvent('error', `Messenger failed to initialize: ${errorMessage}`);
+    // telegram: true — messenger failed to even initialize means outreach
+    // is fully paused until the operator looks at it.
+    await logSystemEvent('error', `Messenger failed to initialize: ${errorMessage}`, { telegram: true });
     // Clean up browser if it was created but page creation failed
     if (browser) {
       await browser.close().catch((e: Error) => logger.warn(`Browser cleanup on init error: ${e.message}`));

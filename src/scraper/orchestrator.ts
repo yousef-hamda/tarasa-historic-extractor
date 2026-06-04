@@ -515,7 +515,11 @@ export const scrapeAllGroupsOrchestrated = async (): Promise<{
 
   if (!hasValidSession && !isApifyConfigured()) {
     logger.error('[Orchestrator] No valid session and Apify not configured. Cannot scrape.');
-    await logSystemEvent('scrape', 'Scrape aborted: No valid session and Apify not configured');
+    // telegram: true — entire scrape cycle aborted because there's no
+    // session AND no Apify fallback. This means the pipeline is dark
+    // until the operator re-renews cookies. Worth one alert per scrape
+    // cycle (5-min dedup in sendSystemAlert keeps it from spamming).
+    await logSystemEvent('scrape', 'Scrape aborted: No valid session and Apify not configured', { telegram: true });
     return {
       totalGroups: groupIds.length,
       successfulGroups: 0,

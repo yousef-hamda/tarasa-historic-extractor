@@ -93,13 +93,31 @@ View in dashboard: /posts?id=${post.id}
 };
 
 /**
- * Send system status alert
+ * Send system status alert.
+ *
+ * Has a 5-minute in-memory dedup window keyed by the title — when the
+ * underlying pipeline is failing repeatedly (e.g. OpenAI is down), this
+ * prevents the operator's Telegram from getting hammered with the same
+ * notification. Memory-only on purpose: on Railway redeploy the dedup
+ * resets, which is the right behavior (operator gets one fresh alert
+ * after each container start, then dedup kicks in again).
  */
+const ALERT_DEDUP_WINDOW_MS = 5 * 60_000;
+const recentAlerts = new Map<string, number>();
+
 export const sendSystemAlert = async (
   type: 'error' | 'warning' | 'info',
   title: string,
   details?: string
 ): Promise<void> => {
+  const dedupKey = `${type}|${title}`;
+  const last = recentAlerts.get(dedupKey);
+  if (last && Date.now() - last < ALERT_DEDUP_WINDOW_MS) {
+    logger.debug(`[Telegram] Suppressed duplicate alert: ${title}`);
+    return;
+  }
+  recentAlerts.set(dedupKey, Date.now());
+
   const emoji = {
     error: '🚨',
     warning: '⚠️',
@@ -447,14 +465,57 @@ const timeSince = (date: Date): string => {
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
 let lastUpdateId = 0;
 
-// Authenticated chat IDs (password-verified users)
-const BOT_PASSWORD = process.env.TELEGRAM_BOT_PASSWORD || 'tshuka';
-const authenticatedChats: Set<string> = new Set();
+// =====================================================================
+// Authentication state
+//
+// Phase B: TELEGRAM_BOT_PASSWORD is no longer defaulted to a hardcoded
+// value visible in the public repo. If the env var is missing, the
+// password check always fails — the admin chat from TELEGRAM_CHAT_ID
+// still auto-authenticates so the operator isn't locked out.
+//
+// Phase C: the set of authenticated chats is mirrored to the DB
+// SystemSetting table so non-admin users don't have to re-enter the
+// password after every Railway redeploy (which used to wipe the
+// in-memory set). Admin chat is also added to the set so its presence
+// survives even if TELEGRAM_CHAT_ID env var rotates.
+// =====================================================================
+const BOT_PASSWORD = process.env.TELEGRAM_BOT_PASSWORD?.trim() || '';
+if (!BOT_PASSWORD) {
+  logger.warn(
+    '[Telegram] TELEGRAM_BOT_PASSWORD env var is unset — non-admin chats cannot authenticate. Set it in Railway env to allow password-based access.',
+  );
+}
 
-// Auto-authenticate the admin chat
+const authenticatedChats: Set<string> = new Set();
 if (TELEGRAM_CHAT_ID) {
   authenticatedChats.add(String(TELEGRAM_CHAT_ID));
 }
+
+// Boot-time async load from DB. Fire-and-forget so we don't block module
+// import; race condition with the polling thread is fine because the Set
+// is updated in place and any auth that hasn't loaded yet will simply
+// require a password re-entry (same as today's behavior).
+(async () => {
+  try {
+    const { getAuthenticatedTelegramChats } = await import('./settings');
+    const persisted = await getAuthenticatedTelegramChats();
+    for (const c of persisted) authenticatedChats.add(c);
+    logger.info(`[Telegram] Loaded ${persisted.length} authenticated chats from DB`);
+  } catch (err) {
+    logger.warn(`[Telegram] Could not restore authenticated chats from DB: ${(err as Error).message}`);
+  }
+})();
+
+// Persist a chat-id to DB after successful authentication. Best-effort —
+// failures are logged but don't break the user's auth experience.
+const persistAuthenticatedChat = async (chatId: string): Promise<void> => {
+  try {
+    const { addAuthenticatedTelegramChat } = await import('./settings');
+    await addAuthenticatedTelegramChat(chatId);
+  } catch (err) {
+    logger.warn(`[Telegram] Could not persist auth for chat ${chatId}: ${(err as Error).message}`);
+  }
+};
 
 /**
  * Start polling for incoming messages
@@ -499,9 +560,17 @@ export const startTelegramPolling = (): void => {
         try {
           // Check if user is authenticated
           if (!authenticatedChats.has(chatIdStr)) {
-            // Check if this message is the password
-            if (text.trim().toLowerCase() === BOT_PASSWORD) {
+            // Password check ONLY succeeds if BOT_PASSWORD is non-empty
+            // (env var set) AND the submitted text matches it exactly.
+            // If TELEGRAM_BOT_PASSWORD is unset, every guess fails —
+            // only the admin chat (auto-authed from TELEGRAM_CHAT_ID)
+            // can interact with the bot.
+            if (BOT_PASSWORD && text.trim().toLowerCase() === BOT_PASSWORD.toLowerCase()) {
               authenticatedChats.add(chatIdStr);
+              // Persist so the auth survives a Railway redeploy.
+              // Fire-and-forget; we don't block the user's response on
+              // a DB write.
+              persistAuthenticatedChat(chatIdStr).catch(() => undefined);
               logger.info(`[Telegram] Chat ${chatIdStr} authenticated`);
               await axios.post(`${TELEGRAM_API_URL}/sendMessage`, {
                 chat_id: chatId,
@@ -512,10 +581,14 @@ export const startTelegramPolling = (): void => {
               continue;
             }
 
-            // Not authenticated - ask for password
+            // Not authenticated — ask for password (or report bot is
+            // closed if the operator hasn't set the env var).
+            const lockedMsg = BOT_PASSWORD
+              ? '🔒 This bot requires a password to access.\n\nPlease enter the password:'
+              : '🔒 This bot is currently closed. The operator needs to set TELEGRAM_BOT_PASSWORD in the server env to enable access.';
             await axios.post(`${TELEGRAM_API_URL}/sendMessage`, {
               chat_id: chatId,
-              text: '🔒 This bot requires a password to access.\n\nPlease enter the password:',
+              text: lockedMsg,
               reply_to_message_id: update.message.message_id,
             });
             continue;
