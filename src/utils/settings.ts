@@ -202,13 +202,54 @@ export const setSpeedPreset = async (preset: SpeedPreset): Promise<void> => {
   await setSetting<SpeedPreset>(SPEED_PRESET_KEY, preset);
 };
 
-/** Messaging on/off — migrated from messaging-state.json so it survives redeploys. */
+/**
+ * Recipient email for operator reports (the "Send Approved Posts" button).
+ * Stored as a plain string; empty string means "not set".
+ *
+ * Validation is intentionally loose — `<local>@<domain>.<tld>` is enough. We
+ * don't try to verify deliverability; the user will know within seconds
+ * whether the test email arrives.
+ */
+export const ADMIN_EMAIL_KEY = 'admin_email_recipient';
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export const getAdminEmail = async (): Promise<string> => {
+  const raw = await getSetting<string>(ADMIN_EMAIL_KEY, '');
+  return typeof raw === 'string' ? raw : '';
+};
+
+/**
+ * Returns the stored value (trimmed, lowercased). Pass an empty string to
+ * clear. Throws if the input is non-empty but not a valid email shape so the
+ * caller can surface the error to the UI.
+ */
+export const setAdminEmail = async (raw: string | null | undefined): Promise<string> => {
+  const trimmed = (raw ?? '').trim().toLowerCase();
+  if (trimmed && !EMAIL_REGEX.test(trimmed)) {
+    throw new Error('That doesn\'t look like an email address.');
+  }
+  await setSetting<string>(ADMIN_EMAIL_KEY, trimmed);
+  return trimmed;
+};
+
+/** Visible for tests. */
+export const _EMAIL_REGEX_FOR_TESTS = EMAIL_REGEX;
+
+/**
+ * Messaging on/off — migrated from messaging-state.json so it survives redeploys.
+ *
+ * DEFAULT IS FALSE on purpose. Outreach messages go to real people's Messenger
+ * inboxes; the cost of sending one accidentally (wrong threshold, wrong
+ * filter, mistaken classification) is much higher than the cost of an operator
+ * having to flip a toggle. New installs and fresh containers default to
+ * "paused" so messages only flow after a deliberate human enable.
+ */
 export const MESSAGING_ENABLED_KEY = 'messaging_enabled';
-export const MESSAGING_ENABLED_DEFAULT = true;
+export const MESSAGING_ENABLED_DEFAULT = false;
 
 export const getMessagingEnabledAsync = async (): Promise<boolean> => {
   const raw = await getSetting<boolean>(MESSAGING_ENABLED_KEY, MESSAGING_ENABLED_DEFAULT);
-  return raw !== false;
+  return raw === true;
 };
 
 export const setMessagingEnabled = async (enabled: boolean): Promise<void> => {

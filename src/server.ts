@@ -21,6 +21,7 @@ import submitRouter from './routes/submit';
 import searchRouter from './routes/search';
 import promptsRouter from './routes/prompts';
 import abTestingRouter from './routes/abTesting';
+import exportRouter from './routes/export';
 import logger from './utils/logger';
 process.stderr.write('[BOOT] route + logger imports complete\n');
 import './cron';
@@ -110,6 +111,7 @@ app.use(backupRouter);
 app.use(searchRouter);
 app.use(promptsRouter);
 app.use(abTestingRouter);
+app.use(exportRouter);
 
 // Public Submit Landing Page API (no auth required)
 app.use(submitRouter);

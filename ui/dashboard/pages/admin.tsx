@@ -3,6 +3,7 @@ import { apiFetch } from '../utils/api';
 import SystemStatusCard from '../components/SystemStatusCard';
 import GroupStatusTable from '../components/GroupStatusTable';
 import TriggerButton from '../components/TriggerButton';
+import SendApprovedPostsButton from '../components/SendApprovedPostsButton';
 import StatusBadge from '../components/StatusBadge';
 import SystemFlowDiagram from '../components/SystemFlowDiagram';
 import { formatRelativeTime, formatUptime, formatDate } from '../utils/formatters';
@@ -377,6 +378,19 @@ const AdminPage: React.FC = () => {
               variant="danger"
               icon={<ShieldCheckIcon className="h-5 w-5" />}
             />
+          </div>
+
+          {/* Send approved posts email — same component the Posts page uses. */}
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Email approved posts</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Sends an HTML table + CSV attachment of every post above the current threshold to the admin email saved in Settings.
+                </p>
+              </div>
+              <SendApprovedPostsButton />
+            </div>
           </div>
 
           {/* Quick Run All */}

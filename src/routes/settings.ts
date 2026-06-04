@@ -16,6 +16,8 @@ import {
   isSpeedPreset,
   SPEED_PRESETS,
   SpeedPreset,
+  getAdminEmail,
+  setAdminEmail,
 } from '../utils/settings';
 import { applySpeedPreset } from '../cron/scheduler';
 import logger from '../utils/logger';
@@ -30,11 +32,12 @@ export { getMessagingEnabledAsync as getMessagingEnabled };
 
 router.get('/api/settings', async (_req: Request, res: Response) => {
   try {
-    const [groups, messagingEnabled, historicThreshold, speedPreset] = await Promise.all([
+    const [groups, messagingEnabled, historicThreshold, speedPreset, adminEmail] = await Promise.all([
       getActiveGroupIds(),
       getMessagingEnabledAsync(),
       getHistoricThreshold(),
       getSpeedPreset(),
+      getAdminEmail(),
     ]);
     const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
     const baseTarasaUrl = process.env.BASE_TARASA_URL || URLS.DEFAULT_TARASA;
@@ -58,9 +61,27 @@ router.get('/api/settings', async (_req: Request, res: Response) => {
         preset: speedPreset,
         presets: SPEED_PRESETS,
       },
+      adminEmail,
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load settings', message: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
+// Save the admin recipient email used by the Send Approved Posts button.
+// Accepts `{email: string}`. Empty string clears it. Validation throws so we
+// can surface "doesn't look like an email" back to the user.
+router.post('/api/settings/admin-email', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
+  const { email } = req.body || {};
+  if (typeof email !== 'string') {
+    return res.status(400).json({ error: 'email must be a string (use empty string to clear)' });
+  }
+  try {
+    const stored = await setAdminEmail(email);
+    res.json({ success: true, adminEmail: stored });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({ error: 'Invalid email', message: msg });
   }
 });
 

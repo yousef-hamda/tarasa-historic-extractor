@@ -5,6 +5,8 @@ import { PageSkeleton } from '../components/Skeleton';
 import { apiFetch } from '../utils/api';
 import { formatRelativeTime, truncateText } from '../utils/formatters';
 import { effectivePostUrl } from '../utils/postUrl';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import SendApprovedPostsButton from '../components/SendApprovedPostsButton';
 import type { Post, GroupInfo } from '../types';
 import {
   MagnifyingGlassIcon,
@@ -182,6 +184,13 @@ const PostsPage: React.FC = () => {
     loadPosts(0);
   }, [loadPosts]);
 
+  // Auto-refresh the current page every 15s so newly scraped posts appear
+  // without the user having to click Refresh. Pauses when the tab is
+  // backgrounded.
+  useAutoRefresh(() => {
+    loadPosts(pagination.offset);
+  });
+
   const handlePageChange = (newOffset: number) => {
     loadPosts(newOffset);
   };
@@ -223,7 +232,13 @@ const PostsPage: React.FC = () => {
     return <PageSkeleton />;
   }
 
-  if (error) {
+  // Non-blocking error: a transient API hiccup (Railway rolling deploy,
+  // brief network blip) should NOT wipe the page and discard whatever data
+  // we already have. Surface it as a dismissable banner above the table and
+  // let auto-refresh recover automatically on the next tick.
+  // If we have no data at all AND we have an error, that's the first-load
+  // failure case — show the full error card so the user has a retry button.
+  if (error && data.length === 0) {
     return (
       <div className="space-y-6">
         <div>
@@ -239,12 +254,15 @@ const PostsPage: React.FC = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Connection Error</h2>
               <p className="text-slate-600 text-sm">{error}</p>
+              <p className="text-slate-400 text-xs mt-1">
+                Usually transient — most often happens during a Railway redeploy. The page will auto-retry every 15 seconds.
+              </p>
               <button
                 onClick={() => loadPosts(0)}
                 className="btn-primary mt-4"
               >
                 <ArrowPathIcon className="w-4 h-4" />
-                Retry Connection
+                Retry now
               </button>
             </div>
           </div>
@@ -277,13 +295,16 @@ const PostsPage: React.FC = () => {
             </span>
           </p>
         </div>
-        <button
-          onClick={() => loadPosts(pagination.offset)}
-          className="btn-secondary"
-        >
-          <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <SendApprovedPostsButton variant="compact" />
+          <button
+            onClick={() => loadPosts(pagination.offset)}
+            className="btn-secondary"
+          >
+            <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -348,6 +369,21 @@ const PostsPage: React.FC = () => {
       {deleteError && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
           {deleteError}
+        </div>
+      )}
+
+      {/* Soft error banner — shown when a refresh fails but we still have
+          stale data to display. Doesn't block interaction; clears on next
+          successful auto-refresh. */}
+      {error && data.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center justify-between">
+          <span>Refresh failed: {error}. Showing last-known data; will retry automatically.</span>
+          <button
+            onClick={() => loadPosts(pagination.offset)}
+            className="text-amber-900 underline text-xs"
+          >
+            Retry now
+          </button>
         </div>
       )}
 

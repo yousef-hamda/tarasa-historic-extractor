@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   PlayIcon,
   PauseIcon,
@@ -157,6 +158,12 @@ const MessagesPage: React.FC = () => {
     fetchMessagingStatus();
   }, [fetchMessages, fetchMessagingStatus]);
 
+  // Auto-refresh queue + messaging status every 15s.
+  useAutoRefresh(() => {
+    fetchMessages();
+    fetchMessagingStatus();
+  });
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -170,7 +177,9 @@ const MessagesPage: React.FC = () => {
     );
   }
 
-  if (error || !data) {
+  // Only show the full error card on FIRST load. After we have data, transient
+  // errors render as a banner below the header so the user keeps their view.
+  if ((error || !data) && !data) {
     return (
       <div className="space-y-6">
         <div>
@@ -186,9 +195,12 @@ const MessagesPage: React.FC = () => {
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Connection Error</h2>
               <p className="text-slate-600 text-sm">{error || 'Unknown error'}</p>
+              <p className="text-slate-400 text-xs mt-1">
+                Usually transient — most often happens during a Railway redeploy. The page will auto-retry every 15 seconds.
+              </p>
               <button onClick={fetchMessages} className="btn-primary mt-4">
                 <ArrowPathIcon className="w-4 h-4" />
-                Retry Connection
+                Retry now
               </button>
             </div>
           </div>
@@ -196,6 +208,8 @@ const MessagesPage: React.FC = () => {
       </div>
     );
   }
+
+  if (!data) return null;
 
   const successCount = data.sent?.filter(m => m.status.toLowerCase() === 'sent' || m.status.toLowerCase() === 'success').length || 0;
   const failedCount = data.sent?.filter(m => m.status.toLowerCase() === 'failed' || m.status.toLowerCase() === 'error').length || 0;
@@ -243,13 +257,23 @@ const MessagesPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Soft refresh-error banner — keeps existing data visible. */}
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center justify-between">
+          <span>Refresh failed: {error}. Showing last-known data; will retry automatically.</span>
+          <button onClick={fetchMessages} className="text-amber-900 underline text-xs">
+            Retry now
+          </button>
+        </div>
+      )}
+
       {/* Paused Warning */}
       {!messagingEnabled && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
           <ExclamationTriangleIcon className="w-5 h-5 text-amber-600" />
           <div>
-            <p className="text-amber-800 font-medium">Messaging is Paused</p>
-            <p className="text-amber-600 text-sm">Messages will be queued but NOT sent until you resume.</p>
+            <p className="text-amber-800 font-medium">Messaging is Paused (safe default)</p>
+            <p className="text-amber-600 text-sm">Messages are queued but NOT sent. Click the green &ldquo;Messaging OFF&rdquo; button above to turn dispatching on — it&apos;s off by default so messages can&apos;t go out by accident.</p>
           </div>
         </div>
       )}

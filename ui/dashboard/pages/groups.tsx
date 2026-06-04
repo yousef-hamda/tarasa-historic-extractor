@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
 import { formatRelativeTime } from '../utils/formatters';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   PlusIcon,
   TrashIcon,
@@ -274,6 +275,10 @@ const GroupsPage: React.FC = () => {
   useEffect(() => {
     fetchGroups();
   }, [fetchGroups]);
+
+  // Auto-refresh every 15s so the page reflects a freshly-renewed session
+  // (or new scrape results) without a manual click.
+  useAutoRefresh(fetchGroups);
 
   const handleAddGroup = async (e: React.FormEvent) => {
     e.preventDefault();

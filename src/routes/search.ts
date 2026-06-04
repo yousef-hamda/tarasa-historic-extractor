@@ -9,6 +9,7 @@ import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import { safeErrorMessage } from '../middleware/errorHandler';
 import { parsePositiveInt, parseNonNegativeInt } from '../utils/validation';
+import { escapeCSV } from '../utils/csvHelpers';
 
 const router = Router();
 
@@ -254,19 +255,6 @@ router.get('/api/search/export', async (req: Request, res: Response) => {
         'Classification Reason',
         'Quality Rating',
       ];
-
-      const escapeCSV = (value: string | null | undefined): string => {
-        if (value === null || value === undefined) return '';
-        let str = String(value);
-        // Prevent CSV formula injection
-        if (/^[=+\-@\t\r]/.test(str)) {
-          str = `'${str}`;
-        }
-        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes("'")) {
-          return `"${str.replace(/"/g, '""')}"`;
-        }
-        return str;
-      };
 
       const rows = posts.map((post: any) => [
         post.id,

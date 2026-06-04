@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch, getApiKey, setApiKey as persistApiKey, clearApiKey } from '../utils/api';
+import { cronToHuman } from '../utils/cronHuman';
 import {
   Cog6ToothIcon,
   UserGroupIcon,
@@ -49,6 +50,7 @@ interface Settings {
     preset: SpeedPreset;
     presets: Record<SpeedPreset, SpeedPresetDefinition>;
   };
+  adminEmail?: string;
 }
 
 interface SessionStatus {
@@ -146,6 +148,12 @@ const SettingsPage: React.FC = () => {
   const [cleaningPhantoms, setCleaningPhantoms] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{ success: boolean; message: string; reasons?: Record<string, number> } | null>(null);
 
+  // Admin email recipient state
+  const [adminEmailDraft, setAdminEmailDraft] = useState<string>('');
+  const [adminEmailHydrated, setAdminEmailHydrated] = useState(false);
+  const [adminEmailSaving, setAdminEmailSaving] = useState(false);
+  const [adminEmailResult, setAdminEmailResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const fetchSessionStatus = useCallback(async () => {
     try {
       const res = await apiFetch('/api/session/status');
@@ -171,6 +179,11 @@ const SettingsPage: React.FC = () => {
       // Seed the threshold slider draft from the server value on first load.
       if (data.historicThreshold && thresholdDraft === null) {
         setThresholdDraft(data.historicThreshold.value);
+      }
+      // Seed the admin-email input from the server value on first load.
+      if (!adminEmailHydrated) {
+        setAdminEmailDraft(typeof data.adminEmail === 'string' ? data.adminEmail : '');
+        setAdminEmailHydrated(true);
       }
       setError(null);
     } catch (err) {
@@ -233,6 +246,35 @@ const SettingsPage: React.FC = () => {
       setSpeedSaving(null);
     }
   }, []);
+
+  const commitAdminEmail = useCallback(async () => {
+    setAdminEmailSaving(true);
+    setAdminEmailResult(null);
+    try {
+      const res = await apiFetch('/api/settings/admin-email', {
+        method: 'POST',
+        body: JSON.stringify({ email: adminEmailDraft.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
+      }
+      const stored = typeof data.adminEmail === 'string' ? data.adminEmail : '';
+      setAdminEmailDraft(stored);
+      setAdminEmailResult({
+        success: true,
+        message: stored ? `Saved: ${stored}` : 'Cleared — exports will be disabled until you set an email.',
+      });
+      setSettings((s) => (s ? { ...s, adminEmail: stored } : s));
+    } catch (err) {
+      setAdminEmailResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Failed to save email',
+      });
+    } finally {
+      setAdminEmailSaving(false);
+    }
+  }, [adminEmailDraft]);
 
   const handleCleanupPhantoms = useCallback(async () => {
     if (cleaningPhantoms) return;
@@ -704,6 +746,89 @@ const SettingsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Email Reports card — admin recipient for the "Send Approved Posts"
+          button on the Posts + Admin pages. The SYSTEM_EMAIL_ALERT /
+          SYSTEM_EMAIL_PASSWORD env vars also need to be set in Railway for
+          the transport to work — `settings.emailConfigured` reflects that. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+            <EnvelopeIcon className="w-5 h-5 text-slate-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Email Reports</h2>
+            <p className="text-sm text-slate-500">Where the &ldquo;Send Approved Posts&rdquo; button emails the report</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="admin-email" className="text-sm font-medium text-slate-700 block mb-2">
+              Admin email
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="admin-email"
+                type="email"
+                autoComplete="off"
+                spellCheck={false}
+                value={adminEmailDraft}
+                onChange={(e) => setAdminEmailDraft(e.target.value)}
+                placeholder="you@example.com"
+                className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm"
+                disabled={adminEmailSaving}
+              />
+              <button
+                onClick={commitAdminEmail}
+                disabled={adminEmailSaving}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {adminEmailSaving ? (
+                  <>
+                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircleIcon className="w-4 h-4" />
+                    Save
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              Used by the &ldquo;Send Approved Posts&rdquo; button on the Posts and Admin pages. Leave blank to disable the export.
+            </p>
+          </div>
+
+          {/* SMTP-credentials status — the export needs BOTH this admin email
+              AND the SYSTEM_EMAIL_ALERT / SYSTEM_EMAIL_PASSWORD env vars set
+              on the server. Surface that here so the operator doesn't get
+              surprised by a 503 when they click Send. */}
+          {!settings.emailConfigured && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">
+                Server SMTP credentials are not configured. Set
+                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">SYSTEM_EMAIL_ALERT</code>
+                and
+                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">SYSTEM_EMAIL_PASSWORD</code>
+                in Railway env vars (Gmail app password works). Until then, the export button will return an error.
+              </p>
+            </div>
+          )}
+
+          {adminEmailResult && (
+            <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+              adminEmailResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+            }`}>
+              {adminEmailResult.success ? <CheckCircleIcon className="w-5 h-5" /> : <XCircleIcon className="w-5 h-5" />}
+              {adminEmailResult.message}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Classification Threshold Card.
           Slider sets the minimum confidence a post must score (strictly
           greater than) for it to count as historic everywhere: the messenger
@@ -814,7 +939,7 @@ const SettingsPage: React.FC = () => {
                     onClick={() => commitSpeedPreset(p)}
                     disabled={speedSaving !== null || isActive}
                     className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${tone}`}
-                    title={`${def.label}: scrape ${def.schedules.scrape}, classify ${def.schedules.classify}, message ${def.schedules.message}`}
+                    title={`${def.label}: scrape ${cronToHuman(def.schedules.scrape)}, classify ${cronToHuman(def.schedules.classify)}, message ${cronToHuman(def.schedules.message)}`}
                   >
                     {speedSaving === p ? '…' : def.label}
                   </button>
@@ -848,15 +973,15 @@ const SettingsPage: React.FC = () => {
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <p className="text-slate-500">Scrape</p>
-                      <p className="font-mono">{def.schedules.scrape}</p>
+                      <p className="font-medium">{cronToHuman(def.schedules.scrape)}</p>
                     </div>
                     <div>
                       <p className="text-slate-500">Classify</p>
-                      <p className="font-mono">{def.schedules.classify}</p>
+                      <p className="font-medium">{cronToHuman(def.schedules.classify)}</p>
                     </div>
                     <div>
                       <p className="text-slate-500">Message</p>
-                      <p className="font-mono">{def.schedules.message}</p>
+                      <p className="font-medium">{cronToHuman(def.schedules.message)}</p>
                     </div>
                   </div>
                 </div>

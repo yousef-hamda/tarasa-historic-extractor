@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Pagination from '../components/Pagination';
 import { PageSkeleton } from '../components/Skeleton';
 import { apiFetch } from '../utils/api';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   ClipboardDocumentListIcon,
   FunnelIcon,
@@ -126,6 +127,12 @@ const LogsPage: React.FC = () => {
   useEffect(() => {
     loadLogs(0, typeFilter || undefined);
   }, [loadLogs, typeFilter]);
+
+  // Logs are the most useful page to keep live — new scrape/classify/auth
+  // events surface here first. Auto-refresh every 15s.
+  useAutoRefresh(() => {
+    loadLogs(pagination.offset, typeFilter || undefined);
+  });
 
   const handlePageChange = (newOffset: number) => {
     loadLogs(newOffset, typeFilter || undefined);

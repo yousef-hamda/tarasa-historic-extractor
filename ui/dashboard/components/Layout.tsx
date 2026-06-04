@@ -159,23 +159,34 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <span className="hidden sm:block font-semibold text-slate-900">Tarasa</span>
               </Link>
 
-              {/* Desktop Navigation */}
-              <div className="hidden lg:flex items-center gap-1">
+              {/* Desktop Navigation.
+                  Two visibility modes to fit all 11 items + the right-side
+                  controls without clipping:
+                  - md..xl (768..1280): icon-only pills with tooltips.
+                  - xl+ (>=1280): icon + label.
+                  The previous layout used `hidden lg:flex` with full labels
+                  for every item, which overflowed once the user had >=10
+                  nav items on a typical laptop (1440-1680 wide) and pushed
+                  the right-side status / language controls off-screen. */}
+              <div className="hidden md:flex items-center gap-0.5 min-w-0">
                 {navLinks.map((link) => {
                   const isActive = router.pathname === link.href;
                   const Icon = link.icon;
+                  const label = t(link.labelKey);
                   return (
                     <Link
                       key={link.href}
                       href={link.href}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      title={label}
+                      aria-label={label}
+                      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm font-medium whitespace-nowrap flex-shrink-0 transition-colors ${
                         isActive
                           ? 'bg-slate-100 text-slate-900'
                           : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
-                      <Icon className="w-4 h-4" />
-                      {t(link.labelKey)}
+                      <Icon className="w-4 h-4 flex-shrink-0" />
+                      <span className="hidden xl:inline">{label}</span>
                     </Link>
                   );
                 })}
@@ -191,26 +202,20 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               {/* Language Switcher */}
               <LanguageSwitcher compact />
 
-              {/* API Key Status. `hidden md:flex` so it doesn't crowd the
-                  System Status pill on small-tablet sizes. */}
-              <Link
-                href="/settings"
-                className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors ${
-                  apiKeyPresent
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                    : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                }`}
-                title={
-                  apiKeyPresent
-                    ? 'API key configured on this device'
-                    : 'No API key set — click to configure'
-                }
-              >
-                <KeyIcon className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">
-                  {apiKeyPresent ? 'Connected' : 'API Key needed'}
-                </span>
-              </Link>
+              {/* API Key Status. When already connected we DON'T show a
+                  pill — the user asked for the green "Connected" pill to be
+                  removed. We still surface a clickable warning pill when the
+                  key is missing so the user has a path to fix it. */}
+              {!apiKeyPresent && (
+                <Link
+                  href="/settings"
+                  className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                  title="No API key set — click to configure"
+                >
+                  <KeyIcon className="w-3.5 h-3.5" />
+                  <span className="hidden xl:inline">API Key needed</span>
+                </Link>
+              )}
 
               {/* System Status — responsive pill.
                   - `<sm`: hidden (mobile keeps nav clean).
@@ -230,10 +235,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </span>
               </div>
 
-              {/* Mobile menu button */}
+              {/* Mobile menu button — only shown when desktop nav is hidden. */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                className="md:hidden p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               >
                 {mobileMenuOpen ? (
                   <XMarkIcon className="w-5 h-5" />
@@ -247,7 +252,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         {/* Mobile Navigation Menu */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200 bg-white">
+          <div className="md:hidden border-t border-slate-200 bg-white">
             <div className="px-4 py-2 space-y-1">
               {navLinks.map((link) => {
                 const isActive = router.pathname === link.href;
