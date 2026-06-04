@@ -150,11 +150,11 @@ const SettingsPage: React.FC = () => {
   const [cleaningPhantoms, setCleaningPhantoms] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{ success: boolean; message: string; reasons?: Record<string, number> } | null>(null);
 
-  // Admin email recipient state
-  const [adminEmailDraft, setAdminEmailDraft] = useState<string>('');
-  const [adminEmailHydrated, setAdminEmailHydrated] = useState(false);
-  const [adminEmailSaving, setAdminEmailSaving] = useState(false);
-  const [adminEmailResult, setAdminEmailResult] = useState<{ success: boolean; message: string } | null>(null);
+  // Admin email recipient: the editable input + Save flow was removed
+  // (Resend free tier locks recipient to the signup email — making this
+  // settable was misleading). The recipient now displays read-only from
+  // settings.adminEmail. The backend POST /api/settings/admin-email still
+  // exists for power users / future verified-domain setups.
 
   const fetchSessionStatus = useCallback(async () => {
     try {
@@ -181,11 +181,6 @@ const SettingsPage: React.FC = () => {
       // Seed the threshold slider draft from the server value on first load.
       if (data.historicThreshold && thresholdDraft === null) {
         setThresholdDraft(data.historicThreshold.value);
-      }
-      // Seed the admin-email input from the server value on first load.
-      if (!adminEmailHydrated) {
-        setAdminEmailDraft(typeof data.adminEmail === 'string' ? data.adminEmail : '');
-        setAdminEmailHydrated(true);
       }
       setError(null);
     } catch (err) {
@@ -248,35 +243,6 @@ const SettingsPage: React.FC = () => {
       setSpeedSaving(null);
     }
   }, []);
-
-  const commitAdminEmail = useCallback(async () => {
-    setAdminEmailSaving(true);
-    setAdminEmailResult(null);
-    try {
-      const res = await apiFetch('/api/settings/admin-email', {
-        method: 'POST',
-        body: JSON.stringify({ email: adminEmailDraft.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data?.message || data?.error || `HTTP ${res.status}`);
-      }
-      const stored = typeof data.adminEmail === 'string' ? data.adminEmail : '';
-      setAdminEmailDraft(stored);
-      setAdminEmailResult({
-        success: true,
-        message: stored ? `Saved: ${stored}` : 'Cleared — exports will be disabled until you set an email.',
-      });
-      setSettings((s) => (s ? { ...s, adminEmail: stored } : s));
-    } catch (err) {
-      setAdminEmailResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Failed to save email',
-      });
-    } finally {
-      setAdminEmailSaving(false);
-    }
-  }, [adminEmailDraft]);
 
   const handleCleanupPhantoms = useCallback(async () => {
     if (cleaningPhantoms) return;
@@ -779,42 +745,21 @@ const SettingsPage: React.FC = () => {
         </div>
 
         <div className="space-y-4">
+          {/* Read-only recipient display. The editable input + Save button
+              were removed because Resend's free tier only allows sending to
+              the email used to sign up the Resend account — so the recipient
+              is effectively fixed and a settings input would mislead. To
+              change it, either re-sign up Resend with a different email (and
+              update RESEND_API_KEY) or verify a domain at resend.com/domains
+              and set RESEND_FROM_EMAIL to send from your own domain to any
+              recipient. */}
           <div>
-            <label htmlFor="admin-email" className="text-sm font-medium text-slate-700 block mb-2">
-              Admin email
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="admin-email"
-                type="email"
-                autoComplete="off"
-                spellCheck={false}
-                value={adminEmailDraft}
-                onChange={(e) => setAdminEmailDraft(e.target.value)}
-                placeholder="you@example.com"
-                className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm"
-                disabled={adminEmailSaving}
-              />
-              <button
-                onClick={commitAdminEmail}
-                disabled={adminEmailSaving}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {adminEmailSaving ? (
-                  <>
-                    <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                    Saving…
-                  </>
-                ) : (
-                  <>
-                    <CheckCircleIcon className="w-4 h-4" />
-                    Save
-                  </>
-                )}
-              </button>
-            </div>
+            <p className="text-xs text-slate-500 mb-1">Reports go to</p>
+            <p className="text-sm font-mono text-slate-900 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+              {settings.adminEmail || <span className="text-slate-400">not configured</span>}
+            </p>
             <p className="text-xs text-slate-500 mt-2">
-              Used by the &ldquo;Send Approved Posts&rdquo; button on the Posts and Admin pages. Leave blank to disable the export.
+              Fixed to the Resend account&rsquo;s email while on the free tier. To send to a different address, verify a domain in Resend and set <code className="px-1 py-0.5 bg-slate-100 rounded text-xs">RESEND_FROM_EMAIL</code> in Railway.
             </p>
           </div>
 
@@ -859,14 +804,6 @@ const SettingsPage: React.FC = () => {
             </div>
           )}
 
-          {adminEmailResult && (
-            <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
-              adminEmailResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-            }`}>
-              {adminEmailResult.success ? <CheckCircleIcon className="w-5 h-5" /> : <XCircleIcon className="w-5 h-5" />}
-              {adminEmailResult.message}
-            </div>
-          )}
         </div>
       </div>
 
