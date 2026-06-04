@@ -41,7 +41,12 @@ router.get('/api/settings', async (_req: Request, res: Response) => {
     ]);
     const messageLimit = Number(process.env.MAX_MESSAGES_PER_DAY || 20);
     const baseTarasaUrl = process.env.BASE_TARASA_URL || URLS.DEFAULT_TARASA;
-    const emailConfigured = Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);
+    // The dashboard's "Send Approved Posts" button works as long as EITHER
+    // transport is configured. Resend (HTTP) is the only one that works on
+    // Railway since outbound SMTP is blocked there.
+    const { getEmailTransportName } = await import('../utils/alerts');
+    const emailTransport = getEmailTransportName();
+    const emailConfigured = emailTransport !== 'none';
     const apifyConfigured = Boolean(process.env.APIFY_TOKEN);
 
     res.json({
@@ -50,6 +55,7 @@ router.get('/api/settings', async (_req: Request, res: Response) => {
       baseTarasaUrl,
       emailConfigured,
       apifyConfigured,
+      emailTransport, // 'resend' | 'smtp' | 'none'
       messagingEnabled,
       historicThreshold: {
         value: historicThreshold,

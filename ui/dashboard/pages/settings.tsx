@@ -39,6 +39,7 @@ interface Settings {
   messageLimit: number;
   baseTarasaUrl: string;
   emailConfigured: boolean;
+  emailTransport?: 'resend' | 'smtp' | 'none';
   apifyConfigured?: boolean;
   messagingEnabled?: boolean;
   historicThreshold?: {
@@ -817,20 +818,44 @@ const SettingsPage: React.FC = () => {
             </p>
           </div>
 
-          {/* SMTP-credentials status — the export needs BOTH this admin email
-              AND the SYSTEM_EMAIL_ALERT / SYSTEM_EMAIL_PASSWORD env vars set
-              on the server. Surface that here so the operator doesn't get
-              surprised by a 503 when they click Send. */}
-          {!settings.emailConfigured && (
+          {/* Transport status. Railway blocks outbound SMTP, so Resend is
+              the only viable transport in production. We show which one is
+              actually in use, and if neither is configured, give exact
+              setup instructions. */}
+          {settings.emailTransport === 'resend' && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+              <CheckCircleIcon className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-emerald-800">
+                Email transport: <b>Resend</b> (HTTP-based, works on Railway). Free tier covers 100 emails/day. The button will work.
+              </p>
+            </div>
+          )}
+          {settings.emailTransport === 'smtp' && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
               <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-amber-800">
-                Server SMTP credentials are not configured. Set
-                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">SYSTEM_EMAIL_ALERT</code>
-                and
-                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">SYSTEM_EMAIL_PASSWORD</code>
-                in Railway env vars (Gmail app password works). Until then, the export button will return an error.
+                Email transport: <b>Gmail SMTP</b>. <b>Railway blocks outbound SMTP</b> — sends will time out in production. For Railway, set
+                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_API_KEY</code>
+                instead (get a free key at resend.com).
               </p>
+            </div>
+          )}
+          {(!settings.emailTransport || settings.emailTransport === 'none') && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800 space-y-1">
+                <p>
+                  <b>No email transport configured.</b> The export button will fail until one is set up.
+                </p>
+                <p>
+                  Recommended: set
+                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_API_KEY</code>
+                  in Railway env (free tier 100 emails/day at <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline">resend.com</a>). Optional:
+                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_FROM_EMAIL</code>
+                  to send from a verified domain (defaults to
+                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">onboarding@resend.dev</code>).
+                </p>
+              </div>
             </div>
           )}
 

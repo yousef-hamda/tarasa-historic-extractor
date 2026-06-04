@@ -1,25 +1,53 @@
 import nodemailer from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
+import { Resend } from 'resend';
 import logger from './logger';
 
 type MailTransporter = nodemailer.Transporter<SMTPTransport.SentMessageInfo>;
 
-let transporter: MailTransporter | null = null;
+// ============================================================================
+// Email transport selection.
+//
+// Railway (and most cloud providers) block outbound SMTP on ports 25/465/587
+// to prevent spam. After confirming this via the server logs
+// ("Email export failed (SMTP): Connection timeout" — nodemailer's 10s
+// connectionTimeout firing on smtp.gmail.com:587), we route all dashboard
+// emails through Resend, an HTTP-based transactional service that uses
+// port 443 (always reachable).
+//
+// Selection rule:
+//   1. If RESEND_API_KEY is set → use Resend. This is the production path.
+//   2. Else if SYSTEM_EMAIL_ALERT + SYSTEM_EMAIL_PASSWORD are set → use
+//      Gmail SMTP. Useful for local dev or any host where outbound SMTP
+//      works.
+//   3. Else → return a clear "no email transport configured" error so the
+//      UI tells the operator what to set.
+// ============================================================================
 
-const getTransporter = (): MailTransporter => {
-  if (!transporter) {
-    // Use explicit host + port 587 (STARTTLS) instead of `service: 'gmail'`.
-    // `service: 'gmail'` defaults to port 465 (SMTPS), which Railway and many
-    // other cloud providers block on outbound — the TCP connect then hangs
-    // forever with no error, and the email request stays pending until the
-    // browser aborts. Port 587 is universally reachable.
-    //
-    // The three timeouts make any SMTP misconfiguration fail in <20s with a
-    // descriptive error instead of hanging silently.
-    transporter = nodemailer.createTransport({
+let resendClient: Resend | null = null;
+let smtpTransporter: MailTransporter | null = null;
+
+const isResendConfigured = (): boolean => Boolean(process.env.RESEND_API_KEY);
+
+const isSmtpConfigured = (): boolean =>
+  Boolean(process.env.SYSTEM_EMAIL_ALERT && process.env.SYSTEM_EMAIL_PASSWORD);
+
+export const getEmailTransportName = (): 'resend' | 'smtp' | 'none' =>
+  isResendConfigured() ? 'resend' : isSmtpConfigured() ? 'smtp' : 'none';
+
+const getResendClient = (): Resend => {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+};
+
+const getSmtpTransporter = (): MailTransporter => {
+  if (!smtpTransporter) {
+    smtpTransporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 587,
-      secure: false, // upgrades to TLS via STARTTLS
+      secure: false,
       auth: {
         user: process.env.SYSTEM_EMAIL_ALERT,
         pass: process.env.SYSTEM_EMAIL_PASSWORD,
@@ -29,35 +57,60 @@ const getTransporter = (): MailTransporter => {
       socketTimeout: 20_000,
     });
   }
-  return transporter;
+  return smtpTransporter;
 };
 
 /**
- * Force-recreate the cached transporter. Call this if env vars change at
- * runtime, or after a config edit so the next send picks up new credentials
- * instead of using a stale cached connection.
+ * Force-recreate the cached transporters. Call after env-var rotation.
  */
 export const resetMailTransporter = (): void => {
-  transporter = null;
+  resendClient = null;
+  smtpTransporter = null;
+};
+
+/**
+ * Resolve the "from" address. Resend's onboarding tier only allows sending
+ * from `onboarding@resend.dev` without domain verification — that's the
+ * default so the operator gets a working send immediately. Once they verify
+ * a domain in Resend, they can override via RESEND_FROM_EMAIL.
+ */
+const getFromAddress = (transport: 'resend' | 'smtp'): string => {
+  if (transport === 'resend') {
+    return process.env.RESEND_FROM_EMAIL || 'Tarasa <onboarding@resend.dev>';
+  }
+  return `Tarasa <${process.env.SYSTEM_EMAIL_ALERT}>`;
 };
 
 export const sendAlertEmail = async (subject: string, text: string): Promise<void> => {
-  if (!process.env.SYSTEM_EMAIL_ALERT || !process.env.SYSTEM_EMAIL_PASSWORD) {
-    logger.warn('SYSTEM_EMAIL_ALERT or SYSTEM_EMAIL_PASSWORD is not configured; skipping alert email');
+  const transport = getEmailTransportName();
+  if (transport === 'none') {
+    logger.warn('No email transport configured (need RESEND_API_KEY or SMTP creds); skipping alert');
     return;
   }
-
+  const to = process.env.SYSTEM_EMAIL_ALERT || process.env.RESEND_FROM_EMAIL;
+  if (!to) {
+    logger.warn('No alert recipient (set SYSTEM_EMAIL_ALERT); skipping alert');
+    return;
+  }
   try {
-    const mailer = getTransporter();
-    await mailer.sendMail({
-      from: `Tarasa Alerts <${process.env.SYSTEM_EMAIL_ALERT}>`,
-      to: process.env.SYSTEM_EMAIL_ALERT,
-      subject,
-      text,
-    });
-    logger.info(`Alert email sent: ${subject}`);
+    if (transport === 'resend') {
+      await getResendClient().emails.send({
+        from: getFromAddress('resend'),
+        to: [to],
+        subject,
+        text,
+      });
+    } else {
+      await getSmtpTransporter().sendMail({
+        from: getFromAddress('smtp'),
+        to,
+        subject,
+        text,
+      });
+    }
+    logger.info(`Alert email sent via ${transport}: ${subject}`);
   } catch (error) {
-    logger.error(`Failed to send alert email: ${(error as Error).message}`);
+    logger.error(`Failed to send alert email via ${transport}: ${(error as Error).message}`);
   }
 };
 
@@ -81,20 +134,46 @@ export const sendHtmlEmail = async (opts: {
   text?: string;
   attachments?: HtmlEmailAttachment[];
 }): Promise<{ ok: true } | { ok: false; error: string }> => {
-  if (!process.env.SYSTEM_EMAIL_ALERT || !process.env.SYSTEM_EMAIL_PASSWORD) {
+  const transport = getEmailTransportName();
+  if (transport === 'none') {
     return {
       ok: false,
       error:
-        'Email sender not configured on the server. Ask the operator to set SYSTEM_EMAIL_ALERT and SYSTEM_EMAIL_PASSWORD in Railway env.',
+        'Email sender not configured on the server. Set RESEND_API_KEY in Railway env (recommended — Railway blocks outbound SMTP) OR SYSTEM_EMAIL_ALERT + SYSTEM_EMAIL_PASSWORD for SMTP transport.',
     };
   }
   if (!opts.to || typeof opts.to !== 'string') {
     return { ok: false, error: 'No recipient provided.' };
   }
+
   try {
-    const mailer = getTransporter();
-    await mailer.sendMail({
-      from: `Tarasa <${process.env.SYSTEM_EMAIL_ALERT}>`,
+    if (transport === 'resend') {
+      const { data, error } = await getResendClient().emails.send({
+        from: getFromAddress('resend'),
+        to: [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+        attachments: opts.attachments?.map((a) => ({
+          filename: a.filename,
+          // Resend accepts a string (utf-8) or Buffer for `content`.
+          content: a.content,
+          contentType: a.contentType ?? 'text/plain',
+        })),
+      });
+      if (error) {
+        // Resend's typed error has .name + .message; surface both.
+        const msg = `${(error as { name?: string }).name ?? 'ResendError'}: ${error.message}`;
+        logger.error(`Resend send failed → ${opts.to}: ${msg}`);
+        return { ok: false, error: msg };
+      }
+      logger.info(`HTML email sent via Resend → ${opts.to} (id=${data?.id ?? 'n/a'}): ${opts.subject}`);
+      return { ok: true };
+    }
+
+    // SMTP fallback (local dev / non-Railway hosts).
+    await getSmtpTransporter().sendMail({
+      from: getFromAddress('smtp'),
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
@@ -105,11 +184,11 @@ export const sendHtmlEmail = async (opts: {
         contentType: a.contentType ?? 'text/plain',
       })),
     });
-    logger.info(`HTML email sent to ${opts.to}: ${opts.subject}`);
+    logger.info(`HTML email sent via SMTP → ${opts.to}: ${opts.subject}`);
     return { ok: true };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    logger.error(`Failed to send HTML email to ${opts.to}: ${msg}`);
+    logger.error(`Failed to send HTML email via ${transport} → ${opts.to}: ${msg}`);
     return { ok: false, error: msg };
   }
 };
