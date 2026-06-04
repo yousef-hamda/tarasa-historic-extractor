@@ -72,21 +72,45 @@ export const apiFetch = async (path: string, init?: ApiFetchOptions): Promise<Re
     headers.set('Content-Type', 'application/json');
   }
 
-  // Create abort controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  // Single attempt with optional one-shot retry on transient 5xx / 429.
+  // When the server rate-limiter (or a Railway rolling deploy) returns a
+  // transient error, we want the UI to absorb it silently instead of
+  // dropping the user into an error state. We only retry idempotent verbs
+  // (GET/HEAD) so we don't double-execute mutations.
+  const method = (init?.method || 'GET').toUpperCase();
+  const isIdempotent = method === 'GET' || method === 'HEAD';
+
+  const attempt = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[API] ${method} ${path} -> ${response.status}`);
+      }
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   try {
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      signal: controller.signal,
-    });
-
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[API] ${init?.method || 'GET'} ${path} -> ${response.status}`);
+    let response = await attempt();
+    // Retry once on rate-limit or transient server errors — but only for
+    // idempotent requests where re-executing is safe.
+    if (isIdempotent && (response.status === 429 || (response.status >= 500 && response.status < 600))) {
+      // Respect Retry-After if the server gave us one (rate-limit case).
+      const retryAfter = parseInt(response.headers.get('retry-after') || '0', 10);
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 3000) // cap at 3s so the UI doesn't freeze
+        : 800;
+      await new Promise((r) => setTimeout(r, waitMs));
+      response = await attempt();
     }
-
     return response;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -97,7 +121,5 @@ export const apiFetch = async (path: string, init?: ApiFetchOptions): Promise<Re
       0,
       'Network Error'
     );
-  } finally {
-    clearTimeout(timeoutId);
   }
 };

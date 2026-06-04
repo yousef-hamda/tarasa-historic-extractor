@@ -67,9 +67,19 @@ export const securityHeaders = helmet({
 // Advanced Rate Limiting
 // ============================================
 
-const RATE_LIMIT_POINTS = parseInt(process.env.TRIGGER_RATE_LIMIT_PER_MINUTE || '30', 10);
+// Global dashboard-friendly rate limit. This used to read
+// TRIGGER_RATE_LIMIT_PER_MINUTE (default 30) which was a misuse: that env var
+// is for the *trigger* POST endpoints (scrape/classify/message), not the
+// every-page-load GETs. With auto-refresh enabled on Posts/Messages/Logs/
+// Groups (every 15s), normal use can hit ~20-30 requests/min from a single
+// browser, and the prior 30/min limit + 5-minute block made the entire
+// dashboard 429 after a few minutes of clicking — exactly the "Failed to
+// fetch posts" symptom users were reporting after small actions like
+// changing the threshold. The trigger limit stays at the old default for
+// the actual trigger endpoints via the `triggerRateLimiter` middleware.
+const RATE_LIMIT_POINTS = parseInt(process.env.GLOBAL_RATE_LIMIT_PER_MINUTE || '600', 10);
 const RATE_LIMIT_DURATION = 60; // 1 minute
-const RATE_LIMIT_BLOCK_DURATION = 60 * 5; // 5 minutes block after too many requests
+const RATE_LIMIT_BLOCK_DURATION = 60; // 1 minute — long enough to deter abuse, short enough that a real user recovers fast
 
 // Fallback to memory if Redis unavailable
 let rateLimiter: RateLimiterRedis | RateLimiterMemory;
