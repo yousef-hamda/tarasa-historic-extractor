@@ -77,22 +77,16 @@ const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string
       const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
       const confColor = r.confidence >= 90 ? '#15803d' : r.confidence >= 80 ? '#0369a1' : '#7c2d12';
 
-      // Build links: Post link uses postUrl OR a constructed FB URL from
-      // groupId + fbPostId; this matches the dashboard's behavior so the
-      // email is consistent with what the user sees on the Posts page.
-      const postLink = r.postUrl; // already resolved by the caller — see buildPostUrl
-      const links: string[] = [];
-      if (postLink) {
-        links.push(
-          `<a href="${escapeHtml(postLink)}" style="color:#2563eb; text-decoration:none;">View post</a>`,
-        );
-      }
-      if (r.authorLink) {
-        links.push(
-          `<a href="${escapeHtml(r.authorLink)}" style="color:#2563eb; text-decoration:none;">Profile</a>`,
-        );
-      }
-      const linksHtml = links.length ? links.join('<br>') : '<span style="color:#94a3b8;">—</span>';
+      // Two separate link cells (Post / Profile) so the columns can be sorted
+      // and copy-pasted independently. postLink is already resolved by the
+      // caller via buildPostUrl, so it falls back to a constructed FB URL
+      // for any post we have a numeric fbPostId for.
+      const postLinkCell = r.postUrl
+        ? `<a href="${escapeHtml(r.postUrl)}" style="color:#2563eb; text-decoration:none;">View post</a>`
+        : '<span style="color:#94a3b8;">—</span>';
+      const profileLinkCell = r.authorLink
+        ? `<a href="${escapeHtml(r.authorLink)}" style="color:#2563eb; text-decoration:none;">View profile</a>`
+        : '<span style="color:#94a3b8;">—</span>';
 
       // Preserve newlines + paragraph breaks from the original post. Posts
       // often have meaningful structure (Hebrew/Arabic blocks, lists,
@@ -105,7 +99,8 @@ const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string
   <td style="${cellBase} text-align:right; color:${confColor}; font-weight:600; white-space:nowrap;">${r.confidence}%</td>
   <td style="${cellBase} white-space:nowrap; color:#475569;">${escapeHtml(r.scrapedAt.toISOString().slice(0, 10))}</td>
   <td style="${cellBase} line-height:1.5;" dir="auto">${renderedText || '<span style="color:#94a3b8;">(empty)</span>'}</td>
-  <td style="${cellBase} white-space:nowrap;">${linksHtml}</td>
+  <td style="${cellBase} white-space:nowrap;">${postLinkCell}</td>
+  <td style="${cellBase} white-space:nowrap;">${profileLinkCell}</td>
 </tr>`;
     })
     .join('\n');
@@ -147,7 +142,8 @@ const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string
                <th style="${headerCell} text-align:right;">Confidence</th>
                <th style="${headerCell}">Scraped on</th>
                <th style="${headerCell}">Post text</th>
-               <th style="${headerCell}">Links</th>
+               <th style="${headerCell}">Post link</th>
+               <th style="${headerCell}">Profile link</th>
              </tr>
            </thead>
            <tbody>

@@ -171,6 +171,58 @@ router.post('/api/admin/cleanup-phantoms', apiKeyAuth, triggerRateLimiter, async
   }
 });
 
+// Backfill postUrl for existing rows. Until this commit, the upsert in
+// orchestrator.ts was dropping the field on insert/update — so every row in
+// the DB ended up with postUrl=null even when the fbPostId was a perfectly
+// valid Facebook numeric id we could have linked to. This endpoint goes
+// through every row where postUrl is null AND fbPostId is numeric (i.e. NOT
+// our hash_<sha> fallback), constructs the canonical URL, and writes it.
+// Hash-id rows are left alone — we can't link to a post we never got an id
+// for. Returns the count of rows updated.
+router.post('/api/admin/backfill-post-urls', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+  try {
+    const candidates = await prisma.postRaw.findMany({
+      where: { postUrl: null },
+      select: { id: true, groupId: true, fbPostId: true },
+    });
+
+    let updated = 0;
+    let skippedHash = 0;
+    let skippedNonNumeric = 0;
+    for (const p of candidates) {
+      if (p.fbPostId.startsWith('hash_')) {
+        skippedHash++;
+        continue;
+      }
+      if (!/^\d+$/.test(p.fbPostId)) {
+        skippedNonNumeric++;
+        continue;
+      }
+      await prisma.postRaw.update({
+        where: { id: p.id },
+        data: { postUrl: `https://www.facebook.com/groups/${p.groupId}/posts/${p.fbPostId}` },
+      });
+      updated++;
+    }
+
+    await logSystemEvent(
+      'admin',
+      `Backfilled postUrl on ${updated} posts (skipped ${skippedHash} hash-id rows, ${skippedNonNumeric} non-numeric)`,
+    );
+    res.json({
+      success: true,
+      updated,
+      skippedHash,
+      skippedNonNumeric,
+      total: candidates.length,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`[posts] backfill-post-urls failed: ${msg}`);
+    res.status(500).json({ error: 'Backfill failed', message: msg });
+  }
+});
+
 // Delete a single post by id. Cascades through classifications, generated and
 // sent messages, and quality ratings (all FKs are `onDelete: Cascade` in the
 // schema, but we wrap in a transaction for atomic visibility). Used by the

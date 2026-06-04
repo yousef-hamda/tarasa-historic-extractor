@@ -729,83 +729,11 @@ const SettingsPage: React.FC = () => {
         <LanguageSwitcher />
       </div>
 
-      {/* Email Reports card — admin recipient for the "Send Approved Posts"
-          button on the Posts + Admin pages. The SYSTEM_EMAIL_ALERT /
-          SYSTEM_EMAIL_PASSWORD env vars also need to be set in Railway for
-          the transport to work — `settings.emailConfigured` reflects that. */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
-            <EnvelopeIcon className="w-5 h-5 text-slate-600" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Email Reports</h2>
-            <p className="text-sm text-slate-500">Where the &ldquo;Send Approved Posts&rdquo; button emails the report</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          {/* Read-only recipient display. The editable input + Save button
-              were removed because Resend's free tier only allows sending to
-              the email used to sign up the Resend account — so the recipient
-              is effectively fixed and a settings input would mislead. To
-              change it, either re-sign up Resend with a different email (and
-              update RESEND_API_KEY) or verify a domain at resend.com/domains
-              and set RESEND_FROM_EMAIL to send from your own domain to any
-              recipient. */}
-          <div>
-            <p className="text-xs text-slate-500 mb-1">Reports go to</p>
-            <p className="text-sm font-mono text-slate-900 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-              {settings.adminEmail || <span className="text-slate-400">not configured</span>}
-            </p>
-            <p className="text-xs text-slate-500 mt-2">
-              Fixed to the Resend account&rsquo;s email while on the free tier. To send to a different address, verify a domain in Resend and set <code className="px-1 py-0.5 bg-slate-100 rounded text-xs">RESEND_FROM_EMAIL</code> in Railway.
-            </p>
-          </div>
-
-          {/* Transport status. Railway blocks outbound SMTP, so Resend is
-              the only viable transport in production. We show which one is
-              actually in use, and if neither is configured, give exact
-              setup instructions. */}
-          {settings.emailTransport === 'resend' && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
-              <CheckCircleIcon className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-emerald-800">
-                Email transport: <b>Resend</b> (HTTP-based, works on Railway). Free tier covers 100 emails/day. The button will work.
-              </p>
-            </div>
-          )}
-          {settings.emailTransport === 'smtp' && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-800">
-                Email transport: <b>Gmail SMTP</b>. <b>Railway blocks outbound SMTP</b> — sends will time out in production. For Railway, set
-                <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_API_KEY</code>
-                instead (get a free key at resend.com).
-              </p>
-            </div>
-          )}
-          {(!settings.emailTransport || settings.emailTransport === 'none') && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-800 space-y-1">
-                <p>
-                  <b>No email transport configured.</b> The export button will fail until one is set up.
-                </p>
-                <p>
-                  Recommended: set
-                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_API_KEY</code>
-                  in Railway env (free tier 100 emails/day at <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="underline">resend.com</a>). Optional:
-                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">RESEND_FROM_EMAIL</code>
-                  to send from a verified domain (defaults to
-                  <code className="mx-1 px-1 py-0.5 bg-amber-100 rounded text-xs">onboarding@resend.dev</code>).
-                </p>
-              </div>
-            </div>
-          )}
-
-        </div>
-      </div>
+      {/* Email Reports section removed at user request — Resend free tier
+          locks the recipient to a single address, so there's nothing for
+          the operator to configure here. The button on the Posts/Admin
+          pages still works against the same backend; transport status is
+          internal and only surfaces if the export itself fails. */}
 
       {/* Classification Threshold Card.
           Slider sets the minimum confidence a post must score (strictly

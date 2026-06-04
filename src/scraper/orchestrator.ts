@@ -192,19 +192,43 @@ export const _chromeNameSuffix = CHROME_NAME_SUFFIX;
  * Note: Only updates authorName/authorLink/authorPhoto if new values are provided,
  * preserving existing data when extraction doesn't find these fields
  */
+/**
+ * Resolve the best Facebook URL for a post. Same logic as
+ * ui/dashboard/utils/postUrl.ts so the scraper, dashboard, and email export
+ * agree on when a link can be shown.
+ *
+ *   1. If the extractor captured `postUrl`, use it as-is.
+ *   2. Otherwise, when `fbPostId` is numeric (not our hash_ fallback), build
+ *      `https://www.facebook.com/groups/{groupId}/posts/{fbPostId}`.
+ *   3. Otherwise null — we have no way to construct a permalink.
+ */
+const resolvePostUrl = (post: NormalizedPost): string | null => {
+  if (post.postUrl) return post.postUrl;
+  if (!post.fbPostId || !post.groupId) return null;
+  if (post.fbPostId.startsWith('hash_')) return null;
+  if (!/^\d+$/.test(post.fbPostId)) return null;
+  return `https://www.facebook.com/groups/${post.groupId}/posts/${post.fbPostId}`;
+};
+
 const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
   try {
-    // Build update object - only include fields that have new values
-    // This prevents overwriting existing photos/names with null
+    // Resolve postUrl FIRST so every code path stores it. The previous
+    // upsert was building the update + create blocks without postUrl at all,
+    // which is why ~100% of rows in the DB ended up with postUrl=null even
+    // though every numeric-id post could have had one constructed.
+    const resolvedPostUrl = resolvePostUrl(post);
+
+    // Build update object — only include fields that have new values, so
+    // re-scrapes don't blow away author/photo/url data we previously had.
     const updateData: Record<string, unknown> = {
       text: post.text,
       scrapedAt: new Date(),
     };
 
-    // Only update author fields if we have new data
     if (post.authorName) updateData.authorName = post.authorName;
     if (post.authorLink) updateData.authorLink = post.authorLink;
     if (post.authorPhoto) updateData.authorPhoto = post.authorPhoto;
+    if (resolvedPostUrl) updateData.postUrl = resolvedPostUrl;
 
     await prisma.postRaw.upsert({
       where: { fbPostId: post.fbPostId },
@@ -216,6 +240,7 @@ const upsertPost = async (post: NormalizedPost): Promise<boolean> => {
         authorLink: post.authorLink,
         authorPhoto: post.authorPhoto,
         text: post.text,
+        postUrl: resolvedPostUrl,
         scrapedAt: new Date(),
       },
     });
