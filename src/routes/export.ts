@@ -33,18 +33,28 @@ const escapeHtml = (s: string | null | undefined): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-const truncate = (s: string | null | undefined, max: number): string => {
-  const v = (s ?? '').trim();
-  if (v.length <= max) return v;
-  return v.slice(0, max - 1) + '…';
-};
-
 const formatDate = (d: Date): string =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
 const formatDateForFilename = (d: Date): string =>
   // YYYY-MM-DD, safe for filenames + chronological sort.
   d.toISOString().slice(0, 10);
+
+/**
+ * Construct a Facebook URL for the post when the scraper didn't capture a
+ * canonical postUrl. Mirrors the dashboard's effectivePostUrl helper so the
+ * two surfaces agree on when a link is shown.
+ *
+ * Returns null for the hash-fallback id case — we can't link to a post we
+ * never got a real id for.
+ */
+const buildPostUrl = (postUrl: string | null, fbPostId: string | null, groupId: string | null): string | null => {
+  if (postUrl) return postUrl;
+  if (!fbPostId || !groupId) return null;
+  if (fbPostId.startsWith('hash_')) return null;
+  if (!/^\d+$/.test(fbPostId)) return null;
+  return `https://www.facebook.com/groups/${groupId}/posts/${fbPostId}`;
+};
 
 interface PostRow {
   authorName: string;
@@ -58,18 +68,23 @@ interface PostRow {
 
 const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string => {
   const headerCell =
-    'text-align:left; padding:8px 12px; border:1px solid #e2e8f0; background:#f1f5f9; font-weight:600; color:#0f172a;';
+    'text-align:left; padding:8px 12px; border:1px solid #e2e8f0; background:#f1f5f9; font-weight:600; color:#0f172a; vertical-align:bottom;';
   const cellBase =
-    'padding:8px 12px; border:1px solid #e2e8f0; vertical-align:top; color:#1e293b; font-size:14px;';
+    'padding:10px 12px; border:1px solid #e2e8f0; vertical-align:top; color:#1e293b; font-size:14px;';
 
   const tableRows = rows
     .map((r, i) => {
       const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
       const confColor = r.confidence >= 90 ? '#15803d' : r.confidence >= 80 ? '#0369a1' : '#7c2d12';
+
+      // Build links: Post link uses postUrl OR a constructed FB URL from
+      // groupId + fbPostId; this matches the dashboard's behavior so the
+      // email is consistent with what the user sees on the Posts page.
+      const postLink = r.postUrl; // already resolved by the caller — see buildPostUrl
       const links: string[] = [];
-      if (r.postUrl) {
+      if (postLink) {
         links.push(
-          `<a href="${escapeHtml(r.postUrl)}" style="color:#2563eb; text-decoration:none;">View post</a>`,
+          `<a href="${escapeHtml(postLink)}" style="color:#2563eb; text-decoration:none;">View post</a>`,
         );
       }
       if (r.authorLink) {
@@ -77,14 +92,19 @@ const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string
           `<a href="${escapeHtml(r.authorLink)}" style="color:#2563eb; text-decoration:none;">Profile</a>`,
         );
       }
-      const linksHtml = links.length ? links.join(' · ') : '<span style="color:#94a3b8;">—</span>';
+      const linksHtml = links.length ? links.join('<br>') : '<span style="color:#94a3b8;">—</span>';
+
+      // Preserve newlines + paragraph breaks from the original post. Posts
+      // often have meaningful structure (Hebrew/Arabic blocks, lists,
+      // quoted lines) and a single-paragraph render destroys readability.
+      const renderedText = escapeHtml(r.postText).replace(/\n/g, '<br>');
 
       return `<tr style="background:${bg};">
-  <td style="${cellBase}">${escapeHtml(r.authorName) || '<span style="color:#94a3b8;">Unknown</span>'}</td>
-  <td style="${cellBase}">${escapeHtml(r.groupName)}</td>
+  <td style="${cellBase} white-space:nowrap;">${escapeHtml(r.authorName) || '<span style="color:#94a3b8;">Unknown</span>'}</td>
+  <td style="${cellBase} white-space:nowrap;">${escapeHtml(r.groupName)}</td>
   <td style="${cellBase} text-align:right; color:${confColor}; font-weight:600; white-space:nowrap;">${r.confidence}%</td>
   <td style="${cellBase} white-space:nowrap; color:#475569;">${escapeHtml(r.scrapedAt.toISOString().slice(0, 10))}</td>
-  <td style="${cellBase} max-width:480px;">${escapeHtml(truncate(r.postText, 500))}</td>
+  <td style="${cellBase} line-height:1.5;" dir="auto">${renderedText || '<span style="color:#94a3b8;">(empty)</span>'}</td>
   <td style="${cellBase} white-space:nowrap;">${linksHtml}</td>
 </tr>`;
     })
@@ -93,26 +113,39 @@ const renderHtmlBody = (rows: PostRow[], threshold: number, today: Date): string
   const titleDate = formatDate(today);
   const now = today.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
+  // Table-sizing strategy:
+  //   - `table-layout: auto` + no explicit width on the table → each column
+  //     grows to fit its widest content, except the "Post text" column,
+  //     which gets the remaining horizontal room and wraps long lines.
+  //   - All the metadata cells use `white-space: nowrap` so they never
+  //     line-break (cleaner read across the row).
+  //   - The text cell does NOT cap with max-width — full text comes through,
+  //     wrapping at the natural width the rest of the table allows.
+  // Some email clients (Outlook desktop) ignore CSS `max-width` anyway, so
+  // we rely on whitespace + table-layout to do the right thing.
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0; padding:0; background:#f1f5f9;">
-  <div style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px;">
+  <div style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 1400px; margin: 0 auto; padding: 24px;">
     <h1 style="margin:0 0 6px 0; color:#0f172a; font-size:22px;">Approved Posts — ${escapeHtml(titleDate)}</h1>
-    <p style="margin:0 0 18px 0; color:#475569; font-size:14px;">
+    <p style="margin:0 0 6px 0; color:#475569; font-size:14px;">
       ${rows.length} post${rows.length === 1 ? '' : 's'} above ${threshold}% confidence threshold.
       ${rows.length === MAX_POSTS_PER_EXPORT ? ' Capped at the first 1000 for email size — see attached CSV for full data.' : ''}
+    </p>
+    <p style="margin:0 0 18px 0; color:#94a3b8; font-size:12px;">
+      &ldquo;Scraped on&rdquo; is the date Tarasa first saw the post. Facebook&rsquo;s own post date is not yet captured.
     </p>
 
     ${rows.length === 0
       ? `<div style="padding:24px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; color:#78350f;">
            No posts currently meet the threshold. Try lowering it in Settings if you expected results.
          </div>`
-      : `<table style="border-collapse: collapse; width: 100%; table-layout: auto;">
+      : `<table style="border-collapse: collapse; table-layout: auto;">
            <thead>
              <tr>
                <th style="${headerCell}">Author</th>
                <th style="${headerCell}">Group</th>
                <th style="${headerCell} text-align:right;">Confidence</th>
-               <th style="${headerCell}">Posted</th>
+               <th style="${headerCell}">Scraped on</th>
                <th style="${headerCell}">Post text</th>
                <th style="${headerCell}">Links</th>
              </tr>
@@ -180,13 +213,16 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
       confidence: p.classified?.confidence ?? 0,
       scrapedAt: p.scrapedAt,
       postText: p.text || '',
-      postUrl: p.postUrl,
+      // Resolve postUrl with the same fallback the dashboard uses so the
+      // "View post" link shows for any post we have a real fbPostId for,
+      // not only the ones the scraper captured a postUrl for directly.
+      postUrl: buildPostUrl(p.postUrl, p.fbPostId, p.groupId),
     }));
 
     const today = new Date();
     const html = renderHtmlBody(rows, threshold, today);
     const csv = buildCsv(
-      ['Author', 'Author Profile Link', 'Group', 'Confidence %', 'Scraped At (UTC)', 'Post Link', 'Post Text'],
+      ['Author', 'Author Profile Link', 'Group', 'Confidence %', 'Scraped On (UTC)', 'Post Link', 'Post Text'],
       rows.map((r) => [
         r.authorName,
         r.authorLink ?? '',
