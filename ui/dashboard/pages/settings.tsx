@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch, getApiKey, setApiKey as persistApiKey, clearApiKey } from '../utils/api';
 import { cronToHuman } from '../utils/cronHuman';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import {
   Cog6ToothIcon,
   UserGroupIcon,
@@ -744,6 +745,21 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Language card — moved here from the navbar so the navbar has room
+          for all 11 nav items without overlapping the Settings link. */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+            <GlobeAltIcon className="w-5 h-5 text-slate-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Language</h2>
+            <p className="text-sm text-slate-500">Dashboard display language (English / עברית / العربية)</p>
+          </div>
+        </div>
+        <LanguageSwitcher />
       </div>
 
       {/* Email Reports card — admin recipient for the "Send Approved Posts"

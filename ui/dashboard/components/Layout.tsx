@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { apiFetch, hasApiKey, API_KEY_CHANGED_EVENT } from '../utils/api';
 import { useLanguage } from '../contexts/LanguageContext';
-import LanguageSwitcher from './LanguageSwitcher';
 import {
   HomeIcon,
   DocumentTextIcon,
@@ -193,15 +192,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </div>
             </div>
 
-            {/* Right side - Status, Language & Mobile Menu.
+            {/* Right side - Status, API Key, Mobile Menu.
                 `flex-shrink-0` on this and on each child stops the navbar
                 items on the left from squeezing this group off-screen at
-                narrow viewports — without it, the System Status pill ends up
-                half-clipped at certain widths (the bug the user reported). */}
+                narrow viewports. Language switcher moved to Settings page
+                so the navbar has room for all nav items without overlap. */}
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              {/* Language Switcher */}
-              <LanguageSwitcher compact />
-
               {/* API Key Status. When already connected we DON'T show a
                   pill — the user asked for the green "Connected" pill to be
                   removed. We still surface a clickable warning pill when the
