@@ -216,14 +216,34 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
     });
 
     if (!result.ok) {
-      // Mirror the failure to systemLog so /api/logs surfaces it. Without
-      // this, Railway edge-proxy timeouts (502 with no body) become opaque —
-      // we can't tell whether the SMTP itself failed or the request never
-      // even reached our handler.
-      await logSystemEvent('error', `Email export failed (SMTP): ${result.error}`).catch(() => undefined);
-      return res.status(502).json({
+      await logSystemEvent('error', `Email export failed: ${result.error}`).catch(() => undefined);
+
+      // Map provider-side error categories to appropriate HTTP statuses.
+      // Returning 502 for everything was hiding the actual message: Railway's
+      // edge proxy can swap a 5xx response body for its own generic page,
+      // leaving the user with an opaque "HTTP 502" toast. 4xx responses are
+      // passed through with the body intact, so client-side fixable errors
+      // (Resend validation, wrong API key, sandbox-mode restrictions) become
+      // readable to the user.
+      const err = result.error.toLowerCase();
+      let status = 502;
+      let hint: string | undefined;
+      if (err.includes('validation_error') || err.includes('you can only send testing emails')) {
+        status = 400;
+        hint =
+          'Resend\'s free tier only lets you send to the email you signed up with. Either change the admin email in Settings to your Resend signup email, OR verify a domain at https://resend.com/domains and set RESEND_FROM_EMAIL in Railway env.';
+      } else if (err.includes('invalid api key') || err.includes('authentication')) {
+        status = 401;
+        hint = 'The RESEND_API_KEY env var is missing or wrong. Generate a new one at https://resend.com/api-keys and update Railway.';
+      } else if (err.includes('rate_limit') || err.includes('too many')) {
+        status = 429;
+        hint = 'Resend rate limit hit. Wait a minute and try again.';
+      }
+
+      return res.status(status).json({
         error: 'Email send failed',
         message: result.error,
+        ...(hint ? { hint } : {}),
       });
     }
 

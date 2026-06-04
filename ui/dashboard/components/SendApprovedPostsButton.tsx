@@ -20,6 +20,7 @@ interface ExportResult {
   capped?: boolean;
   error?: string;
   message?: string;
+  hint?: string;
 }
 
 /**
@@ -77,7 +78,11 @@ const SendApprovedPostsButton: React.FC<SendApprovedPostsButtonProps> = ({ varia
       });
       const data: ExportResult = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
-        throw new Error(data.message || data.error || `HTTP ${res.status}`);
+        // Compose the most useful message we have. Server-side hints
+        // (Resend validation, wrong api key, rate limit) explain how to fix.
+        const baseMsg = data.message || data.error || `HTTP ${res.status}`;
+        const fullMsg = data.hint ? `${baseMsg} — ${data.hint}` : baseMsg;
+        throw new Error(fullMsg);
       }
       const recipient = data.recipient ?? 'admin';
       const count = data.postsCount ?? 0;
