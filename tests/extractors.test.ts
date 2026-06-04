@@ -682,4 +682,49 @@ Like`;
   });
 });
 
+// ============================================================================
+// isValidFbPostId — the safety gate for the new in-DOM post-id strategies.
+// If this regresses, the new extractors could emit malformed ids
+// (member counts, group ids, dates) and corrupt the dedup constraint
+// permanently. Pin every shape we accept and reject.
+// ============================================================================
+import { isValidFbPostId } from '../src/scraper/extractors';
+
+describe('isValidFbPostId', () => {
+  it('accepts a real 16-digit FB post id', () => {
+    expect(isValidFbPostId('2017717945502020')).toBe(true);
+  });
+
+  it('accepts a 10-digit floor (shortest plausible)', () => {
+    expect(isValidFbPostId('1234567890')).toBe(true);
+  });
+
+  it('accepts a pfbid token', () => {
+    expect(isValidFbPostId('pfbid02X6EAgJQaCxigJJ1U8VeKQsV2P6S')).toBe(true);
+  });
+
+  it('rejects short numbers (could be member counts / likes / dates)', () => {
+    expect(isValidFbPostId('12345')).toBe(false);
+    expect(isValidFbPostId('123456789')).toBe(false); // 9 digits — just below floor
+    expect(isValidFbPostId('2026')).toBe(false);
+  });
+
+  it('rejects pfbid with non-base62 chars', () => {
+    expect(isValidFbPostId('pfbid-bad-stuff')).toBe(false);
+    expect(isValidFbPostId('pfbid xy')).toBe(false);
+  });
+
+  it('rejects empty / null / non-string', () => {
+    expect(isValidFbPostId('')).toBe(false);
+    expect(isValidFbPostId(null)).toBe(false);
+    expect(isValidFbPostId(undefined)).toBe(false);
+  });
+
+  it('rejects mixed strings that contain numbers but are not pure ids', () => {
+    expect(isValidFbPostId('post-2017717945502020')).toBe(false);
+    expect(isValidFbPostId('123abc')).toBe(false);
+    expect(isValidFbPostId('hash_d640c3dd86ab3717e672f5f4a3638306')).toBe(false);
+  });
+});
+
 console.log('Extractors test suite loaded');

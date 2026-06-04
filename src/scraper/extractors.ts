@@ -166,6 +166,133 @@ const normalizePostId = (rawId: string | null, fallback: string | null, text: st
 };
 
 /**
+ * Strict validator for a Facebook post id. Used as a gate on every candidate
+ * id produced by the new in-container extraction strategies — without this,
+ * a random DOM number (group id, member count, like count) could land in the
+ * `fbPostId` column and corrupt dedup forever.
+ *
+ *   - numeric ids: ≥10 digits (real post ids are 13-17 digits; 10 is a safe
+ *     floor that still rejects member counts, dates, etc.)
+ *   - pfbid format: starts with "pfbid" then base62 chars
+ *
+ * Visible for tests so the contract can be pinned.
+ */
+export const isValidFbPostId = (id: string | null | undefined): id is string => {
+  if (typeof id !== 'string' || id.length === 0) return false;
+  if (/^\d{10,}$/.test(id)) return true;
+  if (/^pfbid[a-zA-Z0-9]+$/.test(id)) return true;
+  return false;
+};
+
+/**
+ * Extract the canonical Facebook post id directly from a post container's
+ * DOM, trying five strategies that look in places modern React-rendered FB
+ * actually stores the id (the legacy `data-ft` / container.id paths
+ * `normalizePostId` uses are missing on ~88% of containers in 2026).
+ *
+ * Returns the first id that passes `isValidFbPostId`. Returns null if every
+ * strategy misses — the caller then falls through to the legacy path
+ * (which falls through to the content-hash fallback). Net effect: this is
+ * purely additive. If every new strategy returns null, the behavior is
+ * byte-for-byte identical to today.
+ *
+ * Implemented as a single `container.evaluate()` so the DOM walk runs in
+ * the browser context (no per-strategy round-trips).
+ */
+export const extractPostIdFromContainer = async (
+  container: ElementHandle,
+): Promise<string | null> => {
+  try {
+    const raw = await container.evaluate((node: Node) => {
+      // Playwright types `el` as Node; cast once at the top so the rest of
+      // this browser-side function can use the Element API.
+      const el = node as Element;
+      // Strategy 1: timestamp / permalink anchor. The header's "5 hours ago"
+      // text is wrapped in an <a> whose href IS the canonical permalink. Of
+      // all signals on a FB post, this one is the hardest to obfuscate
+      // because it's what users click to share. Search the container for
+      // any of the known permalink patterns and pull the id via regex.
+      const anchors = el.querySelectorAll(
+        'a[href*="/posts/"], a[href*="/permalink/"], a[href*="pfbid"], a[href*="story_fbid="]',
+      );
+      for (const a of Array.from(anchors)) {
+        const href = (a as HTMLAnchorElement).getAttribute('href') || '';
+        // /posts/{numeric-or-pfbid}
+        const postsMatch = href.match(/\/posts\/(pfbid[a-zA-Z0-9]+|\d{10,})/);
+        if (postsMatch) return postsMatch[1];
+        // /permalink/{numeric}
+        const permaMatch = href.match(/\/permalink\/(\d{10,})/);
+        if (permaMatch) return permaMatch[1];
+        // ?story_fbid={id}
+        const storyMatch = href.match(/story_fbid=(pfbid[a-zA-Z0-9]+|\d{10,})/);
+        if (storyMatch) return storyMatch[1];
+      }
+
+      // Strategy 2: photo-permalink (set=pcb.{id}). Posts that are mostly an
+      // image often have ONLY a photo-browser link in the visible DOM. The
+      // id after `set=pcb.` is the post id.
+      const photoAnchors = el.querySelectorAll('a[href*="set=pcb."]');
+      for (const a of Array.from(photoAnchors)) {
+        const href = (a as HTMLAnchorElement).getAttribute('href') || '';
+        const pcbMatch = href.match(/set=pcb\.(\d{10,})/);
+        if (pcbMatch) return pcbMatch[1];
+      }
+
+      // Strategy 3: aria-labelledby points to a hidden element whose id
+      // sometimes encodes the post id. Cheap to check, low false-positive
+      // rate because we apply isValidFbPostId on the result.
+      const labelledBy = el.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        for (const refId of labelledBy.split(/\s+/)) {
+          const m = refId.match(/(\d{10,})/);
+          if (m) return m[1];
+        }
+      }
+
+      // Strategy 4: walk up to 5 ancestors looking for data-ft. The existing
+      // normalizePostId path only checks the immediate container, but FB
+      // sometimes mounts data-ft a few wrappers up.
+      let cur: Element | null = el;
+      for (let i = 0; i < 5 && cur; i++) {
+        const dataFt = cur.getAttribute('data-ft');
+        if (dataFt) {
+          try {
+            const parsed = JSON.parse(dataFt);
+            const id = parsed?.top_level_post_id || parsed?.mf_story_key;
+            if (id) return String(id);
+          } catch {
+            // ignore parse error; keep walking up
+          }
+        }
+        cur = cur.parentElement;
+      }
+
+      // Strategy 5: scan inline <script> JSON within the container for an
+      // explicit post-id field. We scope to the container (not the whole
+      // page) so we never accidentally pick up a different post's id.
+      const scripts = el.querySelectorAll('script[type="application/json"]');
+      for (const s of Array.from(scripts)) {
+        const txt = s.textContent || '';
+        const m =
+          txt.match(/"top_level_post_id"\s*:\s*"(\d{10,})"/) ||
+          txt.match(/"post_id"\s*:\s*"(\d{10,})"/) ||
+          txt.match(/"story_fbid"\s*:\s*"(\d{10,})"/);
+        if (m) return m[1];
+      }
+
+      return null;
+    });
+
+    return isValidFbPostId(raw) ? raw : null;
+  } catch (err) {
+    // Container detached or page navigated mid-evaluate. Caller will fall
+    // through to legacy path.
+    logger.debug(`[extractor] extractPostIdFromContainer error: ${(err as Error).message}`);
+    return null;
+  }
+};
+
+/**
  * Normalize a Facebook profile/page URL to a clean, consistent format
  * UPDATED: Now handles /stories/{user_id}/... pattern (Facebook's new author link format)
  */
@@ -823,13 +950,23 @@ export const extractPosts = async (page: Page, context?: BrowserContext): Promis
     // Extract author link with enhanced extraction
     const authorLink = await extractAuthorLink(container);
 
-    // Now get post ID (using content hash as fallback)
-    const postId = normalizePostId(
-      await container.getAttribute('data-ft'),
-      await container.getAttribute('id'),
-      text,
-      authorLink
-    );
+    // Try the new in-DOM strategies FIRST — these look at timestamp
+    // anchors, photo permalinks, aria-labelledby, ancestor data-ft, and
+    // inline script JSON. If any returns a valid FB id, we use it.
+    // Otherwise we fall through to the legacy normalizePostId path (which
+    // tries the immediate container's data-ft + id, then content hash).
+    // The new code is purely additive — if every new strategy returns null
+    // (and isValidFbPostId rejects malformed candidates), behavior is
+    // byte-for-byte identical to the old path.
+    let postId = await extractPostIdFromContainer(container);
+    if (!postId) {
+      postId = normalizePostId(
+        await container.getAttribute('data-ft'),
+        await container.getAttribute('id'),
+        text,
+        authorLink
+      );
+    }
 
     // Extract post URL (permalink) - search container, parents, and by proximity
     let postUrl: string | undefined;

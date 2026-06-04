@@ -445,6 +445,20 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         logger.warn(`[Playwright] "See more" expansion error: ${(expandError as Error).message}`);
       }
 
+      // Give Facebook's permalink anchors an explicit chance to render.
+      // Per a long-standing comment in this file, post URLs (timestamp
+      // anchors) load AFTER the text body. The existing wait loop checks
+      // for them too, but this one-line explicit wait ahead of extraction
+      // tightens the guarantee for the new in-DOM post-id strategies in
+      // extractors.ts that depend on those anchors. Non-blocking — if FB
+      // never renders them, we still proceed (the legacy hash fallback
+      // catches us).
+      await page
+        .waitForSelector('a[href*="pfbid"], a[href*="/posts/"], a[href*="/permalink/"]', {
+          timeout: 8000,
+        })
+        .catch(() => undefined);
+
       // Extract posts (now with enhanced full-text support)
       let posts = await extractPosts(page, context);
       logger.info(`[Playwright] First extraction: ${posts.length} posts`);
