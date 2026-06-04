@@ -67,7 +67,14 @@ const SendApprovedPostsButton: React.FC<SendApprovedPostsButtonProps> = ({ varia
     setSending(true);
     setResult(null);
     try {
-      const res = await apiFetch('/api/export/approved-posts', { method: 'POST' });
+      // Email send takes 5-15s legitimately (SMTP handshake + auth + send).
+      // 90s is generous enough to absorb a slow Gmail response while still
+      // bounding the wait — if the server-side SMTP hangs, our explicit
+      // nodemailer timeouts (10/10/20s) fail it well before this.
+      const res = await apiFetch('/api/export/approved-posts', {
+        method: 'POST',
+        timeout: 90_000,
+      });
       const data: ExportResult = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
         throw new Error(data.message || data.error || `HTTP ${res.status}`);

@@ -8,15 +8,37 @@ let transporter: MailTransporter | null = null;
 
 const getTransporter = (): MailTransporter => {
   if (!transporter) {
+    // Use explicit host + port 587 (STARTTLS) instead of `service: 'gmail'`.
+    // `service: 'gmail'` defaults to port 465 (SMTPS), which Railway and many
+    // other cloud providers block on outbound — the TCP connect then hangs
+    // forever with no error, and the email request stays pending until the
+    // browser aborts. Port 587 is universally reachable.
+    //
+    // The three timeouts make any SMTP misconfiguration fail in <20s with a
+    // descriptive error instead of hanging silently.
     transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false, // upgrades to TLS via STARTTLS
       auth: {
         user: process.env.SYSTEM_EMAIL_ALERT,
         pass: process.env.SYSTEM_EMAIL_PASSWORD,
       },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
     });
   }
   return transporter;
+};
+
+/**
+ * Force-recreate the cached transporter. Call this if env vars change at
+ * runtime, or after a config edit so the next send picks up new credentials
+ * instead of using a stale cached connection.
+ */
+export const resetMailTransporter = (): void => {
+  transporter = null;
 };
 
 export const sendAlertEmail = async (subject: string, text: string): Promise<void> => {
