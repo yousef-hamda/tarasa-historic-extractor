@@ -216,6 +216,11 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
     });
 
     if (!result.ok) {
+      // Mirror the failure to systemLog so /api/logs surfaces it. Without
+      // this, Railway edge-proxy timeouts (502 with no body) become opaque —
+      // we can't tell whether the SMTP itself failed or the request never
+      // even reached our handler.
+      await logSystemEvent('error', `Email export failed (SMTP): ${result.error}`).catch(() => undefined);
       return res.status(502).json({
         error: 'Email send failed',
         message: result.error,
@@ -237,7 +242,79 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`[export] approved-posts failed: ${msg}`);
+    await logSystemEvent('error', `Email export crashed: ${msg}`).catch(() => undefined);
     return res.status(500).json({ error: 'Export failed', message: msg });
+  }
+});
+
+/**
+ * Diagnostic-only endpoint. Just runs nodemailer's transporter.verify(),
+ * which opens a connection to smtp.gmail.com:587, authenticates, and
+ * disconnects — no email is sent. Tells us in seconds whether SMTP is
+ * reachable + credentials work, without waiting for a full send + 1000-row
+ * attachment. Logs the result to systemLog so it's visible at /api/logs.
+ */
+router.post('/api/export/verify-smtp', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+  if (!process.env.SYSTEM_EMAIL_ALERT || !process.env.SYSTEM_EMAIL_PASSWORD) {
+    return res.status(503).json({
+      ok: false,
+      error: 'SMTP env vars not set',
+      message: 'SYSTEM_EMAIL_ALERT and SYSTEM_EMAIL_PASSWORD must be set in Railway.',
+    });
+  }
+
+  // Dynamic import so we get the *current* transporter (in case the user
+  // just rotated credentials and we want to make sure we're using the new
+  // ones, not a cached stale connection).
+  const { resetMailTransporter } = await import('../utils/alerts');
+  resetMailTransporter();
+
+  const nodemailer = await import('nodemailer');
+  const t = nodemailer.default.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.SYSTEM_EMAIL_ALERT,
+      pass: process.env.SYSTEM_EMAIL_PASSWORD,
+    },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+
+  const started = Date.now();
+  try {
+    await t.verify();
+    const elapsed = Date.now() - started;
+    await logSystemEvent('admin', `SMTP verify OK in ${elapsed}ms (smtp.gmail.com:587)`);
+    return res.json({
+      ok: true,
+      message: `SMTP reachable + credentials valid (verified in ${elapsed}ms)`,
+      host: 'smtp.gmail.com',
+      port: 587,
+      elapsedMs: elapsed,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const code = (error as { code?: string }).code;
+    const elapsed = Date.now() - started;
+    await logSystemEvent('error', `SMTP verify FAILED in ${elapsed}ms (code=${code ?? 'none'}): ${msg}`).catch(() => undefined);
+    return res.status(502).json({
+      ok: false,
+      error: 'SMTP verify failed',
+      message: msg,
+      code,
+      elapsedMs: elapsed,
+      hint:
+        code === 'ETIMEDOUT' || code === 'ECONNECTION' || code === 'ECONNREFUSED'
+          ? 'Railway is blocking outbound SMTP (port 587). Switch to an HTTP-based transactional email service like Resend or SendGrid.'
+          : code === 'EAUTH'
+            ? 'Gmail rejected the credentials. Re-generate the App Password at https://myaccount.google.com/apppasswords and update SYSTEM_EMAIL_PASSWORD.'
+            : undefined,
+    });
+  } finally {
+    t.close();
   }
 });
 
