@@ -4,7 +4,7 @@ A snapshot of the project's deployment state, recent work, and known caveats,
 so a fresh chat (or a new developer) can pick up exactly where the current
 session ended.
 
-Last updated: 2026-06-04
+Last updated: 2026-06-06
 
 ---
 
@@ -81,6 +81,32 @@ was breaking the dashboard. Commits in order:
 | `b0d553f` | **88% of prod rows had `fbPostId='hash_<sha>'`** (the content-hash fallback) → no "View post" link. New `extractPostIdFromContainer()` runs upstream of `normalizePostId` with 5 DOM strategies (timestamp/permalink anchor, photo album `set=pcb.<id>`, `aria-labelledby`, 5-level `data-ft` ancestor walk, inline JSON scan), all gated by a strict `isValidFbPostId` (≥10 digits OR `pfbid<base62>`). Purely additive — if all return null, behavior is byte-for-byte identical. +7 tests. |
 | `08cdfcc` | **(A) Permalink-fetch resolver** (Option B for the hash problem): `resolveHashIdsViaPermalink()` runs after the in-DOM extractor, opens a sub-page in the same context for posts with a partial URL fragment, reads the canonical id from the post-redirect URL, and patches both `fbPostId` and `postUrl`. Bounded hard (60s total, 8s/page, 3 concurrent, 50 posts/pass); any failure leaves the post as `hash_`. New `parseFbPostIdFromUrl()` centralizes the URL regexes. **(B) 4 Telegram fixes:** removed the hardcoded `'tshuka'` fallback password; persisted `authenticatedChats` to a `telegram_authenticated_chats` SystemSetting (survives redeploys); wired `notifyHighQualityStory` into the quality cron (5-star → operator ping); wired `sendSystemAlert` into 5 critical error sites via a `{telegram:true}` flag on `logSystemEvent` (captcha/2FA, scrape-cycle abort, email failure, messenger init failure, quality-cron crash) with a 5-min in-memory dedup. |
 | `d039827` | **Filter 7 — the bullet-rules phantom pattern.** Six prod rows were group-rules chrome with the triple-null signature `authorName=null && fbPostId=hash_… && postUrl=null` — which all 6 existing filters missed because each required one of those fields. New Filter 7 skips on that exact conjunction (structurally guaranteed to be chrome, never a real post in current data), plus 6 Hebrew rule-opener patterns + a generic bullet-prefix regex added to `GROUP_RULE_PATTERNS`. +13 tests. |
+
+---
+
+## 3.6 The work shipped in the 2026-06-06 session
+
+A large dashboard-focused pass: fixed the Messages page end-to-end, wired the
+Prompts page to actually drive production, made groups auto-reconnect on session
+restore, removed clutter panels, made the whole dashboard multi-language
+(en/he/ar) with a fixed switcher + RTL, fixed the Debug WebSocket, and added a
+site-wide password gate.
+
+| Area | What changed |
+|---|---|
+| **Messages page** | Both tables now render the author **photo** (avatar with icon fallback). The queue's old "View" link was the raw outreach URL — on the legacy path that embedded the **entire post text** in the query string, so clicking it returned **HTTP 414 (URI Too Long)**. Root fix: `buildLink` (`src/ai/generator.ts`) no longer embeds post text (`?refPost=<id>` only). The dashboard now links **Post #id → `/posts?postId=<id>`** (opens the detail modal) + an external FB-post link. **Sent History** was rebuilt to show author+photo, the **message that was actually sent**, status, a **Messenger chat link** (`/messages/t/<id>` when a numeric id is resolvable, else the profile link), the clickable **Post #id**, sent-at, and error. |
+| **`MessageSent.messageText`** | New nullable column (migration `20260606120000_add_message_text_to_sent`). The generated message is deleted on dispatch, so without this the Sent History had nothing to show. `messenger.ts` now snapshots the text on send. Rows sent before this column render "—". |
+| **`GET /api/posts/:id`** | New public endpoint so the Posts page can open a deep-linked post that isn't on the current page (used by the Messages "Post #id" links). |
+| **Prompts page was cosmetic** | `classifier.ts`/`generator.ts` used hardcoded prompts and **never read the active DB prompt** — "Save & Activate" changed nothing. New `src/ai/promptStore.ts` holds the canonical defaults + `getActivePrompt()`; both crons now call it, and `routes/prompts.ts` delegates to it. The page's stale "default classifier prompt" was replaced with the real shipped prompt. Activating a prompt now actually changes production. |
+| **Groups auto-reconnect** | New `reactivateAllGroups()` (`groupRegistry.ts`) clears `isAccessible=false`/`consecutiveErrors`/`errorMessage` for all enabled groups. Called whenever the session goes valid: in `checkAndUpdateSession` (cron path) and in the renew + cookie-upload routes, which also kick an **immediate guarded scrape**. The Groups page (15s auto-refresh) flips back to accessible within seconds of a renewal instead of waiting a full scrape interval. |
+| **Admin page cleanup** | Removed **Manual Triggers**, **Trigger History**, **Recent Logs**, **Recent Errors**. **Send approved posts** moved to the page header (top). |
+| **Settings page cleanup** | Removed the **Facebook Groups** card and the manual **trigger buttons**. The API-key card was kept (renamed "Dashboard API Key") since it's how the dashboard authenticates; "Reset OpenAI Breaker" stays as a maintenance action. |
+| **Full multi-language UI** | Language switcher rebuilt as an inline **segmented selector** (was an absolute dropdown that overflowed off-screen). Added a consolidated `ui.*` translation namespace (en/he/ar) and wired every page (Dashboard, Posts, Messages, Groups, Logs, Admin, Debug, Settings; Prompts/Search already used `t()`). `getNestedValue` now falls back to **English** for any untranslated key so a gap never shows a raw `a.b.c` path. RTL flips via `document.dir`. |
+| **Debug WebSocket** | The WS URL hardcoded `:4000`, which never connects behind Railway's 443 proxy (page silently fell back to polling). Now uses `window.location.host` (same origin). |
+| **Site password gate** | New `LoginGate` + `POST /api/auth/login` / `GET /api/auth/required` (`src/routes/auth.ts`). Password validated server-side against `SITE_PASSWORD` (never in the bundle); on success a localStorage flag unlocks the app. **Self-disables when `SITE_PASSWORD` is unset** (backwards compatible). The public `/submit/[postId]` pages bypass the gate so message recipients are never blocked. |
+
+**New env var to set on Railway:** `SITE_PASSWORD` (any value enables the gate;
+leave unset to keep the site open). Current intended value handed to the user.
 
 ---
 
@@ -204,6 +230,12 @@ Optional knobs added in the 2026-06-04 session:
 - `RESEND_FROM_EMAIL` — optional. Defaults to `onboarding@resend.dev`
   (Resend's no-domain-needed testing sender). Override once a custom domain
   is verified in Resend (also lifts the free-tier recipient lock).
+
+Optional knob added in the 2026-06-06 session:
+- `SITE_PASSWORD` — if set, the dashboard shows a password gate on entry
+  (validated server-side via `POST /api/auth/login`). Leave **unset** to keep
+  the site open (the gate self-disables). The public `/submit/<id>` landing
+  pages are never gated.
 
 Email transport selection (in `sendHtmlEmail`): `RESEND_API_KEY` → Resend;
 else `SYSTEM_EMAIL_ALERT` + `SYSTEM_EMAIL_PASSWORD` → SMTP; else a clear

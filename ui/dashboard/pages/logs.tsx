@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Pagination from '../components/Pagination';
 import { PageSkeleton } from '../components/Skeleton';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
   ClipboardDocumentListIcon,
@@ -91,6 +92,7 @@ const StatsCard: React.FC<{
 );
 
 const LogsPage: React.FC = () => {
+  const { t } = useLanguage();
   const [data, setData] = useState<LogEntry[]>([]);
   const [pagination, setPagination] = useState<PaginationState>({ total: 0, limit: LIMIT, offset: 0 });
   const [loading, setLoading] = useState(true);
@@ -166,8 +168,8 @@ const LogsPage: React.FC = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">System Logs</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Monitor system activity and events</p>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('logs.title')}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{t('ui.logsSubtitle')}</p>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-8">
@@ -176,18 +178,17 @@ const LogsPage: React.FC = () => {
               <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Couldn&apos;t load logs</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{t('ui.couldntLoadLogs')}</h2>
               <p className="text-slate-600 text-sm">{error}</p>
               <p className="text-slate-400 text-sm mt-1">
-                Usually transient — most often this happens during a Railway redeploy when the
-                server briefly restarts. Click <b>Retry</b>.
+                {t('ui.transientHint')}
               </p>
               <button
                 onClick={() => loadLogs(0, typeFilter || undefined)}
                 className="btn-primary mt-4"
               >
                 <ArrowPathIcon className="w-4 h-4" />
-                Retry
+                {t('ui.retry')}
               </button>
             </div>
           </div>
@@ -201,9 +202,9 @@ const LogsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">System Logs</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('logs.title')}</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            {pagination.total.toLocaleString()} total entries
+            {pagination.total.toLocaleString()} {t('ui.totalEntries')}
           </p>
         </div>
         <button
@@ -211,16 +212,16 @@ const LogsPage: React.FC = () => {
           className="btn-secondary"
         >
           <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard label="Errors" value={stats.errors} icon={XCircleIcon} />
-        <StatsCard label="Scrapes" value={stats.scrapes} icon={CpuChipIcon} />
-        <StatsCard label="Messages" value={stats.messages} icon={ChatBubbleLeftIcon} />
-        <StatsCard label="Auth" value={stats.auth} icon={ShieldCheckIcon} />
+        <StatsCard label={t('ui.errors')} value={stats.errors} icon={XCircleIcon} />
+        <StatsCard label={t('ui.scrapes')} value={stats.scrapes} icon={CpuChipIcon} />
+        <StatsCard label={t('ui.messages')} value={stats.messages} icon={ChatBubbleLeftIcon} />
+        <StatsCard label={t('ui.auth')} value={stats.auth} icon={ShieldCheckIcon} />
       </div>
 
       {/* Search and Filter */}
@@ -231,7 +232,7 @@ const LogsPage: React.FC = () => {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search logs by message or type..."
+              placeholder={t('ui.searchLogsPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm"
@@ -246,14 +247,14 @@ const LogsPage: React.FC = () => {
               onChange={handleFilterChange}
               className="w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg text-sm appearance-none cursor-pointer"
             >
-              <option value="">All Types</option>
-              <option value="scrape">Scrape</option>
-              <option value="classify">Classify</option>
-              <option value="message">Message</option>
-              <option value="auth">Auth</option>
-              <option value="error">Error</option>
+              <option value="">{t('ui.allTypes')}</option>
+              <option value="scrape">{t('logs.scrape')}</option>
+              <option value="classify">{t('logs.classify')}</option>
+              <option value="message">{t('logs.messageLog')}</option>
+              <option value="auth">{t('logs.auth')}</option>
+              <option value="error">{t('logs.error')}</option>
               <option value="info">Info</option>
-              <option value="debug">Debug</option>
+              <option value="debug">{t('nav.debug')}</option>
             </select>
           </div>
         </div>
@@ -265,16 +266,16 @@ const LogsPage: React.FC = () => {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">
-                  Type
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider w-32">
+                  {t('ui.type')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Message
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('ui.message')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-48">
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider w-48">
                   <div className="flex items-center gap-2">
                     <ClockIcon className="w-4 h-4" />
-                    Timestamp
+                    {t('ui.timestamp')}
                   </div>
                 </th>
               </tr>
@@ -289,10 +290,10 @@ const LogsPage: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-slate-600 font-medium">
-                          {searchTerm || typeFilter ? 'No logs match your criteria' : 'No logs found'}
+                          {searchTerm || typeFilter ? t('ui.noLogsMatch') : t('ui.noLogsFound')}
                         </p>
                         <p className="text-slate-400 text-sm mt-1">
-                          Try adjusting your search or filter settings
+                          {t('ui.adjustFilters')}
                         </p>
                       </div>
                     </div>

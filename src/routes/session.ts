@@ -16,8 +16,41 @@ import { stealthRefreshFacebookSession } from '../facebook/session';
 import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import prisma from '../database/prisma';
+import { reactivateAllGroups } from '../scraper/groupRegistry';
+import { isLocked, withLock } from '../utils/cronLock';
 
 const router = Router();
+
+/**
+ * Called whenever the Facebook session has just been restored (credentials
+ * renewal OR manual cookie upload). Two side effects, both best-effort and
+ * fire-and-forget so they never delay the HTTP response:
+ *   1. Re-arm every enabled group (clear the inaccessible/error state a prior
+ *      down period left behind) so the Groups page reconnects immediately.
+ *   2. Kick a single background scrape (guarded by the same `scrape` lock the
+ *      cron uses) so fresh posts start flowing right away instead of waiting
+ *      for the next cron tick.
+ */
+const onSessionRestored = async (): Promise<void> => {
+  try {
+    await reactivateAllGroups();
+  } catch (e) {
+    logger.warn(`[Session] reactivateAllGroups after restore failed: ${(e as Error).message}`);
+  }
+  // Fire-and-forget scrape — don't await, don't double-run if one's in flight.
+  (async () => {
+    try {
+      if (await isLocked('scrape')) return;
+      const { scrapeAllGroups } = await import('../scraper/scrapeApifyToDb');
+      await withLock('scrape', async () => {
+        await scrapeAllGroups();
+      });
+      logger.info('[Session] Post-restore scrape completed');
+    } catch (e) {
+      logger.warn(`[Session] Post-restore scrape failed: ${(e as Error).message}`);
+    }
+  })();
+};
 
 // Module-level state tracking the (at most one) in-flight headless renewal.
 // We don't put this in the DB because it's purely process-local and only
@@ -217,6 +250,8 @@ router.post(
           renewalState.userId = result.userId ?? null;
           logger.info('[Session] Auto-renewal succeeded');
           await logSystemEvent('auth', 'Auto-renewal succeeded');
+          // Reconnect groups + kick an immediate scrape now that we're back in.
+          await onSessionRestored();
         } else {
           const err = result.error || 'Unknown error';
           renewalState.lastError = err;
@@ -360,6 +395,9 @@ router.post('/api/session/upload-cookies', triggerRateLimiter, async (req: Reque
 
     await logSystemEvent('auth', `Cookies uploaded via dashboard: user ${cUser.value}, ${normalized.length} cookies stored`);
     logger.info(`[Session] Cookies uploaded successfully for user ${cUser.value} (${normalized.length} cookies)`);
+
+    // Session restored via manual cookie paste — reconnect groups + kick a scrape.
+    await onSessionRestored();
 
     res.json({
       success: true,

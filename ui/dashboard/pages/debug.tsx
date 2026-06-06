@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
 import SystemStatusIndicator from '../components/SystemStatusIndicator';
 import {
   WrenchScrewdriverIcon,
@@ -314,6 +315,7 @@ const TabButton: React.FC<{
 );
 
 export default function DebugPage() {
+  const { t } = useLanguage();
   const [overview, setOverview] = useState<DebugOverview | null>(null);
   const [requests, setRequests] = useState<RequestLog[]>([]);
   const [errors, setErrors] = useState<ErrorLog[]>([]);
@@ -384,7 +386,12 @@ export default function DebugPage() {
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.hostname}:4000/debug/ws`;
+    // Use the SAME origin (host + port) the page was served from. The old code
+    // hardcoded `:4000`, which only works in local dev — in production the app
+    // sits behind Railway's 443 proxy, so the :4000 socket never connected and
+    // the page silently fell back to interval polling. `window.location.host`
+    // already includes the port when there is one.
+    const wsUrl = `${protocol}//${window.location.host}/debug/ws`;
 
     const connectWs = () => {
       const ws = new WebSocket(wsUrl);
@@ -558,8 +565,8 @@ export default function DebugPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Debug Console</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Real-time monitoring and diagnostics</p>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('ui.debugConsole')}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{t('ui.debugSubtitle')}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -570,7 +577,7 @@ export default function DebugPage() {
               onChange={(e) => setAutoRefresh(e.target.checked)}
               className="rounded text-slate-600"
             />
-            <span className="text-sm text-slate-600">Auto-refresh</span>
+            <span className="text-sm text-slate-600">{t('ui.autoRefresh')}</span>
             {autoRefresh && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
           </label>
           <button
@@ -578,7 +585,7 @@ export default function DebugPage() {
             className="btn-secondary"
           >
             <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </button>
         </div>
       </div>
@@ -615,33 +622,33 @@ export default function DebugPage() {
           active={activeTab === 'overview'}
           onClick={() => setActiveTab('overview')}
           icon={ChartBarIcon}
-          label="Overview"
+          label={t('ui.overviewTab')}
         />
         <TabButton
           active={activeTab === 'requests'}
           onClick={() => setActiveTab('requests')}
           icon={SignalIcon}
-          label="Requests"
+          label={t('ui.requestsTab')}
           count={requests.length}
         />
         <TabButton
           active={activeTab === 'errors'}
           onClick={() => setActiveTab('errors')}
           icon={ExclamationTriangleIcon}
-          label="Errors"
+          label={t('ui.errorsTab')}
           count={errors.length}
         />
         <TabButton
           active={activeTab === 'healing'}
           onClick={() => setActiveTab('healing')}
           icon={ShieldCheckIcon}
-          label="Self-Healing"
+          label={t('ui.selfHealingTab')}
         />
         <TabButton
           active={activeTab === 'diagnostics'}
           onClick={() => setActiveTab('diagnostics')}
           icon={SparklesIcon}
-          label="Diagnostics"
+          label={t('ui.diagnosticsTab')}
         />
       </div>
 
@@ -752,7 +759,7 @@ export default function DebugPage() {
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
                 <BeakerIcon className="w-5 h-5 text-slate-600" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900">Quick Actions</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{t('ui.quickActions')}</h3>
             </div>
             <div className="flex flex-wrap gap-4">
               <button
@@ -760,14 +767,14 @@ export default function DebugPage() {
                 className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors"
               >
                 <ServerStackIcon className="w-5 h-5" />
-                Trigger GC
+                {t('ui.triggerGC')}
               </button>
               <button
                 onClick={triggerHealing}
                 className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
               >
                 <ShieldCheckIcon className="w-5 h-5" />
-                Run Healing Checks
+                {t('ui.runHealingChecks')}
               </button>
             </div>
           </div>
@@ -1021,12 +1028,12 @@ export default function DebugPage() {
                 {isDiagnosticRunning ? (
                   <>
                     <ArrowPathIcon className="w-6 h-6 animate-spin" />
-                    Running Tests...
+                    {t('ui.runningTests')}
                   </>
                 ) : (
                   <>
                     <PlayIcon className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                    Run Full Diagnostics
+                    {t('ui.runFullDiagnostics')}
                   </>
                 )}
               </button>

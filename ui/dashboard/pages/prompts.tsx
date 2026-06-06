@@ -320,7 +320,7 @@ const PromptsPage: React.FC = () => {
           {/* Name Input */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Version Name (optional)
+              {t('ui.versionNameOptional')}
             </label>
             <input
               type="text"
@@ -337,7 +337,7 @@ const PromptsPage: React.FC = () => {
           {/* Content Textarea */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Prompt Content
+              {t('ui.promptContent')}
             </label>
             <textarea
               value={editContent}
@@ -383,7 +383,7 @@ const PromptsPage: React.FC = () => {
               ) : (
                 <CheckCircleIcon className="w-4 h-4" />
               )}
-              {t('prompts.savePrompt')} & Activate
+              {t('ui.saveAndActivate')}
             </button>
             <button
               onClick={() => handleSave(false)}
@@ -391,7 +391,7 @@ const PromptsPage: React.FC = () => {
               className={`btn-secondary ${(!isEditing || saving) && 'opacity-50 cursor-not-allowed'}`}
             >
               <DocumentDuplicateIcon className="w-4 h-4" />
-              Save as Draft
+              {t('ui.saveAsDraft')}
             </button>
           </div>
         </div>
@@ -406,7 +406,7 @@ const PromptsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Sample Post Text
+                {t('ui.samplePostText')}
               </label>
               <textarea
                 value={sampleText}
@@ -419,7 +419,7 @@ const PromptsPage: React.FC = () => {
             {activeTab === 'generator' && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Author Name
+                  {t('ui.authorNameLabel')}
                 </label>
                 <input
                   type="text"
@@ -442,7 +442,7 @@ const PromptsPage: React.FC = () => {
             ) : (
               <PlayIcon className="w-4 h-4" />
             )}
-            {testing ? 'Testing...' : t('prompts.testWithSample')}
+            {testing ? t('ui.testing') : t('prompts.testWithSample')}
           </button>
 
           {/* Test Result */}
@@ -453,25 +453,25 @@ const PromptsPage: React.FC = () => {
                 activeTab === 'classifier' ? (
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-500">Historic:</span>
+                      <span className="text-slate-500">{t('ui.historicLabel')}:</span>
                       <span
                         className={`font-medium ${testResult.result.is_historic ? 'text-emerald-600' : 'text-slate-600'}`}
                       >
-                        {testResult.result.is_historic ? 'Yes' : 'No'}
+                        {testResult.result.is_historic ? t('common.yes') : t('common.no')}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-500">Confidence:</span>
+                      <span className="text-slate-500">{t('ui.confidenceLabel')}:</span>
                       <span className="font-medium">{testResult.result.confidence}%</span>
                     </div>
                     <div>
-                      <span className="text-slate-500">Reason:</span>
+                      <span className="text-slate-500">{t('ui.reasonLabel')}:</span>
                       <p className="mt-1 text-slate-700">{testResult.result.reason}</p>
                     </div>
                   </div>
                 ) : (
                   <div className="text-sm">
-                    <span className="text-slate-500">Generated Message:</span>
+                    <span className="text-slate-500">{t('ui.generatedMessageLabel')}:</span>
                     <p className="mt-2 p-3 bg-white rounded border text-slate-700 whitespace-pre-wrap">
                       {testResult.result.message}
                     </p>
@@ -498,7 +498,7 @@ const PromptsPage: React.FC = () => {
         </div>
         <div className="divide-y divide-slate-100">
           {historyPrompts.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">No prompt history yet</div>
+            <div className="p-8 text-center text-slate-500">{t('ui.noHistory')}</div>
           ) : (
             historyPrompts.map((prompt) => (
               <div
@@ -541,7 +541,7 @@ const PromptsPage: React.FC = () => {
                         onClick={() => handleActivate(prompt.id)}
                         className="px-3 py-1.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 rounded-lg"
                       >
-                        Activate
+                        {t('ui.activate')}
                       </button>
                       <button
                         onClick={() => {
@@ -551,7 +551,7 @@ const PromptsPage: React.FC = () => {
                         }}
                         className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg"
                       >
-                        Copy
+                        {t('ui.copy')}
                       </button>
                       <button
                         onClick={() => handleDelete(prompt.id)}

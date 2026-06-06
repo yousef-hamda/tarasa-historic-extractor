@@ -22,6 +22,7 @@ import searchRouter from './routes/search';
 import promptsRouter from './routes/prompts';
 import abTestingRouter from './routes/abTesting';
 import exportRouter from './routes/export';
+import authRouter from './routes/auth';
 import logger from './utils/logger';
 process.stderr.write('[BOOT] route + logger imports complete\n');
 import './cron';
@@ -115,6 +116,9 @@ app.use(exportRouter);
 
 // Public Submit Landing Page API (no auth required)
 app.use(submitRouter);
+
+// Site password gate (public: /api/auth/required + /api/auth/login)
+app.use(authRouter);
 
 const port = process.env.PORT || 4000;
 

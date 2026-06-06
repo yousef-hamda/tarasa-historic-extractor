@@ -25,6 +25,37 @@ export const getActiveGroupIds = async (): Promise<string[]> => {
 };
 
 /**
+ * Re-arm all enabled groups after the Facebook session has been restored.
+ *
+ * While the session was down, repeated scrape failures bump `consecutiveErrors`
+ * and eventually flip `isAccessible` to false (see `markGroupError`). On its own
+ * the system recovers only on the NEXT successful scrape — so the Groups page
+ * keeps showing "Inaccessible" for up to a full scrape interval after the
+ * operator renews. Calling this the moment a session goes valid clears the
+ * failure streak immediately, so the UI (which auto-refreshes every 15s) flips
+ * back to accessible right away and the next scrape treats every group as live.
+ *
+ * Deliberately leaves `accessMethod` untouched (a group we previously reached
+ * via Playwright should keep that hint) and only resets the failure bookkeeping.
+ * Returns the number of group rows updated.
+ */
+export const reactivateAllGroups = async (): Promise<number> => {
+  try {
+    const result = await prisma.groupInfo.updateMany({
+      where: { isEnabled: true },
+      data: { isAccessible: true, consecutiveErrors: 0, errorMessage: null },
+    });
+    if (result.count > 0) {
+      logger.info(`[GroupRegistry] Reactivated ${result.count} group(s) after session restore`);
+    }
+    return result.count;
+  } catch (error) {
+    logger.warn(`[GroupRegistry] reactivateAllGroups failed: ${(error as Error).message}`);
+    return 0;
+  }
+};
+
+/**
  * One-time seed of GroupInfo from the GROUP_IDS env var.
  *
  * Idempotent + concurrency-safe:

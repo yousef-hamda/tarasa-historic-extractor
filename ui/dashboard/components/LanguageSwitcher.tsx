@@ -1,100 +1,54 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Language } from '../i18n';
-import { GlobeAltIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { GlobeAltIcon } from '@heroicons/react/24/outline';
 
 interface LanguageSwitcherProps {
+  /** "compact" renders a smaller pill group (e.g. for tight headers). */
   compact?: boolean;
 }
 
+const LANGUAGES: { code: Language; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'he', label: 'עברית' },
+  { code: 'ar', label: 'العربية' },
+];
+
+/**
+ * Inline segmented selector for the dashboard language. Replaces the old
+ * absolute-positioned dropdown that overflowed out of the viewport. As three
+ * always-visible pills it can't go out of frame and reads clearly in both LTR
+ * and RTL layouts. Selecting a language updates the whole site immediately
+ * (LanguageProvider flips `document.dir` + every `t()` call).
+ */
 const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ compact = false }) => {
-  const { language, setLanguage, languageNames } = useLanguage();
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { language, setLanguage } = useLanguage();
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const languages: Language[] = ['en', 'he', 'ar'];
-
-  const handleSelect = (lang: Language) => {
-    setLanguage(lang);
-    setIsOpen(false);
-  };
-
-  if (compact) {
-    return (
-      <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-1.5 px-2 py-1.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-          aria-label="Select language"
-        >
-          <GlobeAltIcon className="w-4 h-4" />
-          <span className="font-medium">{language.toUpperCase()}</span>
-          <ChevronDownIcon className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
-
-        {isOpen && (
-          <div className="absolute top-full mt-1 right-0 w-36 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden">
-            {languages.map((lang) => (
-              <button
-                key={lang}
-                onClick={() => handleSelect(lang)}
-                className={`w-full px-3 py-2 text-sm text-left hover:bg-slate-50 transition-colors flex items-center justify-between ${
-                  language === lang ? 'bg-slate-50 text-slate-900 font-medium' : 'text-slate-600'
-                }`}
-              >
-                <span>{languageNames[lang]}</span>
-                {language === lang && (
-                  <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const pad = compact ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm';
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-colors"
-      >
-        <GlobeAltIcon className="w-4 h-4 text-slate-500" />
-        <span>{languageNames[language]}</span>
-        <ChevronDownIcon className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full mt-1 right-0 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden">
-          {languages.map((lang) => (
+    <div className="inline-flex items-center gap-2">
+      {!compact && <GlobeAltIcon className="w-5 h-5 text-slate-400" />}
+      <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 gap-1">
+        {LANGUAGES.map(({ code, label }) => {
+          const active = language === code;
+          return (
             <button
-              key={lang}
-              onClick={() => handleSelect(lang)}
-              className={`w-full px-4 py-2.5 text-sm text-left hover:bg-slate-50 transition-colors flex items-center justify-between ${
-                language === lang ? 'bg-slate-50 text-slate-900 font-medium' : 'text-slate-600'
+              key={code}
+              type="button"
+              onClick={() => setLanguage(code)}
+              aria-pressed={active}
+              className={`rounded-md font-medium transition-colors ${pad} ${
+                active
+                  ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <span>{languageNames[lang]}</span>
-              {language === lang && (
-                <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-              )}
+              {label}
             </button>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 };

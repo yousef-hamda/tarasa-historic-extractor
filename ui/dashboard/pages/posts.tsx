@@ -1,8 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/router';
 import Pagination from '../components/Pagination';
 import PostDetailModal from '../components/PostDetailModal';
 import { PageSkeleton } from '../components/Skeleton';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
 import { formatRelativeTime, truncateText } from '../utils/formatters';
 import { effectivePostUrl } from '../utils/postUrl';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
@@ -84,6 +86,8 @@ const ConfidenceIndicator: React.FC<{ confidence: number; threshold: number }> =
 };
 
 const PostsPage: React.FC = () => {
+  const { t } = useLanguage();
+  const router = useRouter();
   const [data, setData] = useState<Post[]>([]);
   const [filteredData, setFilteredData] = useState<Post[]>([]);
   const [pagination, setPagination] = useState<PaginationState>({ total: 0, limit: LIMIT, offset: 0 });
@@ -195,10 +199,36 @@ const PostsPage: React.FC = () => {
     loadPosts(newOffset);
   };
 
-  const openPostDetail = (post: Post) => {
+  const openPostDetail = useCallback((post: Post) => {
     setSelectedPost(post);
     setIsModalOpen(true);
-  };
+  }, []);
+
+  // Deep-link support: a `?postId=N` query (e.g. from the Messages page "Post
+  // #id" link) opens that post's detail modal. If the post is on the currently
+  // loaded page we use it directly; otherwise we fetch it by id. Tracked with a
+  // ref so auto-refresh re-renders don't re-open the modal after the user
+  // closes it.
+  const handledDeepLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    const pid = router.query.postId;
+    if (!pid || Array.isArray(pid)) return;
+    if (handledDeepLinkRef.current === pid) return;
+    handledDeepLinkRef.current = pid;
+    const id = parseInt(pid, 10);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const existing = data.find((p) => p.id === id);
+    if (existing) {
+      openPostDetail(existing);
+      return;
+    }
+    apiFetch(`/api/posts/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (body?.data) openPostDetail(body.data as Post);
+      })
+      .catch(() => {/* ignore — post may have been deleted */});
+  }, [router.query.postId, data, openPostDetail]);
 
   const closePostDetail = () => {
     setIsModalOpen(false);
@@ -242,8 +272,8 @@ const PostsPage: React.FC = () => {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Posts</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Manage and analyze collected posts</p>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('posts.title')}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{t('ui.postsSubtitle')}</p>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-8">
@@ -252,17 +282,17 @@ const PostsPage: React.FC = () => {
               <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Connection Error</h2>
+              <h2 className="text-lg font-semibold text-slate-900">{t('ui.connectionError')}</h2>
               <p className="text-slate-600 text-sm">{error}</p>
               <p className="text-slate-400 text-xs mt-1">
-                Usually transient — most often happens during a Railway redeploy. The page will auto-retry every 15 seconds.
+                {t('ui.transientHint')}
               </p>
               <button
                 onClick={() => loadPosts(0)}
                 className="btn-primary mt-4"
               >
                 <ArrowPathIcon className="w-4 h-4" />
-                Retry now
+                {t('ui.retryNow')}
               </button>
             </div>
           </div>
@@ -286,12 +316,12 @@ const PostsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Posts</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('posts.title')}</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            {pagination.total.toLocaleString()} total posts
-            {filter !== 'all' && ` (${filteredData.length} filtered)`}
+            {pagination.total.toLocaleString()} {t('ui.totalPosts')}
+            {filter !== 'all' && ` (${filteredData.length} ${t('ui.filtered')})`}
             <span className="ms-2 text-slate-400">
-              · Threshold: {threshold}%
+              · {t('ui.threshold')}: {threshold}%
             </span>
           </p>
         </div>
@@ -302,7 +332,7 @@ const PostsPage: React.FC = () => {
             className="btn-secondary"
           >
             <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('common.refresh')}
           </button>
         </div>
       </div>
@@ -310,22 +340,22 @@ const PostsPage: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="On This Page"
+          title={t('ui.onThisPage')}
           value={pageStats.total}
           icon={<DocumentTextIcon className="w-5 h-5 text-slate-600" />}
         />
         <StatCard
-          title={`Historic (>${threshold}%)`}
+          title={`${t('ui.historic')} (>${threshold}%)`}
           value={pageStats.historic}
           icon={<CheckBadgeIcon className="w-5 h-5 text-emerald-600" />}
         />
         <StatCard
-          title="With Profile Link"
+          title={t('ui.withProfileLink')}
           value={pageStats.withLink}
           icon={<LinkIcon className="w-5 h-5 text-slate-600" />}
         />
         <StatCard
-          title="AI Classified"
+          title={t('ui.aiClassified')}
           value={pageStats.classified}
           icon={<SparklesIcon className="w-5 h-5 text-slate-600" />}
         />
@@ -339,7 +369,7 @@ const PostsPage: React.FC = () => {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Search posts by text, author, or group..."
+              placeholder={t('ui.searchPostsPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm"
@@ -354,12 +384,12 @@ const PostsPage: React.FC = () => {
               onChange={(e) => setFilter(e.target.value as FilterType)}
               className="w-full pl-10 pr-8 py-2.5 border border-slate-200 rounded-lg text-sm appearance-none cursor-pointer"
             >
-              <option value="all">All Posts</option>
-              <option value="historic">Historic (above threshold)</option>
-              <option value="below-threshold">Below Threshold</option>
-              <option value="not-historic">Not Historic</option>
-              <option value="unclassified">Unclassified</option>
-              <option value="with-link">With Profile Link</option>
+              <option value="all">{t('ui.allPosts')}</option>
+              <option value="historic">{t('ui.historicAboveThreshold')}</option>
+              <option value="below-threshold">{t('ui.belowThresholdFilter')}</option>
+              <option value="not-historic">{t('ui.notHistoricFilter')}</option>
+              <option value="unclassified">{t('ui.unclassified')}</option>
+              <option value="with-link">{t('ui.withProfileLinkFilter')}</option>
             </select>
           </div>
         </div>
@@ -393,23 +423,23 @@ const PostsPage: React.FC = () => {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Author
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('ui.author')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Post Preview
-                </th>
-                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Classification
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('ui.postPreview')}
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Confidence
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Scraped
+                  {t('ui.classification')}
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Actions
+                  {t('ui.confidence')}
+                </th>
+                <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('ui.scraped')}
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('ui.actions')}
                 </th>
               </tr>
             </thead>
@@ -424,11 +454,11 @@ const PostsPage: React.FC = () => {
                       <div>
                         <p className="text-slate-600 font-medium">
                           {searchTerm || filter !== 'all'
-                            ? 'No posts match your criteria'
-                            : 'No posts found'}
+                            ? t('ui.noPostsMatch')
+                            : t('ui.noPostsFound')}
                         </p>
                         <p className="text-slate-400 text-sm mt-1">
-                          Try adjusting your search or filter settings
+                          {t('ui.adjustFilters')}
                         </p>
                       </div>
                     </div>
@@ -501,12 +531,12 @@ const PostsPage: React.FC = () => {
                         {!post.classified ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 text-amber-600">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                            Pending
+                            {t('ui.pending')}
                           </span>
                         ) : aboveThreshold ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Historic
+                            {t('ui.historic')}
                           </span>
                         ) : isBelow ? (
                           <span
@@ -514,12 +544,12 @@ const PostsPage: React.FC = () => {
                             title={`Classifier marked historic but confidence ${post.classified.confidence}% ≤ threshold ${threshold}%`}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                            Below threshold
+                            {t('ui.belowThreshold')}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-600">
                             <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                            Not Historic
+                            {t('ui.notHistoric')}
                           </span>
                         )}
                       </td>
@@ -552,7 +582,7 @@ const PostsPage: React.FC = () => {
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
                           >
                             <EyeIcon className="h-4 w-4" />
-                            View
+                            {t('ui.view')}
                           </button>
                           {postLink && (
                             <a
@@ -561,7 +591,7 @@ const PostsPage: React.FC = () => {
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                              title="Open on Facebook"
+                              title={t('ui.openOnFacebook')}
                             >
                               <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                             </a>
@@ -573,7 +603,7 @@ const PostsPage: React.FC = () => {
                             }}
                             disabled={deletingPostId === post.id}
                             className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="Delete this post"
+                            title={t('ui.deletePost')}
                           >
                             {deletingPostId === post.id ? (
                               <ArrowPathIcon className="h-4 w-4 animate-spin" />

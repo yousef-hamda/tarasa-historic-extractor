@@ -4,8 +4,11 @@ import logger from '../utils/logger';
 import { logSystemEvent } from '../utils/systemLog';
 import { callOpenAIWithRetry } from '../utils/openaiRetry';
 import { normalizeMessageContent, validateClassificationResult, sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
+import { getActivePrompt } from './promptStore';
 
-const CLASSIFICATION_PROMPT = `You are an expert curator for Tarasa, a project that PRESERVES SUBSTANTIVE PERSONAL HISTORICAL STORIES from Israeli community Facebook groups.
+// Kept only as documentation of the shipped default — the live prompt is read
+// from the prompt store (operator-editable via the Prompts dashboard page).
+const _DEFAULT_CLASSIFICATION_PROMPT = `You are an expert curator for Tarasa, a project that PRESERVES SUBSTANTIVE PERSONAL HISTORICAL STORIES from Israeli community Facebook groups.
 
 Your job is to decide whether a Facebook post is a FULL HISTORICAL STORY worth preserving — not just any post that touches on history. Most posts in history-themed groups are NOT full stories; they are announcements, requests, captions, or pointers.
 
@@ -116,6 +119,11 @@ export const classifyPosts = async (): Promise<void> => {
 
   let processed = 0;
 
+  // Read the operator-active classifier prompt once per run (falls back to the
+  // shipped default). This is what makes the Prompts dashboard page actually
+  // affect production classification.
+  const systemPrompt = await getActivePrompt('classifier');
+
   for (const post of pendingPosts) {
     try {
       const completion = await callOpenAIWithRetry(() =>
@@ -124,7 +132,7 @@ export const classifyPosts = async (): Promise<void> => {
           temperature: 0,
           response_format: { type: 'json_schema', json_schema: CLASSIFICATION_SCHEMA },
           messages: [
-            { role: 'system', content: CLASSIFICATION_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: sanitizeForPrompt(post.text) },
           ],
         }),

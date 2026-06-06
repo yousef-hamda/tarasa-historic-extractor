@@ -404,6 +404,17 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
       // Update database
       await updateSessionStateInDb('valid', null, validation.userId, validation.userName);
 
+      // Session is healthy again — clear any "inaccessible" / error state left
+      // on groups from a prior down period so the next scrape (and the Groups
+      // page) treat them as live immediately instead of waiting out the
+      // failure streak. Best-effort; never blocks the session result.
+      try {
+        const { reactivateAllGroups } = await import('../scraper/groupRegistry');
+        await reactivateAllGroups();
+      } catch {
+        // non-fatal
+      }
+
       return health;
     }
 

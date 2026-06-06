@@ -51,6 +51,34 @@ router.get('/api/posts', async (req: Request, res: Response) => {
   }
 });
 
+// Fetch a single post by id (public, same shape as a row in GET /api/posts but
+// with quality included). Used by the Posts page to open a post that the user
+// deep-linked to (e.g. from the Messages page "Post #id" link) when it isn't on
+// the currently-loaded page. Registered BEFORE the trigger routes; the numeric
+// `:id` constraint keeps it from shadowing `/api/posts` itself.
+router.get('/api/posts/:id(\\d+)', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ error: 'id must be a positive integer' });
+  }
+  try {
+    const [post, historicThreshold] = await Promise.all([
+      prisma.postRaw.findUnique({
+        where: { id },
+        include: { classified: true, quality: true },
+      }),
+      getHistoricThreshold(),
+    ]);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    res.json({ data: post, historicThreshold });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to fetch post', message: safeErrorMessage(error, 'Internal server error') });
+  }
+});
+
 router.post('/api/trigger-scrape', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
   try {
     // Acquire the same lock the cron uses, so a manual trigger can't race

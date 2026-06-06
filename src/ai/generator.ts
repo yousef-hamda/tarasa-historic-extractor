@@ -6,26 +6,7 @@ import { callOpenAIWithRetry } from '../utils/openaiRetry';
 import { normalizeMessageContent, validateGeneratedMessage, sanitizeForPrompt, getModel } from '../utils/openaiHelpers';
 import { URLS } from '../config/constants';
 import { getHistoricThreshold } from '../utils/settings';
-
-const TEMPLATE_PROMPT = `You write short, friendly messages to people on Facebook who shared a historical story or memory.
-
-CRITICAL: You MUST write the message in the SAME LANGUAGE as the original post:
-- If the post is in Hebrew (עברית) → write the message in Hebrew
-- If the post is in Arabic (العربية) → write the message in Arabic
-- If the post is in English → write the message in English
-
-Rules:
-1) Address the person by their first name warmly and naturally.
-2) Compliment what they shared specifically (reference their story or memories).
-3) Briefly introduce Tarasa platform:
-   - Hebrew: "פלטפורמת טראסא מוקדשת לשימור ההיסטוריה הקהילתית והזכרונות האישיים לדורות הבאים"
-   - Arabic: "منصة تراسا مخصصة لحفظ التاريخ المجتمعي والذكريات الشخصية للأجيال القادمة"
-   - English: "Tarasa platform is dedicated to preserving community history and personal memories for future generations"
-4) Invite them to share their full story via the provided link, making the link a natural part of the text.
-5) Keep the message human and not robotic, varied in phrasing, 3-5 short sentences.
-6) Don't use repetitive emojis or overly formal phrases.
-
-Return ONLY the final message text in the SAME LANGUAGE as the original post, including the provided link.`;
+import { getActivePrompt } from './promptStore';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const model = getModel('generator');
@@ -55,9 +36,13 @@ const buildLink = (postId: number, text: string) => {
     return `${submitPageBase.replace(/\/$/, '')}/submit/${postId}`;
   }
 
-  // Legacy behavior: direct tarasa.me link with text in URL
+  // Legacy behavior: direct tarasa.me link. We deliberately DO NOT embed the
+  // full post text in the query string anymore — doing so produced multi-KB
+  // URLs that returned HTTP 414 "Request-URI Too Long" both for the recipient
+  // and for the dashboard "View" link. The post id is enough to reference the
+  // post; the landing page / Tarasa looks the text up by id.
   const base = process.env.BASE_TARASA_URL || DEFAULT_TARASA_URL;
-  return `${base}?refPost=${postId}&text=${encodeURIComponent(text)}`;
+  return `${base}?refPost=${postId}`;
 };
 
 
@@ -89,6 +74,11 @@ export const generateMessages = async (): Promise<void> => {
 
   let generated = 0;
 
+  // Read the operator-active generator prompt once per run (falls back to the
+  // shipped default). This is what makes the Prompts dashboard page actually
+  // affect the outreach messages we generate.
+  const systemPrompt = await getActivePrompt('generator');
+
   for (const classification of classifiedPosts) {
     if (!classification.post) continue;
 
@@ -111,7 +101,7 @@ export const generateMessages = async (): Promise<void> => {
           model,
           temperature: 0.8,
           messages: [
-            { role: 'system', content: TEMPLATE_PROMPT },
+            { role: 'system', content: systemPrompt },
             {
               role: 'user',
               content: `Author name: ${sanitizeForPrompt(firstName, 100)}\nOriginal post: ${sanitizeForPrompt(post.text)}\nLink to share story: ${link}`,

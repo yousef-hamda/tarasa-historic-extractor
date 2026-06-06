@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
 import { formatRelativeTime } from '../utils/formatters';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import {
@@ -57,26 +58,27 @@ const StatCard: React.FC<{
 
 // Group Type Badge
 const GroupTypeBadge: React.FC<{ type: string }> = ({ type }) => {
+  const { t } = useLanguage();
   const config = {
     public: {
       icon: <GlobeAltIcon className="h-3.5 w-3.5" />,
       bg: 'bg-emerald-50',
       text: 'text-emerald-700',
-      label: 'Public',
+      label: t('ui.publicBadge'),
     },
     private: {
       icon: <LockClosedIcon className="h-3.5 w-3.5" />,
       bg: 'bg-amber-50',
       text: 'text-amber-700',
-      label: 'Private',
+      label: t('ui.privateBadge'),
     },
     unknown: {
       icon: <ExclamationTriangleIcon className="h-3.5 w-3.5" />,
       bg: 'bg-slate-100',
       text: 'text-slate-600',
-      label: 'Unknown',
+      label: t('ui.unknownBadge'),
     },
-  }[type] || { icon: null, bg: 'bg-slate-100', text: 'text-slate-600', label: 'Unknown' };
+  }[type] || { icon: null, bg: 'bg-slate-100', text: 'text-slate-600', label: t('ui.unknownBadge') };
 
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.bg} ${config.text}`}>
@@ -88,11 +90,12 @@ const GroupTypeBadge: React.FC<{ type: string }> = ({ type }) => {
 
 // Access Method Badge
 const AccessBadge: React.FC<{ method: string; accessible: boolean }> = ({ method, accessible }) => {
+  const { t } = useLanguage();
   if (!accessible) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700">
         <XCircleIcon className="h-3.5 w-3.5" />
-        Inaccessible
+        {t('ui.inaccessible')}
       </span>
     );
   }
@@ -114,9 +117,9 @@ const AccessBadge: React.FC<{ method: string; accessible: boolean }> = ({ method
       icon: <ClockIcon className="h-3.5 w-3.5" />,
       bg: 'bg-slate-100',
       text: 'text-slate-500',
-      label: 'Pending',
+      label: t('ui.pendingBadge'),
     },
-  }[method] || { icon: null, bg: 'bg-slate-100', text: 'text-slate-600', label: 'Pending' };
+  }[method] || { icon: null, bg: 'bg-slate-100', text: 'text-slate-600', label: t('ui.pendingBadge') };
 
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${config.bg} ${config.text}`}>
@@ -134,6 +137,7 @@ const GroupCard: React.FC<{
   isResetting: boolean;
   isDeleting: boolean;
 }> = ({ group, onReset, onDelete, isResetting, isDeleting }) => {
+  const { t } = useLanguage();
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 transition-colors hover:border-slate-300">
       <div className="flex items-start gap-4">
@@ -170,13 +174,13 @@ const GroupCard: React.FC<{
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <UsersIcon className="h-4 w-4" />
                 <span className="font-medium">{group.memberCount.toLocaleString()}</span>
-                <span>members</span>
+                <span>{t('ui.members')}</span>
               </div>
             )}
             {group.lastScraped && (
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <ClockIcon className="h-4 w-4" />
-                <span>Last scraped:</span>
+                <span>{t('ui.lastScrapedColon')}</span>
                 <span className="font-medium">{formatRelativeTime(group.lastScraped)}</span>
               </div>
             )}
@@ -200,7 +204,7 @@ const GroupCard: React.FC<{
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-            title="Open in Facebook"
+            title={t('ui.openInFacebook')}
           >
             <LinkIcon className="h-4 w-4" />
           </a>
@@ -212,7 +216,7 @@ const GroupCard: React.FC<{
                 ? 'text-slate-300 cursor-not-allowed'
                 : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
             }`}
-            title="Reset detection cache"
+            title={t('ui.resetDetection')}
           >
             <ArrowPathIcon className={`h-4 w-4 ${isResetting ? 'animate-spin' : ''}`} />
           </button>
@@ -224,7 +228,7 @@ const GroupCard: React.FC<{
                 ? 'text-slate-300 cursor-not-allowed'
                 : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
             }`}
-            title="Remove group"
+            title={t('ui.removeGroup')}
           >
             {isDeleting ? (
               <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -239,6 +243,7 @@ const GroupCard: React.FC<{
 };
 
 const GroupsPage: React.FC = () => {
+  const { t } = useLanguage();
   const [groups, setGroups] = useState<GroupInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [newGroupUrl, setNewGroupUrl] = useState('');
@@ -437,9 +442,9 @@ const GroupsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Groups</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('groups.title')}</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Manage Facebook groups ({groups.length} total)
+            {t('ui.groupsSubtitle')} ({groups.length} {t('ui.total')})
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -453,21 +458,21 @@ const GroupsPage: React.FC = () => {
             ) : (
               <ArrowPathIcon className="h-4 w-4" />
             )}
-            Reset All
+            {t('ui.resetAll')}
           </button>
           <button
             onClick={fetchGroups}
             disabled={refreshing}
             className="btn-secondary"
-            title={lastRefreshedAt ? `Last refreshed at ${lastRefreshedAt.toLocaleTimeString()}` : 'Click to refresh group list'}
+            title={lastRefreshedAt ? `${t('ui.lastRefreshed')} ${lastRefreshedAt.toLocaleTimeString()}` : t('common.refresh')}
           >
             <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            {refreshing ? t('ui.refreshing') : t('common.refresh')}
           </button>
         </div>
         {lastRefreshedAt && (
           <p className="text-xs text-slate-400 mt-2 text-right">
-            Last refreshed {lastRefreshedAt.toLocaleTimeString()}
+            {t('ui.lastRefreshed')} {lastRefreshedAt.toLocaleTimeString()}
           </p>
         )}
       </div>
@@ -475,23 +480,23 @@ const GroupsPage: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Groups"
+          title={t('ui.totalGroups')}
           value={stats.total}
           icon={<UserGroupIcon className="h-5 w-5 text-slate-600" />}
         />
         <StatCard
-          title="Accessible"
+          title={t('ui.accessible')}
           value={stats.accessible}
           icon={<CheckCircleIcon className="h-5 w-5 text-emerald-600" />}
-          trend={`${stats.total > 0 ? Math.round((stats.accessible / stats.total) * 100) : 0}% success rate`}
+          trend={`${stats.total > 0 ? Math.round((stats.accessible / stats.total) * 100) : 0}% ${t('ui.successRate')}`}
         />
         <StatCard
-          title="Public Groups"
+          title={t('ui.publicGroups')}
           value={stats.public}
           icon={<GlobeAltIcon className="h-5 w-5 text-slate-600" />}
         />
         <StatCard
-          title="Private Groups"
+          title={t('ui.privateGroups')}
           value={stats.private}
           icon={<LockClosedIcon className="h-5 w-5 text-slate-600" />}
         />
@@ -518,8 +523,8 @@ const GroupsPage: React.FC = () => {
             <PlusIcon className="h-5 w-5 text-slate-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Add New Group</h2>
-            <p className="text-sm text-slate-500">Paste a Facebook group URL to start tracking</p>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.addNewGroup')}</h2>
+            <p className="text-sm text-slate-500">{t('ui.addGroupSub')}</p>
           </div>
         </div>
 
@@ -542,12 +547,12 @@ const GroupsPage: React.FC = () => {
             {addingGroup ? (
               <>
                 <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                Adding...
+                {t('ui.adding')}
               </>
             ) : (
               <>
                 <PlusIcon className="h-4 w-4" />
-                Add Group
+                {t('ui.addGroup')}
               </>
             )}
           </button>
@@ -561,13 +566,13 @@ const GroupsPage: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <h2 className="text-base font-semibold text-slate-900 flex items-center gap-2">
               <UserGroupIcon className="h-5 w-5 text-slate-500" />
-              Configured Groups
+              {t('ui.configuredGroups')}
             </h2>
             <div className="relative">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search groups..."
+                placeholder={t('ui.searchGroupsPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm"
@@ -584,10 +589,10 @@ const GroupsPage: React.FC = () => {
                 <UserGroupIcon className="h-6 w-6 text-slate-400" />
               </div>
               <p className="text-slate-600 font-medium">
-                {searchQuery ? 'No groups match your search' : 'No groups configured'}
+                {searchQuery ? t('ui.noGroupsMatch') : t('ui.noGroupsConfigured')}
               </p>
               <p className="text-sm text-slate-400 mt-1">
-                {searchQuery ? 'Try a different search term' : 'Add a group above to get started'}
+                {searchQuery ? t('ui.tryDifferent') : t('ui.addToStart')}
               </p>
             </div>
           ) : (

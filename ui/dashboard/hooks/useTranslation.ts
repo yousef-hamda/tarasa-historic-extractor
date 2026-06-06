@@ -21,8 +21,8 @@ type NestedKeyOf<T> = T extends object
 
 type TranslationPath = NestedKeyOf<TranslationKeys>;
 
-// Get nested value from object using dot notation
-const getNestedValue = (obj: unknown, path: string): string => {
+// Get nested value from object using dot notation. Returns null when missing.
+const getNestedValue = (obj: unknown, path: string): string | null => {
   const keys = path.split('.');
   let current: unknown = obj;
 
@@ -30,11 +30,11 @@ const getNestedValue = (obj: unknown, path: string): string => {
     if (current && typeof current === 'object' && key in current) {
       current = (current as Record<string, unknown>)[key];
     } else {
-      return path; // Return path if not found
+      return null;
     }
   }
 
-  return typeof current === 'string' ? current : path;
+  return typeof current === 'string' ? current : null;
 };
 
 interface UseTranslationReturn {
@@ -72,7 +72,11 @@ export const useTranslation = (): UseTranslationReturn => {
 
   const t = useCallback(
     (key: TranslationPath | string): string => {
-      return getNestedValue(translations[language], key);
+      return (
+        getNestedValue(translations[language], key) ??
+        getNestedValue(translations.en, key) ??
+        key
+      );
     },
     [language]
   );

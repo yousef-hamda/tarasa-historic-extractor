@@ -2,9 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { apiFetch, getApiKey, setApiKey as persistApiKey, clearApiKey } from '../utils/api';
 import { cronToHuman } from '../utils/cronHuman';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
-  Cog6ToothIcon,
-  UserGroupIcon,
   ChatBubbleLeftRightIcon,
   GlobeAltIcon,
   EnvelopeIcon,
@@ -75,13 +74,13 @@ interface SessionStatus {
 type TriggerType = 'scrape' | 'classification' | 'message';
 
 const SettingsPage: React.FC = () => {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<{ kind: 'saved' | 'cleared' } | null>(null);
-  const [triggering, setTriggering] = useState<TriggerType | null>(null);
   const [triggerResult, setTriggerResult] = useState<{ type: TriggerType; success: boolean; message: string } | null>(null);
   const [resettingBreaker, setResettingBreaker] = useState(false);
 
@@ -500,44 +499,6 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleTrigger = async (type: TriggerType) => {
-    if (!apiKey) {
-      setTriggerResult({ type, success: false, message: 'Please enter an API key' });
-      return;
-    }
-
-    setTriggering(type);
-    setTriggerResult(null);
-
-    const endpoints: Record<TriggerType, string> = {
-      scrape: '/api/trigger-scrape',
-      classification: '/api/trigger-classification',
-      message: '/api/trigger-message',
-    };
-
-    try {
-      const res = await apiFetch(endpoints[type], {
-        method: 'POST',
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || `Failed to trigger ${type}`);
-      }
-
-      setTriggerResult({ type, success: true, message: `${type} completed successfully` });
-    } catch (err) {
-      setTriggerResult({
-        type,
-        success: false,
-        message: err instanceof Error ? err.message : 'Unknown error',
-      });
-    } finally {
-      setTriggering(null);
-    }
-  };
-
   // Manually reset the OpenAI circuit breaker. The breaker auto-opens for 15
   // minutes after a burst of failures (e.g. when OpenAI billing is in a bad
   // state). Once the user has fixed the underlying issue, this button lets
@@ -609,57 +570,28 @@ const SettingsPage: React.FC = () => {
     <div className="space-y-6 animate-slide-up">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Configure your system preferences</p>
+        <h1 className="text-2xl font-semibold text-slate-900">{t('settings.title')}</h1>
+        <p className="text-slate-500 text-sm mt-0.5">{t('ui.settingsSubtitle')}</p>
       </div>
 
       {/* Settings Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Facebook Groups Card */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
-              <UserGroupIcon className="w-5 h-5 text-slate-600" />
-            </div>
-            <h2 className="text-base font-semibold text-slate-900">Facebook Groups</h2>
-          </div>
-
-          {settings.groups.length > 0 ? (
-            <div className="space-y-2">
-              {settings.groups.map((group, index) => (
-                <div key={group} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg text-sm">
-                  <span className="w-5 h-5 rounded bg-slate-200 text-slate-600 text-xs flex items-center justify-center font-medium">
-                    {index + 1}
-                  </span>
-                  <span className="text-slate-700 truncate">{group}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">No groups configured</p>
-          )}
-
-          <p className="text-xs text-slate-400 mt-3">
-            Total: {settings.groups.length} groups
-          </p>
-        </div>
-
         {/* Message Limits Card */}
         <div className="bg-white border border-slate-200 rounded-xl p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <ChatBubbleLeftRightIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Message Limits</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.messageLimits')}</h2>
           </div>
 
           <div className="p-4 bg-slate-50 rounded-lg">
-            <p className="text-xs text-slate-500">Maximum per day</p>
+            <p className="text-xs text-slate-500">{t('ui.maximumPerDay')}</p>
             <p className="text-3xl font-semibold text-slate-900">{settings.messageLimit}</p>
           </div>
 
           <p className="text-xs text-slate-400 mt-3">
-            Rate-limited to prevent account restrictions
+            {t('ui.rateLimited')}
           </p>
         </div>
 
@@ -669,7 +601,7 @@ const SettingsPage: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <GlobeAltIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Tarasa URL</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.tarasaUrl')}</h2>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-lg">
@@ -680,7 +612,7 @@ const SettingsPage: React.FC = () => {
 
           <div className="flex items-center gap-2 mt-3">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="text-xs text-slate-500">Configured</span>
+            <span className="text-xs text-slate-500">{t('ui.configured')}</span>
           </div>
         </div>
 
@@ -690,17 +622,17 @@ const SettingsPage: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <EnvelopeIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Email Alerts</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.emailAlerts')}</h2>
           </div>
 
           <div className={`p-4 rounded-lg ${settings.emailConfigured ? 'bg-emerald-50' : 'bg-amber-50'}`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-slate-500">Status</p>
+                <p className="text-xs text-slate-500">{t('ui.status')}</p>
                 <div className="flex items-center gap-2 mt-1">
                   <div className={`w-2 h-2 rounded-full ${settings.emailConfigured ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                   <span className={`text-sm font-medium ${settings.emailConfigured ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    {settings.emailConfigured ? 'Configured' : 'Not Configured'}
+                    {settings.emailConfigured ? t('ui.configured') : t('ui.notConfigured')}
                   </span>
                 </div>
               </div>
@@ -722,8 +654,8 @@ const SettingsPage: React.FC = () => {
             <GlobeAltIcon className="w-5 h-5 text-slate-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Language</h2>
-            <p className="text-sm text-slate-500">Dashboard display language (English / עברית / العربية)</p>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.language')}</h2>
+            <p className="text-sm text-slate-500">{t('ui.languageSub')}</p>
           </div>
         </div>
         <LanguageSwitcher />
@@ -747,8 +679,8 @@ const SettingsPage: React.FC = () => {
               <SparklesIcon className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Classification Threshold</h2>
-              <p className="text-sm text-slate-500">Minimum confidence for a post to be treated as historic</p>
+              <h2 className="text-base font-semibold text-slate-900">{t('ui.classificationThreshold')}</h2>
+              <p className="text-sm text-slate-500">{t('ui.thresholdCardSub')}</p>
             </div>
           </div>
 
@@ -820,8 +752,8 @@ const SettingsPage: React.FC = () => {
               <BoltIcon className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-slate-900">System Speed</h2>
-              <p className="text-sm text-slate-500">How often the scrape, classify, and message crons run</p>
+              <h2 className="text-base font-semibold text-slate-900">{t('ui.systemSpeed')}</h2>
+              <p className="text-sm text-slate-500">{t('ui.systemSpeedSub')}</p>
             </div>
           </div>
 
@@ -913,8 +845,8 @@ const SettingsPage: React.FC = () => {
             <UserCircleIcon className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Facebook Session</h2>
-            <p className="text-sm text-slate-500">Manage your Facebook authentication</p>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.facebookSessionCard')}</h2>
+            <p className="text-sm text-slate-500">{t('ui.manageAuth')}</p>
           </div>
         </div>
 
@@ -1127,15 +1059,17 @@ const SettingsPage: React.FC = () => {
         />
       )}
 
-      {/* Manual Triggers Section */}
+      {/* Dashboard API Key Section (manual-trigger buttons removed at user
+          request — the cron jobs run these automatically; the only remaining
+          control here is the operator's API key + the OpenAI breaker reset). */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
-            <Cog6ToothIcon className="w-5 h-5 text-slate-600" />
+            <KeyIcon className="w-5 h-5 text-slate-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Manual Triggers</h2>
-            <p className="text-sm text-slate-500">Trigger operations manually with API key</p>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.dashboardApiKey')}</h2>
+            <p className="text-sm text-slate-500">{t('ui.apiKeyHelp')}</p>
           </div>
         </div>
 
@@ -1179,7 +1113,7 @@ const SettingsPage: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <CheckCircleIcon className="w-4 h-4" />
-              Save API Key
+              {t('ui.saveApiKey')}
             </button>
             <button
               type="button"
@@ -1187,7 +1121,7 @@ const SettingsPage: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50"
             >
               <TrashIcon className="w-4 h-4" />
-              Clear
+              {t('ui.clear')}
             </button>
           </div>
 
@@ -1231,47 +1165,8 @@ const SettingsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Trigger Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button
-            onClick={() => handleTrigger('scrape')}
-            disabled={triggering !== null}
-            className="btn-primary justify-center"
-          >
-            {triggering === 'scrape' ? (
-              <ArrowPathIcon className="w-4 h-4 animate-spin" />
-            ) : (
-              <BoltIcon className="w-4 h-4" />
-            )}
-            {triggering === 'scrape' ? 'Scraping...' : 'Trigger Scrape'}
-          </button>
-
-          <button
-            onClick={() => handleTrigger('classification')}
-            disabled={triggering !== null}
-            className="btn-secondary justify-center"
-          >
-            {triggering === 'classification' ? (
-              <ArrowPathIcon className="w-4 h-4 animate-spin" />
-            ) : (
-              <SparklesIcon className="w-4 h-4" />
-            )}
-            {triggering === 'classification' ? 'Classifying...' : 'Trigger Classification'}
-          </button>
-
-          <button
-            onClick={() => handleTrigger('message')}
-            disabled={triggering !== null}
-            className="btn-secondary justify-center"
-          >
-            {triggering === 'message' ? (
-              <ArrowPathIcon className="w-4 h-4 animate-spin" />
-            ) : (
-              <ChatBubbleLeftRightIcon className="w-4 h-4" />
-            )}
-            {triggering === 'message' ? 'Sending...' : 'Trigger Messages'}
-          </button>
-
+        {/* Maintenance: reset the OpenAI circuit breaker. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             onClick={handleResetBreaker}
             disabled={resettingBreaker}
@@ -1283,7 +1178,7 @@ const SettingsPage: React.FC = () => {
             ) : (
               <BoltIcon className="w-4 h-4" />
             )}
-            {resettingBreaker ? 'Resetting…' : 'Reset OpenAI Breaker'}
+            {resettingBreaker ? 'Resetting…' : t('ui.resetOpenaiBreaker')}
           </button>
         </div>
       </div>
@@ -1295,8 +1190,8 @@ const SettingsPage: React.FC = () => {
             <TrashIcon className="w-5 h-5 text-red-600" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-red-900">Danger Zone</h2>
-            <p className="text-sm text-red-600">Irreversible actions - proceed with caution</p>
+            <h2 className="text-base font-semibold text-red-900">{t('ui.dangerZone')}</h2>
+            <p className="text-sm text-red-600">{t('ui.dangerSub')}</p>
           </div>
         </div>
 

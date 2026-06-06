@@ -337,11 +337,15 @@ export const dispatchMessages = async (): Promise<void> => {
               status: 'sent',
               error: null,
               sentAt: new Date(),
+              // Snapshot the text we actually sent so Sent History can show it
+              // (the MessageGenerated row is deleted right below).
+              messageText: candidate.messageText,
             },
             create: {
               postId: candidate.postId,
               authorLink: post.authorLink,
               status: 'sent',
+              messageText: candidate.messageText,
             },
           });
           await prisma.messageGenerated.delete({ where: { id: candidate.id } });
@@ -356,6 +360,7 @@ export const dispatchMessages = async (): Promise<void> => {
               error: sendError?.message || 'Unknown error',
               retryCount: { increment: 1 },
               sentAt: new Date(),
+              messageText: candidate.messageText,
             },
             create: {
               postId: candidate.postId,
@@ -363,6 +368,7 @@ export const dispatchMessages = async (): Promise<void> => {
               status: 'error',
               error: sendError?.message || 'Unknown error',
               retryCount: 1,
+              messageText: candidate.messageText,
             },
           });
           // Keep the generated message for retry (up to MAX_RETRY_ATTEMPTS)

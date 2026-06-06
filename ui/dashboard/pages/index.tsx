@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { apiFetch } from '../utils/api';
+import { useLanguage } from '../contexts/LanguageContext';
 import { formatRelativeTime, formatUptime } from '../utils/formatters';
 import type { Stats, HealthStatus, Post, SystemLog } from '../types';
 import {
@@ -114,6 +115,7 @@ const StatusItem: React.FC<{ label: string; status: boolean; icon: React.Element
 );
 
 const Dashboard: React.FC = () => {
+  const { t } = useLanguage();
   const [data, setData] = useState<DashboardData>({
     stats: null,
     health: null,
@@ -205,13 +207,13 @@ const Dashboard: React.FC = () => {
             <ExclamationTriangleIcon className="w-6 h-6 text-red-600" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Connection Error</h2>
+            <h2 className="text-lg font-semibold text-slate-900">{t('ui.connectionError')}</h2>
             <p className="text-slate-600 text-sm">{error}</p>
           </div>
         </div>
         <button onClick={fetchData} className="btn-primary mt-6">
           <ArrowPathIcon className="w-4 h-4" />
-          Retry
+          {t('ui.retry')}
         </button>
       </div>
     );
@@ -225,39 +227,39 @@ const Dashboard: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Overview of your automation system</p>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('nav.dashboard')}</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{t('ui.dashboardSubtitle')}</p>
         </div>
         <button onClick={fetchData} className="btn-secondary">
           <ArrowPathIcon className="w-4 h-4" />
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Posts Scraped"
+          title={t('ui.postsScraped')}
           value={stats?.postsTotal ?? 0}
-          subtitle="Total collected"
+          subtitle={t('ui.totalCollected')}
           icon={CircleStackIcon}
         />
         <StatCard
-          title="AI Classified"
+          title={t('ui.aiClassified')}
           value={stats?.classifiedTotal ?? 0}
-          subtitle={`${stats?.postsTotal ? Math.round((stats.classifiedTotal / stats.postsTotal) * 100) : 0}% complete`}
+          subtitle={`${stats?.postsTotal ? Math.round((stats.classifiedTotal / stats.postsTotal) * 100) : 0}% ${t('ui.complete')}`}
           icon={SparklesIcon}
         />
         <StatCard
-          title="Historic Posts"
+          title={t('ui.historicPosts')}
           value={stats?.historicTotal ?? 0}
-          subtitle={`${stats?.classifiedTotal ? Math.round((stats.historicTotal / stats.classifiedTotal) * 100) : 0}% of classified`}
+          subtitle={`${stats?.classifiedTotal ? Math.round((stats.historicTotal / stats.classifiedTotal) * 100) : 0}% ${t('ui.ofClassified')}`}
           icon={DocumentDuplicateIcon}
         />
         <StatCard
-          title="In Queue"
+          title={t('ui.inQueue')}
           value={stats?.queueCount ?? 0}
-          subtitle="Awaiting dispatch"
+          subtitle={t('ui.awaitingDispatch')}
           icon={PaperAirplaneIcon}
         />
       </div>
@@ -265,8 +267,8 @@ const Dashboard: React.FC = () => {
       {/* Activity Chart */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-slate-900">Activity Overview</h2>
-          <span className="text-xs text-slate-400">Last 7 days</span>
+          <h2 className="text-base font-semibold text-slate-900">{t('ui.activityOverview')}</h2>
+          <span className="text-xs text-slate-400">{t('ui.last7Days')}</span>
         </div>
         <ActivityChart data={activityData} height={280} />
       </div>
@@ -274,14 +276,14 @@ const Dashboard: React.FC = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <h2 className="text-base font-semibold text-slate-900 mb-4">Classification Results</h2>
+          <h2 className="text-base font-semibold text-slate-900 mb-4">{t('ui.classificationResults')}</h2>
           <ClassificationPieChart
             historic={stats?.historicTotal ?? 0}
             nonHistoric={(stats?.classifiedTotal ?? 0) - (stats?.historicTotal ?? 0)}
           />
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <h2 className="text-base font-semibold text-slate-900 mb-4">Confidence Distribution</h2>
+          <h2 className="text-base font-semibold text-slate-900 mb-4">{t('ui.confidenceDistribution')}</h2>
           <ConfidenceDistribution
             low={confidenceData.low}
             medium={confidenceData.medium}
@@ -298,23 +300,23 @@ const Dashboard: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <ChatBubbleLeftRightIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Messages</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.messages')}</h2>
           </div>
 
           <div className="space-y-4">
             <ProgressBar
               value={stats?.sentLast24h ?? 0}
               max={stats?.messageLimit ?? 20}
-              label="Daily quota"
+              label={t('ui.dailyQuota')}
             />
 
             <div className="grid grid-cols-2 gap-3 pt-2">
               <div className="p-3 bg-slate-50 rounded-lg">
-                <p className="text-xs text-slate-500">Sent today</p>
+                <p className="text-xs text-slate-500">{t('ui.sentToday')}</p>
                 <p className="text-lg font-semibold text-slate-900">{stats?.sentLast24h ?? 0}</p>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">
-                <p className="text-xs text-slate-500">Remaining</p>
+                <p className="text-xs text-slate-500">{t('ui.remaining')}</p>
                 <p className="text-lg font-semibold text-slate-900">{stats?.quotaRemaining ?? 0}</p>
               </div>
             </div>
@@ -327,19 +329,19 @@ const Dashboard: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <ServerIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">System Health</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.systemHealth')}</h2>
           </div>
 
           <div className="space-y-1">
-            <StatusItem label="Database" status={health?.checks.database ?? false} icon={CircleStackIcon} />
-            <StatusItem label="Facebook Session" status={health?.checks.facebookSession ?? false} icon={BoltIcon} />
-            <StatusItem label="OpenAI API" status={health?.checks.openaiKey ?? false} icon={SparklesIcon} />
-            <StatusItem label="Apify Token" status={health?.checks.apifyToken ?? false} icon={CpuChipIcon} />
+            <StatusItem label={t('ui.database')} status={health?.checks.database ?? false} icon={CircleStackIcon} />
+            <StatusItem label={t('ui.facebookSession')} status={health?.checks.facebookSession ?? false} icon={BoltIcon} />
+            <StatusItem label={t('ui.openaiApi')} status={health?.checks.openaiKey ?? false} icon={SparklesIcon} />
+            <StatusItem label={t('ui.apifyToken')} status={health?.checks.apifyToken ?? false} icon={CpuChipIcon} />
           </div>
 
           {health?.uptime && (
             <div className="flex justify-between text-sm mt-4 pt-4 border-t border-slate-100">
-              <span className="text-slate-500">Uptime</span>
+              <span className="text-slate-500">{t('ui.uptime')}</span>
               <span className="font-medium text-slate-900">{formatUptime(health.uptime)}</span>
             </div>
           )}
@@ -351,33 +353,33 @@ const Dashboard: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
               <ChartBarIcon className="w-5 h-5 text-slate-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Recent Activity</h2>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.recentActivity')}</h2>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
               <div className="flex items-center gap-2.5">
                 <BoltIcon className="w-4 h-4 text-slate-500" />
-                <span className="text-sm text-slate-600">Last scrape</span>
+                <span className="text-sm text-slate-600">{t('ui.lastScrape')}</span>
               </div>
               <span className="text-sm font-medium text-slate-900">
-                {stats?.lastScrapeAt ? formatRelativeTime(stats.lastScrapeAt) : 'Never'}
+                {stats?.lastScrapeAt ? formatRelativeTime(stats.lastScrapeAt) : t('ui.never')}
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
               <div className="flex items-center gap-2.5">
                 <ChatBubbleLeftRightIcon className="w-4 h-4 text-slate-500" />
-                <span className="text-sm text-slate-600">Last message</span>
+                <span className="text-sm text-slate-600">{t('ui.lastMessage')}</span>
               </div>
               <span className="text-sm font-medium text-slate-900">
-                {stats?.lastMessageSentAt ? formatRelativeTime(stats.lastMessageSentAt) : 'Never'}
+                {stats?.lastMessageSentAt ? formatRelativeTime(stats.lastMessageSentAt) : t('ui.never')}
               </span>
             </div>
 
             {lastRefresh && (
               <p className="text-xs text-slate-400 text-center pt-2">
-                Updated {formatRelativeTime(lastRefresh)}
+                {t('ui.updated')} {formatRelativeTime(lastRefresh)}
               </p>
             )}
           </div>
@@ -385,11 +387,11 @@ const Dashboard: React.FC = () => {
           {/* Quick Links */}
           <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-100">
             <a href="/admin" className="btn-primary text-center justify-center text-sm py-2">
-              Admin
+              {t('ui.adminLink')}
               <ArrowUpRightIcon className="w-3.5 h-3.5" />
             </a>
             <a href="/logs" className="btn-secondary text-center justify-center text-sm py-2">
-              Logs
+              {t('ui.logsLink')}
               <ArrowUpRightIcon className="w-3.5 h-3.5" />
             </a>
           </div>
@@ -403,8 +405,8 @@ const Dashboard: React.FC = () => {
             <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center">
               <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
             </div>
-            <h2 className="text-base font-semibold text-slate-900">Recent Errors</h2>
-            <span className="text-xs text-slate-400 ml-auto">{recentErrors.length} errors</span>
+            <h2 className="text-base font-semibold text-slate-900">{t('ui.recentErrors')}</h2>
+            <span className="text-xs text-slate-400 ml-auto">{recentErrors.length} {t('ui.errors').toLowerCase()}</span>
           </div>
 
           <div className="space-y-2">
@@ -419,7 +421,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           <a href="/logs?type=error" className="inline-flex items-center gap-1 mt-4 text-sm text-red-600 hover:text-red-700 font-medium">
-            View all errors
+            {t('ui.viewAllErrors')}
             <ArrowUpRightIcon className="w-3.5 h-3.5" />
           </a>
         </div>

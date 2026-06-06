@@ -10,8 +10,9 @@ import {
   TranslationKeys,
 } from '../i18n';
 
-// Get nested value from object using dot notation
-const getNestedValue = (obj: unknown, path: string): string => {
+// Get nested value from object using dot notation. Returns `null` when the key
+// is missing so callers can fall back to another language.
+const getNestedValue = (obj: unknown, path: string): string | null => {
   const keys = path.split('.');
   let current: unknown = obj;
 
@@ -19,11 +20,11 @@ const getNestedValue = (obj: unknown, path: string): string => {
     if (current && typeof current === 'object' && key in current) {
       current = (current as Record<string, unknown>)[key];
     } else {
-      return path;
+      return null;
     }
   }
 
-  return typeof current === 'string' ? current : path;
+  return typeof current === 'string' ? current : null;
 };
 
 interface LanguageContextValue {
@@ -65,7 +66,14 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
 
   const t = useCallback(
     (key: string): string => {
-      return getNestedValue(translations[language], key);
+      // Try the active language, then fall back to English so a not-yet-
+      // translated key renders real (English) text instead of a raw "a.b.c"
+      // path. Only if it's missing everywhere do we surface the key itself.
+      return (
+        getNestedValue(translations[language], key) ??
+        getNestedValue(translations.en, key) ??
+        key
+      );
     },
     [language]
   );

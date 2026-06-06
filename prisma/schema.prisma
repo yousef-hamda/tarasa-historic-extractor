@@ -61,6 +61,11 @@ model MessageSent {
   sentAt     DateTime      @default(now())
   error      String?
   retryCount Int           @default(0)
+  // Snapshot of the outreach text that was actually sent. The MessageGenerated
+  // row is deleted once dispatched, so without this column the Sent History UI
+  // had no way to show "what message did we send to this person?". Nullable —
+  // rows created before this column exists stay null and render as "—".
+  messageText String?      @db.Text
   post       PostRaw       @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@unique([postId, authorLink])

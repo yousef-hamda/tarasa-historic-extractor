@@ -12,35 +12,14 @@ import { apiKeyAuth } from '../middleware/apiAuth';
 import { logSystemEvent } from '../utils/systemLog';
 import OpenAI from 'openai';
 import { getModel, sanitizeForPrompt, normalizeMessageContent } from '../utils/openaiHelpers';
+import {
+  DEFAULT_CLASSIFIER_PROMPT,
+  DEFAULT_GENERATOR_PROMPT,
+  getActivePrompt as getActivePromptFromStore,
+} from '../ai/promptStore';
 
 const router = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Default prompts
-const DEFAULT_CLASSIFIER_PROMPT = `You are an expert community moderator for Tarasa, a historical storytelling preservation project.
-Classify whether the supplied Facebook post clearly references historical events, personal memories from the past, or stories about community history.
-Look for posts about: old photographs, family memories, local history, historical buildings/places, past events, cultural traditions, or nostalgic recollections.
-Respond with JSON matching the schema.`;
-
-const DEFAULT_GENERATOR_PROMPT = `You write short, friendly messages to people on Facebook who shared a historical story or memory.
-
-CRITICAL: You MUST write the message in the SAME LANGUAGE as the original post:
-- If the post is in Hebrew (עברית) → write the message in Hebrew
-- If the post is in Arabic (العربية) → write the message in Arabic
-- If the post is in English → write the message in English
-
-Rules:
-1) Address the person by their first name warmly and naturally.
-2) Compliment what they shared specifically (reference their story or memories).
-3) Briefly introduce Tarasa platform:
-   - Hebrew: "פלטפורמת טראסא מוקדשת לשימור ההיסטוריה הקהילתית והזכרונות האישיים לדורות הבאים"
-   - Arabic: "منصة تراسا مخصصة لحفظ التاريخ المجتمعي والذكريات الشخصية للأجيال القادمة"
-   - English: "Tarasa platform is dedicated to preserving community history and personal memories for future generations"
-4) Invite them to share their full story via the provided link, making the link a natural part of the text.
-5) Keep the message human and not robotic, varied in phrasing, 3-5 short sentences.
-6) Don't use repetitive emojis or overly formal phrases.
-
-Return ONLY the final message text in the SAME LANGUAGE as the original post, including the provided link.`;
 
 /**
  * GET /api/prompts
@@ -341,22 +320,11 @@ router.delete('/api/prompts/:id', apiKeyAuth, async (req: Request, res: Response
 });
 
 /**
- * Helper function to get active prompt content
- * Used by classifier.ts and generator.ts
+ * Helper function to get active prompt content. Delegates to the canonical
+ * prompt store (src/ai/promptStore.ts) so the routes layer, the classifier,
+ * and the generator all resolve the active prompt the same way.
  */
-export const getActivePrompt = async (type: 'classifier' | 'generator'): Promise<string> => {
-  const activePrompt = await prisma.promptTemplate.findFirst({
-    where: { type, isActive: true },
-    select: { content: true },
-  });
-
-  if (activePrompt) {
-    return activePrompt.content;
-  }
-
-  // Return default
-  return type === 'classifier' ? DEFAULT_CLASSIFIER_PROMPT : DEFAULT_GENERATOR_PROMPT;
-};
+export const getActivePrompt = getActivePromptFromStore;
 
 export { DEFAULT_CLASSIFIER_PROMPT, DEFAULT_GENERATOR_PROMPT };
 export default router;
