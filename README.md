@@ -2350,7 +2350,7 @@ The system uses centralized constants defined in `src/config/constants.ts`:
 | `SYSTEM_EMAIL_ALERT` | No | Email for alerts (2FA/captcha) | `alerts@example.com` |
 | `SYSTEM_EMAIL_PASSWORD` | No | Email app password | (Gmail app password) |
 | `API_KEY` | Prod | API key for authenticated requests | (random hash) |
-| `SITE_PASSWORD` | No | If set, shows a password gate on the dashboard (validated server-side; never shipped to the client). Leave unset to keep the site open. Public `/submit/<id>` pages are never gated. | `2026tarsa` |
+| `SITE_PASSWORD` | No | If set, shows a password gate on the dashboard (validated server-side; never shipped to the client). Leave unset to keep the site open. Public `/submit/<id>` pages are never gated. | `2026tarasa` |
 | `RESEND_API_KEY` | No | Resend API key — the email transport on Railway (SMTP is blocked outbound). Required for the "Email approved posts" export. | `re_xxx...` |
 | `GLOBAL_RATE_LIMIT_PER_MINUTE` | No | Per-IP cap on ALL requests (set high enough for the 15s auto-refresh hooks) | `600` (default) |
 | `MAX_BROWSER_INSTANCES` | No | Maximum concurrent browser instances | `2` (default) |
