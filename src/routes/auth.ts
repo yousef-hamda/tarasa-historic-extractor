@@ -35,11 +35,17 @@ router.get('/api/auth/required', (_req: Request, res: Response) => {
 /**
  * POST /api/auth/login  { password }
  * Validates the site password. Rate-limited to blunt brute-force. Public.
+ *
+ * On a CORRECT password we also hand back `API_KEY` so the dashboard can
+ * authenticate the backend itself — the operator never has to know or paste an
+ * API key (it's tied to the site password instead). The key is ONLY returned
+ * after a successful password check; when the gate is disabled we never leak it.
  */
 router.post('/api/auth/login', triggerRateLimiter, (req: Request, res: Response) => {
   const expected = process.env.SITE_PASSWORD;
 
-  // Gate disabled — accept anything so the site is usable without a password.
+  // Gate disabled — site is open, but DON'T leak the API key to unauthenticated
+  // callers. (In an open/dev deployment the operator uses NEXT_PUBLIC_API_KEY.)
   if (!expected) {
     return res.json({ success: true, required: false });
   }
@@ -55,7 +61,7 @@ router.post('/api/auth/login', triggerRateLimiter, (req: Request, res: Response)
     return res.status(401).json({ success: false, message: 'Incorrect password.' });
   }
 
-  res.json({ success: true });
+  res.json({ success: true, apiKey: process.env.API_KEY ?? null });
 });
 
 export default router;

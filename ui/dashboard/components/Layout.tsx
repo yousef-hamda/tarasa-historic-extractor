@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { apiFetch, hasApiKey, API_KEY_CHANGED_EVENT } from '../utils/api';
+import { apiFetch } from '../utils/api';
 import { useLanguage } from '../contexts/LanguageContext';
 import {
   HomeIcon,
@@ -17,7 +17,6 @@ import {
   XMarkIcon,
   SparklesIcon,
   MagnifyingGlassIcon,
-  KeyIcon,
 } from '@heroicons/react/24/outline';
 
 interface HealthChecks {
@@ -51,7 +50,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { t, direction } = useLanguage();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [apiKeyPresent, setApiKeyPresent] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -70,19 +68,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const interval = setInterval(fetchHealth, 30000);
     return () => clearInterval(interval);
   }, [fetchHealth]);
-
-  // API-key presence tracking. Updates immediately when set/cleared from
-  // Settings (custom event), and across tabs via the native storage event.
-  useEffect(() => {
-    const sync = () => setApiKeyPresent(hasApiKey());
-    sync();
-    window.addEventListener(API_KEY_CHANGED_EVENT, sync);
-    window.addEventListener('storage', sync);
-    return () => {
-      window.removeEventListener(API_KEY_CHANGED_EVENT, sync);
-      window.removeEventListener('storage', sync);
-    };
-  }, []);
 
   // Compose a truthful status by looking at the granular `checks` object.
   // The bare `status` field from /api/health can claim "ok" even when one
@@ -198,21 +183,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 narrow viewports. Language switcher moved to Settings page
                 so the navbar has room for all nav items without overlap. */}
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              {/* API Key Status. When already connected we DON'T show a
-                  pill — the user asked for the green "Connected" pill to be
-                  removed. We still surface a clickable warning pill when the
-                  key is missing so the user has a path to fix it. */}
-              {!apiKeyPresent && (
-                <Link
-                  href="/settings"
-                  className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
-                  title="No API key set — click to configure"
-                >
-                  <KeyIcon className="w-3.5 h-3.5" />
-                  <span className="hidden xl:inline">API Key needed</span>
-                </Link>
-              )}
-
               {/* System Status — responsive pill.
                   - `<sm`: hidden (mobile keeps nav clean).
                   - `sm..lg`: just the colored dot in a small pill — no

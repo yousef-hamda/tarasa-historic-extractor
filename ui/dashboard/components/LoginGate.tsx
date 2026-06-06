@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { apiFetch } from '../utils/api';
+import { apiFetch, setApiKey } from '../utils/api';
 import { useLanguage } from '../contexts/LanguageContext';
 import { LockClosedIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
@@ -74,6 +74,10 @@ const LoginGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           timeout: 10000,
         });
         if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          // The backend hands us the API key after a correct password so the
+          // dashboard authenticates itself — the operator never manages a key.
+          if (data?.apiKey) setApiKey(data.apiKey);
           try {
             localStorage.setItem(UNLOCK_KEY, '1');
           } catch {

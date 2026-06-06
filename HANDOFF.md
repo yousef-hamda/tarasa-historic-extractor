@@ -106,7 +106,18 @@ site-wide password gate.
 | **Site password gate** | New `LoginGate` + `POST /api/auth/login` / `GET /api/auth/required` (`src/routes/auth.ts`). Password validated server-side against `SITE_PASSWORD` (never in the bundle); on success a localStorage flag unlocks the app. **Self-disables when `SITE_PASSWORD` is unset** (backwards compatible). The public `/submit/[postId]` pages bypass the gate so message recipients are never blocked. |
 
 **New env var to set on Railway:** `SITE_PASSWORD` (any value enables the gate;
-leave unset to keep the site open). Current intended value handed to the user.
+leave unset to keep the site open). Set to `2026tarasa`.
+
+**Follow-up (same session): API key tied to the site password.** The operator
+asked to remove the "Dashboard API Key" card entirely (no backend controls for
+the user). Since ~23 dashboard actions require `API_KEY`, the fix was to make
+the password login hand the key to the dashboard automatically: `POST
+/api/auth/login` now returns `apiKey: process.env.API_KEY` **only after a
+correct password** (never leaked when the gate is disabled), and `LoginGate`
+stores it via `setApiKey()`. The settings API-key card (input + save/clear +
+Reset OpenAI Breaker) and the navbar "API Key needed" pill were removed. Net
+effect: the operator only ever enters the site password; the dashboard
+authenticates itself, and no API-key UI exists.
 
 ---
 
