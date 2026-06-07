@@ -9,6 +9,7 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
+import { handleControlCallback, tryHandleControlMessage } from './telegramControl';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -353,15 +354,16 @@ export const processCommand = async (command: string, chatId?: string): Promise<
     conversationHistory.delete(key);
     return `Hey! 👋 I'm your Tarasa system assistant.
 
-I can tell you anything about how the system is running - just ask me naturally, like you'd chat with a colleague.
+Two ways to use me:
 
-Try asking me things like:
+🎛 <b>Control panel</b> — tap /menu to open the catalog and run/manage the system (scrape, classify, messages, groups, session, settings, and more).
+
+💬 <b>Just ask</b> — chat with me naturally about how things are running:
 • "How are we doing today?"
 • "Any new historic stories?"
-• "Is everything running okay?"
 • "כמה פוסטים נאספו היום?"
 
-Or use commands like /status, /today, /groups, /search [text]`;
+Open the panel any time with /menu.`;
   }
 
   // Gather live data
@@ -518,6 +520,36 @@ const persistAuthenticatedChat = async (chatId: string): Promise<void> => {
 };
 
 /**
+ * Handle an inline-keyboard button tap from the control catalog. Enforces the
+ * same authentication gate as text messages before delegating to the control
+ * module. Admin-only actions are additionally gated inside the control module
+ * via the `isAdmin` flag (chat id === TELEGRAM_CHAT_ID).
+ */
+const handleCallbackUpdate = async (cbq: any): Promise<void> => {
+  const chatId = cbq.message?.chat?.id ?? cbq.from?.id;
+  const chatIdStr = String(chatId);
+
+  if (!authenticatedChats.has(chatIdStr)) {
+    await axios
+      .post(`${TELEGRAM_API_URL}/answerCallbackQuery`, {
+        callback_query_id: cbq.id,
+        text: '🔒 Send the password first',
+        show_alert: true,
+      })
+      .catch(() => undefined);
+    const lockedMsg = BOT_PASSWORD
+      ? '🔒 Please enter the bot password before using the control panel.'
+      : '🔒 This bot is currently closed (no password configured on the server).';
+    await axios
+      .post(`${TELEGRAM_API_URL}/sendMessage`, { chat_id: chatId, text: lockedMsg })
+      .catch(() => undefined);
+    return;
+  }
+
+  await handleControlCallback(cbq, chatIdStr === String(TELEGRAM_CHAT_ID));
+};
+
+/**
  * Start polling for incoming messages
  */
 export const startTelegramPolling = (): void => {
@@ -533,6 +565,18 @@ export const startTelegramPolling = (): void => {
 
   logger.info('[Telegram] Starting bot polling...');
 
+  // Advertise the control commands in Telegram's command menu (the "/" button)
+  // so the panel is discoverable. Fire-and-forget — failure is non-fatal.
+  axios
+    .post(`${TELEGRAM_API_URL}/setMyCommands`, {
+      commands: [
+        { command: 'menu', description: 'Open the control panel' },
+        { command: 'start', description: 'Welcome & how to use the bot' },
+        { command: 'cancel', description: 'Cancel the current input' },
+      ],
+    })
+    .catch(() => undefined);
+
   // Poll every 2 seconds
   pollingInterval = setInterval(async () => {
     try {
@@ -540,7 +584,7 @@ export const startTelegramPolling = (): void => {
         params: {
           offset: lastUpdateId + 1,
           timeout: 1, // short poll timeout
-          allowed_updates: JSON.stringify(['message']),
+          allowed_updates: JSON.stringify(['message', 'callback_query']),
         },
         timeout: 5000,
       });
@@ -549,6 +593,12 @@ export const startTelegramPolling = (): void => {
 
       for (const update of response.data.result) {
         lastUpdateId = update.update_id;
+
+        // ---- Inline-keyboard button taps (control catalog) ----
+        if (update.callback_query) {
+          await handleCallbackUpdate(update.callback_query);
+          continue;
+        }
 
         if (!update.message?.text) continue;
 
@@ -593,6 +643,17 @@ export const startTelegramPolling = (): void => {
             });
             continue;
           }
+
+          // Give the control catalog first refusal: pending text input (e.g.
+          // a group id the user was asked for) or a control command like
+          // /menu. If it consumes the message we skip the AI chat fallback.
+          const consumed = await tryHandleControlMessage(
+            chatIdStr,
+            text,
+            chatIdStr === String(TELEGRAM_CHAT_ID),
+            update.message.message_id,
+          );
+          if (consumed) continue;
 
           const reply = await processCommand(text, chatIdStr);
           await axios.post(`${TELEGRAM_API_URL}/sendMessage`, {

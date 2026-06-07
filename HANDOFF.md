@@ -4,7 +4,46 @@ A snapshot of the project's deployment state, recent work, and known caveats,
 so a fresh chat (or a new developer) can pick up exactly where the current
 session ended.
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
+
+---
+
+## 0. Latest work — Telegram Control Catalog (2026-06-07)
+
+The Telegram bot is no longer read-only. On top of the existing AI chat +
+alerts, it now has a **full inline-keyboard control panel** the operator opens
+with **`/menu`** (also `/panel`, `/control`). Structure: a main catalog (one
+button per subject) → a detail menu per subject → actions.
+
+- Code: `src/utils/telegramControl.ts` (the catalog engine — menus, callback
+  routing, action handlers, pending-text-input state) and
+  `src/utils/telegramActions.ts` (thin localhost-HTTP bridge to the existing
+  routes for the complex/destructive ops: email approved posts, cleanup
+  phantoms, reset-all, upload cookies, diagnostics, healing, backup list/cleanup
+  — reuses the in-process `API_KEY`, so logic never drifts from the dashboard).
+- Wiring: `src/utils/telegram.ts` now requests `callback_query` updates, hands
+  taps to `handleControlCallback`, gives text messages first-refusal to
+  `tryHandleControlMessage` (pending input + `/menu`) before the AI fallback,
+  and registers the `/` command list via `setMyCommands`.
+- **Subjects:** Status & Health · Posts · Messages · Groups · Session ·
+  Run Now (manual triggers the dashboard doesn't even have) · Settings ·
+  Prompts · Search · Logs · System/Debug · Backup · Danger Zone.
+- **Security model:** all reads are available to any authenticated chat; ALL
+  mutating / trigger / destructive actions are **admin-only** (chat id ==
+  `TELEGRAM_CHAT_ID`) and the dangerous ones require an explicit Confirm tap
+  (data-reset needs the typed phrase `DELETE ALL DATA`). No FB password / API
+  key is ever typed into chat — renew uses server env creds; a 2FA prompt asks
+  only for the one-time 6-digit code.
+- Actions reuse the SAME internals as the API routes (`scrapeAllGroups`,
+  `classifyPosts`, `generateMessages`+`dispatchMessages`, settings helpers,
+  `withLock`, `stealthRefreshFacebookSession`, …). `dispatchMessages` still
+  self-checks the `messaging_enabled` flag, so "Run messages now" won't send
+  while paused. Long jobs run fire-and-forget under the cron lock and report
+  back when done.
+- Tests: `tests/telegramControl.test.ts` (codec + catalog integrity + safety
+  gating) and `tests/telegramControl.integration.test.ts` (callback routing
+  with a mocked Telegram API). Suite is now **918 passing**.
+- New/clarified env: `TELEGRAM_BOT_PASSWORD` (now documented in `.env.example`).
 
 ---
 
