@@ -23,6 +23,98 @@ import { markSessionBlocked } from '../session/sessionHealth';
 // Helper to replace deprecated page.waitForTimeout
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ---------------------------------------------------------------------------
+// Resilient Chromium launch
+//
+// On Railway (memory-constrained container) chrome-headless-shell intermittently
+// crashes during startup with:
+//   browserType.launch: Target page, context or browser has been closed
+//   ... <process did exit: exitCode=null, signal=SIGTRAP>
+// SIGTRAP at startup is chrome's __builtin_trap() crash — almost always
+// transient memory pressure rather than a deterministic config error (other
+// groups in the same cron succeed). Retrying after a short backoff gives the OS
+// time to reclaim memory from the previous (now-closed) browser, so the next
+// attempt usually launches cleanly.
+// ---------------------------------------------------------------------------
+
+// Stability + memory-footprint flags shared by the headless scraping launches.
+// Fewer renderer processes (site-per-process off) and a capped V8 heap make the
+// container far less likely to OOM a chrome startup.
+const SCRAPER_LAUNCH_ARGS = [
+  '--disable-blink-features=AutomationControlled',
+  '--disable-gpu',
+  '--disable-dev-shm-usage',
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-software-rasterizer',
+  // Memory-pressure reducers (the SIGTRAP fix):
+  '--disable-extensions',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+  '--disable-features=site-per-process,Translate,BackForwardCache',
+  '--js-flags=--max-old-space-size=512',
+  '--mute-audio',
+];
+
+const LAUNCH_MAX_ATTEMPTS = 3;
+const LAUNCH_TIMEOUT_MS = 60_000;
+
+const isTransientLaunchError = (message: string): boolean => {
+  const m = message.toLowerCase();
+  return (
+    m.includes('target page, context or browser has been closed') ||
+    m.includes('target closed') ||
+    m.includes('sigtrap') ||
+    m.includes('signal=sig') ||
+    m.includes('browser has been closed') ||
+    m.includes('browsertype.launch') ||
+    m.includes('failed to launch') ||
+    m.includes('crashed')
+  );
+};
+
+/**
+ * Launch headless Chromium with a bounded timeout and backoff retry on the
+ * transient startup crashes (SIGTRAP / "Target closed") that Railway exhibits
+ * under memory pressure. Non-transient errors are thrown immediately.
+ */
+const launchChromiumWithRetry = async (
+  overrides: Parameters<typeof chromium.launch>[0] = {}
+): Promise<Browser> => {
+  const headless = process.env.HEADLESS !== 'false';
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= LAUNCH_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await chromium.launch({
+        headless,
+        args: SCRAPER_LAUNCH_ARGS,
+        timeout: LAUNCH_TIMEOUT_MS,
+        ...overrides,
+      });
+    } catch (error) {
+      lastError = error as Error;
+      const message = lastError.message || String(error);
+      if (attempt < LAUNCH_MAX_ATTEMPTS && isTransientLaunchError(message)) {
+        // Exponential-ish backoff: 2s, 4s. Gives the kernel time to reclaim
+        // memory from the crashed/closed chrome before the next attempt.
+        const backoffMs = 2000 * attempt;
+        logger.warn(
+          `[Session] Chromium launch attempt ${attempt}/${LAUNCH_MAX_ATTEMPTS} crashed (${message.split('\n')[0]}). Retrying in ${backoffMs}ms...`
+        );
+        await sleep(backoffMs);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  // Unreachable, but satisfies the type checker.
+  throw lastError ?? new Error('Chromium launch failed for an unknown reason');
+};
+
 const cookiesPath = path.resolve(__dirname, '../config/cookies.json');
 
 // Re-export session manager functions for backward compatibility
@@ -318,17 +410,9 @@ export const createFacebookContext = async (options?: { publicGroupMode?: boolea
   // Default to headless unless explicitly set to false
   const headless = process.env.HEADLESS !== 'false';
   logger.info(`Fallback browser launching (headless: ${headless})`);
-  const browser = await chromium.launch({
-    headless,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-gpu',
-      '--disable-dev-shm-usage',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-software-rasterizer',
-    ],
-  });
+  // launchChromiumWithRetry adds a launch timeout + backoff retry so the
+  // transient SIGTRAP startup crash on Railway no longer fails the whole scrape.
+  const browser = await launchChromiumWithRetry();
   const context = await browser.newContext();
 
   // Cookie loading: Skip for public groups to ensure URLs render correctly
