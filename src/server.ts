@@ -48,6 +48,7 @@ import {
 
 // Circuit breaker reset on startup
 import { resetAllCircuitBreakers, getCircuitBreakerStatus } from './utils/circuitBreaker';
+import { startHealthWatchdog, stopHealthWatchdog } from './utils/healthWatchdog';
 process.stderr.write('[BOOT] all imports complete, about to call validateEnv()\n');
 
 // Validate environment variables before starting
@@ -161,6 +162,11 @@ const port = process.env.PORT || 4000;
     resetAllCircuitBreakers();
     const cbStatus = getCircuitBreakerStatus();
     logger.info(`Circuit breakers reset: Apify=${cbStatus.apify.state}, OpenAI=${cbStatus.openai.state}`);
+
+    // Self-heal watchdog: restart the container if the DB becomes unreachable
+    // for several consecutive checks (the symptom of OS resource exhaustion),
+    // instead of sitting broken until a human redeploys.
+    startHealthWatchdog();
   });
 })();
 
@@ -179,6 +185,9 @@ const gracefulShutdown = async (signal: string) => {
 
   isShuttingDown = true;
   logger.info(`${signal} received. Starting graceful shutdown...`);
+
+  // Stop the self-heal watchdog so it can't trigger a restart mid-shutdown.
+  stopHealthWatchdog();
 
   // Stop Telegram bot polling
   try {
