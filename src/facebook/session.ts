@@ -221,17 +221,66 @@ export const loadCookies = async (): Promise<Cookie[]> => {
   return [];
 };
 
+/**
+ * True if a cookie array carries a usable logged-in Facebook session: a
+ * non-empty `c_user` (the account id) AND a non-empty, non-expired `xs` (the
+ * session secret). This is the same notion `getCookieHealth()` uses to gate
+ * scraping, factored out so the cookie-save guard and tests share one
+ * definition of "is this actually a logged-in session".
+ */
+export const cookiesCarryValidSession = (cookies: Cookie[]): boolean => {
+  if (!Array.isArray(cookies) || cookies.length === 0) return false;
+  const now = Date.now() / 1000;
+  const present = (name: string) =>
+    cookies.some(
+      (c) =>
+        c.name === name &&
+        c.domain.includes('facebook.com') &&
+        !!c.value &&
+        (!c.expires || c.expires > now)
+    );
+  return present('c_user') && present('xs');
+};
+
 export const saveCookies = async (context: BrowserContext): Promise<void> => {
   try {
     const cookies = await context.cookies();
-    if (cookies && cookies.length > 0) {
-      await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
-      logger.info(`Cookies saved (${cookies.length} cookies)`);
-      // Mirror to DB so the session survives Railway redeploys
-      await persistCookiesToDb(cookies as Cookie[]);
-    } else {
+    if (!cookies || cookies.length === 0) {
       logger.warn('No cookies to save');
+      return;
     }
+
+    // GUARD against self-inflicted session loss.
+    //
+    // `saveCookies` runs after EVERY scrape and message send. Facebook — hostile
+    // to Railway's datacenter IP — intermittently serves a logged-out/checkpoint
+    // response mid-scrape, which strips c_user/xs from the live context. Public-
+    // group scrapes also run with NO auth cookies by design. In both cases the
+    // context still holds some cookies (datr/sb/fr…), so an unconditional save
+    // used to overwrite the canonical store AND its DB mirror with a logged-out
+    // set — killing scraping until a manual cookie re-upload (the "session dies
+    // after ~1 day" bug). If the live context has no valid session but we DO
+    // have a good one stored, keep the stored cookies and skip the write.
+    if (!cookiesCarryValidSession(cookies as Cookie[])) {
+      const existing = await loadCookies().catch(() => [] as Cookie[]);
+      if (cookiesCarryValidSession(existing)) {
+        logger.warn(
+          '[Session] Live browser context has no valid FB session (c_user/xs missing or expired) — NOT overwriting the stored good cookies. Facebook likely served a logged-out response, or this was a public-mode scrape.'
+        );
+        await logSystemEvent(
+          'auth',
+          'Skipped cookie save: context carried no valid session (preserving stored cookies)'
+        ).catch(() => {});
+        return;
+      }
+      // No good session stored either — saving is harmless (and may legitimately
+      // capture public/anon cookies), so fall through to persist.
+    }
+
+    await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2));
+    logger.info(`Cookies saved (${cookies.length} cookies)`);
+    // Mirror to DB so the session survives Railway redeploys
+    await persistCookiesToDb(cookies as Cookie[]);
   } catch (error) {
     // Don't throw - cookie saving is not critical
     logger.warn(`Failed to save cookies: ${(error as Error).message}`);
@@ -258,12 +307,9 @@ export const getCookieHealth = async () => {
     (c) => c.name === 'c_user' && c.domain.includes('facebook.com') && (!c.expires || c.expires > now)
   );
 
-  // Also check for xs cookie (session token)
-  const xsCookie = cookies.find(
-    (c) => c.name === 'xs' && c.domain.includes('facebook.com') && (!c.expires || c.expires > now)
-  );
-
-  const hasValidSession = Boolean(sessionCookie && xsCookie);
+  // Use the shared definition of "logged-in session" (c_user + non-expired xs)
+  // so the scraping gate and the cookie-save guard never disagree.
+  const hasValidSession = cookiesCarryValidSession(cookies);
 
   return {
     ok: hasValidSession,

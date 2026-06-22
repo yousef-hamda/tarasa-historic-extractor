@@ -369,6 +369,23 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
     }
 
     if (validation.needsLogin) {
+      // The homepage validation says "log in", but that scrape is unreliable
+      // from a datacenter IP (Facebook frequently serves a logged-out-looking
+      // homepage even with perfectly valid cookies). Before raising the
+      // "manual login required" alarm — which emails the operator and paints
+      // the dashboard red every 30 min — cross-check the AUTHORITATIVE cookie
+      // probe the scraper itself uses. If a real session is present, trust it.
+      const { getCookieHealth } = await import('../facebook/session');
+      const cookieHealth = await getCookieHealth().catch(() => null);
+      if (cookieHealth?.hasSession && isValidFbUserId(cookieHealth.userId)) {
+        logger.warn(
+          `Session validation said needsLogin, but getCookieHealth reports a valid session (user ${cookieHealth.userId}). Trusting cookies (homepage scrape is unreliable from datacenter IPs).`
+        );
+        const health = await markSessionValid(cookieHealth.userId);
+        await updateSessionStateInDb('valid', null, cookieHealth.userId);
+        return health;
+      }
+
       logger.info('Session invalid - manual login required');
       await logSystemEvent('auth', 'Session invalid - manual login required. Run: npm run fb:login');
 
@@ -425,6 +442,22 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
   } catch (error) {
     const message = (error as Error).message;
     logger.error(`Session check failed: ${message}`);
+
+    // A validation/browser failure (e.g. a transient launch crash or nav
+    // timeout) must NOT downgrade a session whose cookies are still valid —
+    // that was turning infrastructure flakiness into a fake "session expired".
+    // Defer to the authoritative cookie probe before marking expired.
+    const { getCookieHealth } = await import('../facebook/session');
+    const cookieHealth = await getCookieHealth().catch(() => null);
+    if (cookieHealth?.hasSession && isValidFbUserId(cookieHealth.userId)) {
+      logger.warn(
+        `Session check threw (${message}), but getCookieHealth reports a valid session (user ${cookieHealth.userId}). Keeping session valid.`
+      );
+      const health = await markSessionValid(cookieHealth.userId);
+      await updateSessionStateInDb('valid', null, cookieHealth.userId);
+      return health;
+    }
+
     const health = await markSessionExpired(message);
     await updateSessionStateInDb('expired', message);
     return health;
