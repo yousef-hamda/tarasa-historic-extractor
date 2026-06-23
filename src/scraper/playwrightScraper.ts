@@ -467,7 +467,7 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
 
       // Extract group name AND group type (public/private) from page
       try {
-        const groupInfo = await page.evaluate(() => {
+        const groupInfo = await page.evaluate((gid: string) => {
           let groupName: string | null = null;
           let groupType: 'public' | 'private' | 'unknown' = 'unknown';
 
@@ -521,21 +521,52 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
             if (label.includes('Private')) groupType = 'private';
           });
 
-          // Group display image. og:image is the most reliable single image FB
-          // exposes for a group page; fall back to the group header avatar img.
-          let groupPhoto: string | null =
-            document.querySelector('meta[property="og:image"]')?.getAttribute('content') || null;
-          if (!groupPhoto) {
-            const headerImg = document.querySelector('image[*|href], svg image, [role="main"] image');
-            groupPhoto =
-              headerImg?.getAttribute('xlink:href') ||
-              headerImg?.getAttribute('href') ||
-              null;
+          // Group display image — capture the group's OWN avatar (distinct per
+          // group), not the generic og:image (which FB returns identically for
+          // every group page). The avatar is the image inside a link that
+          // points back to this group, sitting in the page header.
+          const srcOf = (img: Element | null): string | null => {
+            if (!img) return null;
+            const s =
+              img.getAttribute('src') ||
+              img.getAttribute('xlink:href') ||
+              img.getAttribute('href') ||
+              '';
+            return /scontent|fbcdn/i.test(s) ? s : null;
+          };
+          let groupPhoto: string | null = null;
+
+          // 1) Image inside an anchor that links to THIS group (the header avatar
+          //    is wrapped in a link to /groups/<id>). Most reliable + per-group.
+          const groupLinks = Array.from(
+            document.querySelectorAll(`a[href*="/groups/${gid}"]`)
+          );
+          for (const a of groupLinks) {
+            const cand = srcOf(a.querySelector('img') || a.querySelector('image'));
+            if (cand) { groupPhoto = cand; break; }
           }
+
+          // 2) Fallback: first avatar-sized scontent image high on the page
+          //    (the group photo sits in the top header band).
+          if (!groupPhoto) {
+            const imgs = Array.from(
+              document.querySelectorAll('[role="main"] img, [role="banner"] img, svg image')
+            );
+            for (const img of imgs) {
+              const cand = srcOf(img);
+              if (!cand) continue;
+              const r = (img as HTMLElement).getBoundingClientRect?.();
+              if (r && r.width >= 36 && r.width <= 220 && r.top >= 0 && r.top < 420) {
+                groupPhoto = cand;
+                break;
+              }
+            }
+          }
+
           if (groupPhoto && !/^https?:\/\//i.test(groupPhoto)) groupPhoto = null;
 
           return { groupName, groupType, groupPhoto };
-        });
+        }, groupId);
 
         if (groupInfo.groupName) {
           logger.info(`[Playwright] Group name: ${groupInfo.groupName}`);
