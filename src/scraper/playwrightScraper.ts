@@ -12,6 +12,7 @@
 import { Browser, BrowserContext } from 'playwright';
 import logger from '../utils/logger';
 import { extractPosts, parseFbPostIdFromUrl, isValidFbPostId } from './extractors';
+import { pickGroupAvatar } from './groupAvatar';
 import { createFacebookContext, saveCookies, getCookieHealth } from '../facebook/session';
 import { NormalizedPost } from './apifyScraper';
 import { browserPool } from '../utils/browserPool';
@@ -467,7 +468,7 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
 
       // Extract group name AND group type (public/private) from page
       try {
-        const groupInfo = await page.evaluate((gid: string) => {
+        const groupInfo = await page.evaluate(() => {
           let groupName: string | null = null;
           let groupType: 'public' | 'private' | 'unknown' = 'unknown';
 
@@ -521,10 +522,11 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
             if (label.includes('Private')) groupType = 'private';
           });
 
-          // Group display image — capture the group's OWN avatar (distinct per
-          // group), not the generic og:image (which FB returns identically for
-          // every group page). The avatar is the image inside a link that
-          // points back to this group, sitting in the page header.
+          // Group display image — collect every <a>-wrapped CDN image so Node
+          // can pick the group's OWN avatar via the tested pickGroupAvatar().
+          // (We must NOT just grab the first image inside an a[href*=/groups/<id>]:
+          // post-author links are /groups/<id>/user/<uid> and would yield a
+          // member's profile picture instead of the group avatar.)
           const srcOf = (img: Element | null): string | null => {
             if (!img) return null;
             const s =
@@ -534,39 +536,41 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
               '';
             return /scontent|fbcdn/i.test(s) ? s : null;
           };
-          let groupPhoto: string | null = null;
-
-          // 1) Image inside an anchor that links to THIS group (the header avatar
-          //    is wrapped in a link to /groups/<id>). Most reliable + per-group.
-          const groupLinks = Array.from(
-            document.querySelectorAll(`a[href*="/groups/${gid}"]`)
+          const avatarCandidates: Array<{
+            href: string;
+            src: string;
+            alt: string | null;
+            ariaLabel: string | null;
+            top: number | null;
+            width: number | null;
+          }> = [];
+          // Anchors that link anywhere under /groups/ (header avatar, name link,
+          // members, post authors). pickGroupAvatar filters out the non-group ones.
+          const groupAnchors = Array.from(
+            document.querySelectorAll('a[href*="/groups/"]')
           );
-          for (const a of groupLinks) {
-            const cand = srcOf(a.querySelector('img') || a.querySelector('image'));
-            if (cand) { groupPhoto = cand; break; }
+          for (const a of groupAnchors) {
+            const img = a.querySelector('img') || a.querySelector('image');
+            const src = srcOf(img);
+            if (!src) continue;
+            const r = (img as HTMLElement).getBoundingClientRect?.();
+            avatarCandidates.push({
+              href: a.getAttribute('href') || '',
+              src,
+              alt: img ? img.getAttribute('alt') : null,
+              ariaLabel: a.getAttribute('aria-label'),
+              top: r ? r.top : null,
+              width: r ? r.width : null,
+            });
           }
 
-          // 2) Fallback: first avatar-sized scontent image high on the page
-          //    (the group photo sits in the top header band).
-          if (!groupPhoto) {
-            const imgs = Array.from(
-              document.querySelectorAll('[role="main"] img, [role="banner"] img, svg image')
-            );
-            for (const img of imgs) {
-              const cand = srcOf(img);
-              if (!cand) continue;
-              const r = (img as HTMLElement).getBoundingClientRect?.();
-              if (r && r.width >= 36 && r.width <= 220 && r.top >= 0 && r.top < 420) {
-                groupPhoto = cand;
-                break;
-              }
-            }
-          }
+          return { groupName, groupType, avatarCandidates };
+        });
 
-          if (groupPhoto && !/^https?:\/\//i.test(groupPhoto)) groupPhoto = null;
-
-          return { groupName, groupType, groupPhoto };
-        }, groupId);
+        const groupPhoto = pickGroupAvatar(groupInfo.avatarCandidates, {
+          groupId,
+          groupName: groupInfo.groupName,
+        });
 
         if (groupInfo.groupName) {
           logger.info(`[Playwright] Group name: ${groupInfo.groupName}`);
@@ -580,7 +584,7 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
           groupType: groupInfo.groupType as 'public' | 'private' | 'unknown',
           // Only overwrite the stored photo when we actually captured one, so a
           // scrape that misses the image doesn't wipe a previously-good avatar.
-          ...(groupInfo.groupPhoto ? { groupPhoto: groupInfo.groupPhoto } : {}),
+          ...(groupPhoto ? { groupPhoto } : {}),
           accessMethod: 'playwright',
           isAccessible: true,
           errorMessage: null // Clear any previous errors
