@@ -15,6 +15,7 @@ import { logSystemEvent } from '../utils/systemLog';
 import { scrapeGroupWithApify, isApifyConfigured, NormalizedPost } from './apifyScraper';
 import { scrapeGroupWithPlaywright } from './playwrightScraper';
 import { getActiveGroupIds } from './groupRegistry';
+import { shouldSkipPost, getSelfIdentity } from './orchestrator';
 
 /**
  * Get group IDs from the GroupInfo registry (DB-backed).
@@ -122,10 +123,31 @@ export const scrapeAndSave = async (
     return { success: true, total: 0, saved: 0, errors: 0, method: 'none' };
   }
 
+  // Filter out posts that should never be stored — most importantly posts
+  // authored by the logged-in scraping account itself (the operator must never
+  // see themselves as an author), plus group-rule / unauthored chrome. The
+  // orchestrator path already does this; this path (manual trigger + post-renew
+  // immediate scrape) must apply the SAME filter so self-authored posts can't
+  // slip in here.
+  const self = await getSelfIdentity();
+  let skipped = 0;
+  const keptPosts = posts.filter((post) => {
+    const decision = shouldSkipPost(post, self);
+    if (decision.skip) {
+      skipped++;
+      logger.info(`[Scrape] Skipping post in group ${groupId}: ${decision.reason}`);
+      return false;
+    }
+    return true;
+  });
+  if (skipped > 0) {
+    logger.info(`[Scrape] Filtered out ${skipped} post(s) (self-author / rule-text / unauthored) for group ${groupId}`);
+  }
+
   let saved = 0;
   let errors = 0;
 
-  for (const post of posts) {
+  for (const post of keptPosts) {
     const success = await upsertPost(post);
     if (success) {
       saved++;
@@ -134,7 +156,7 @@ export const scrapeAndSave = async (
     }
   }
 
-  const message = `Scrape complete for group ${groupId} via ${method}: ${saved}/${posts.length} posts saved, ${errors} errors`;
+  const message = `Scrape complete for group ${groupId} via ${method}: ${saved}/${keptPosts.length} posts saved, ${errors} errors${skipped ? ` (${skipped} filtered)` : ''}`;
   logger.info(message);
   await logSystemEvent('scrape', message);
 

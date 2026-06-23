@@ -100,7 +100,7 @@ const CHROME_NAME_SUFFIX = /[''']s\s+(profile|timeline|page)\s*$/i;
  * still fires even when one signal is degraded (e.g. cookies wiped on
  * redeploy but SessionState.userName persists in Postgres).
  */
-const getSelfIdentity = async (): Promise<{ userId: string | null; userName: string | null }> => {
+export const getSelfIdentity = async (): Promise<{ userId: string | null; userName: string | null }> => {
   let userId: string | null = null;
   let userName: string | null = null;
   try {
@@ -143,7 +143,7 @@ interface SkipDecision {
  *      to the logged-in user. This is the exact signature of the phantom
  *      posts in prod — three of four saved rows match this.
  */
-const shouldSkipPost = (
+export const shouldSkipPost = (
   post: NormalizedPost,
   self: { userId: string | null; userName: string | null }
 ): SkipDecision => {

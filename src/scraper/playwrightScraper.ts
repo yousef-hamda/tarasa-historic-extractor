@@ -521,7 +521,20 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
             if (label.includes('Private')) groupType = 'private';
           });
 
-          return { groupName, groupType };
+          // Group display image. og:image is the most reliable single image FB
+          // exposes for a group page; fall back to the group header avatar img.
+          let groupPhoto: string | null =
+            document.querySelector('meta[property="og:image"]')?.getAttribute('content') || null;
+          if (!groupPhoto) {
+            const headerImg = document.querySelector('image[*|href], svg image, [role="main"] image');
+            groupPhoto =
+              headerImg?.getAttribute('xlink:href') ||
+              headerImg?.getAttribute('href') ||
+              null;
+          }
+          if (groupPhoto && !/^https?:\/\//i.test(groupPhoto)) groupPhoto = null;
+
+          return { groupName, groupType, groupPhoto };
         });
 
         if (groupInfo.groupName) {
@@ -534,6 +547,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         await updateGroupCache(groupId, {
           groupName: groupInfo.groupName,
           groupType: groupInfo.groupType as 'public' | 'private' | 'unknown',
+          // Only overwrite the stored photo when we actually captured one, so a
+          // scrape that misses the image doesn't wipe a previously-good avatar.
+          ...(groupInfo.groupPhoto ? { groupPhoto: groupInfo.groupPhoto } : {}),
           accessMethod: 'playwright',
           isAccessible: true,
           errorMessage: null // Clear any previous errors

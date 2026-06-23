@@ -109,6 +109,11 @@ model GroupInfo {
   groupId           String       @unique
   groupType         GroupType    @default(unknown)
   groupName         String?
+  // The group's display image (Facebook og:image), captured during scraping so
+  // the Groups page can show an avatar like the Posts page shows author photos.
+  // Nullable — populated on the first successful scrape; FB CDN URLs eventually
+  // expire, at which point the UI falls back to the placeholder icon.
+  groupPhoto        String?
   memberCount       Int?
   lastChecked       DateTime     @default(now())
   lastScraped       DateTime?

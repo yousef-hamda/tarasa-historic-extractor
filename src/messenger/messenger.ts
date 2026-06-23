@@ -1,3 +1,4 @@
+import { Page } from 'playwright';
 import prisma from '../database/prisma';
 import logger from '../utils/logger';
 import {
@@ -12,6 +13,7 @@ import { createFacebookContext, saveCookies } from '../facebook/session';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS, QUOTA } from '../config/constants';
 import { getMessagingEnabledAsync } from '../utils/settings';
+import { withLock, isLocked } from '../utils/cronLock';
 
 // Maximum retry attempts before marking a message as permanently failed
 const MAX_RETRY_ATTEMPTS = 3;
@@ -159,6 +161,158 @@ const findSendButtonNearTextarea = async (
   }
 };
 
+/**
+ * Deliver one message to an author's chat on an already-open page. Navigates to
+ * the author profile, opens the Messenger composer, types the text, sends (Enter
+ * with a scoped Send-button fallback), and verifies. Retries up to 3×. Throws on
+ * failure. Shared by the cron dispatch loop and the manual single-send endpoint
+ * so both go through the exact same, battle-tested send sequence.
+ */
+const deliverMessageOnPage = async (
+  page: Page,
+  authorLink: string,
+  messageText: string,
+  postId: number,
+): Promise<void> => {
+  await withRetries(
+    async (attempt) => {
+      await page.goto(authorLink, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
+      await humanDelay();
+
+      // Open message composer
+      await clickFirstMatchingSelector(page, selectors.messengerButtons);
+      const { handle: textAreaHandle } = await waitForFirstMatchingSelector(
+        page,
+        selectors.messengerTextarea,
+        { timeout: TIMEOUTS.SHORT_WAIT }
+      );
+
+      if (!textAreaHandle) {
+        throw new Error('Messenger text area not found');
+      }
+
+      logger.debug(
+        `[Messenger] Sending message for post ${postId} to ${authorLink} (first 200 chars): ${messageText.slice(0, 200)}`
+      );
+
+      await fillFirstMatchingSelector(page, selectors.messengerTextarea, messageText);
+      await humanDelay();
+
+      // Send strategy: press Enter first (succeeds ~95% of the time), then
+      // VERIFY by checking whether the textarea was cleared. Only if it wasn't
+      // cleared do we fall back to a Send-button click — scoped to the same
+      // container as the textarea so we never click an unrelated "Send".
+      await page.keyboard.press('Enter');
+      await humanDelay();
+
+      const enterWorked = await wasTextareaCleared(textAreaHandle).catch(() => false);
+      let sentVia: 'enter' | 'send-button' | 'unknown' = enterWorked ? 'enter' : 'unknown';
+
+      if (!enterWorked) {
+        logger.info(`[Messenger] Enter did not clear textarea for post ${postId}; trying Send button (scoped)`);
+        const sendButton = await findSendButtonNearTextarea(page, textAreaHandle);
+        if (!sendButton) {
+          throw new Error('Enter did not send the message and no Send button was found near the composer');
+        }
+        try {
+          await sendButton.click({ force: true, timeout: 5_000 });
+          sentVia = 'send-button';
+        } catch (clickErr) {
+          throw new Error(`Send button click failed: ${(clickErr as Error).message}`);
+        }
+      }
+
+      await humanDelay();
+      logger.info(`[Messenger] Message attempt ${attempt} sent for post ${postId} (via ${sentVia})`);
+    },
+    {
+      attempts: 3,
+      delayMs: 3000,
+      operationName: `Send message to ${authorLink}`,
+      onRetry: (error, attempt) => {
+        logger.warn(`Retrying message for ${postId} after error on attempt ${attempt}: ${error.message}`);
+      },
+    }
+  );
+};
+
+/**
+ * Manually send ONE generated message immediately (admin pressed "Send" on a
+ * specific queued message in the dashboard). Bypasses the global messaging
+ * pause and the daily quota — it's an explicit, deliberate operator action —
+ * but still records the result in MessageSent and removes the queued row on
+ * success, exactly like the cron path. Serialized under the 'message' lock so
+ * it can't run a second browser concurrently with the dispatch cron.
+ */
+export const sendGeneratedMessageNow = async (
+  messageId: number,
+): Promise<{ success: boolean; error?: string }> => {
+  if (await isLocked('message')) {
+    return { success: false, error: 'A message dispatch is already running. Try again in a moment.' };
+  }
+
+  let result: { success: boolean; error?: string } = { success: false, error: 'Did not run' };
+
+  await withLock('message', async () => {
+    const candidate = await prisma.messageGenerated.findUnique({
+      where: { id: messageId },
+      include: { post: true },
+    });
+    if (!candidate) {
+      result = { success: false, error: 'Message not found — it may have already been sent.' };
+      return;
+    }
+    const post = candidate.post;
+    if (!post?.authorLink) {
+      result = { success: false, error: 'This post has no author link to message.' };
+      return;
+    }
+
+    let browser;
+    let context;
+    let page;
+    try {
+      const fc = await createFacebookContext();
+      browser = fc.browser;
+      context = fc.context;
+      page = await context.newPage();
+    } catch (e) {
+      result = { success: false, error: `Failed to open browser: ${(e as Error).message}` };
+      return;
+    }
+
+    try {
+      await deliverMessageOnPage(page, post.authorLink, candidate.messageText, candidate.postId);
+      await prisma.messageSent.upsert({
+        where: { postId_authorLink: { postId: candidate.postId, authorLink: post.authorLink } },
+        update: { status: 'sent', error: null, sentAt: new Date(), messageText: candidate.messageText },
+        create: { postId: candidate.postId, authorLink: post.authorLink, status: 'sent', messageText: candidate.messageText },
+      });
+      await prisma.messageGenerated.delete({ where: { id: candidate.id } });
+      await logSystemEvent('message', `Message manually sent for post ${candidate.postId}`);
+      result = { success: true };
+    } catch (sendError) {
+      const msg = (sendError as Error).message;
+      logger.error(`Manual message send failed for post ${candidate.postId}: ${msg}`);
+      await prisma.messageSent
+        .upsert({
+          where: { postId_authorLink: { postId: candidate.postId, authorLink: post.authorLink } },
+          update: { status: 'error', error: msg, retryCount: { increment: 1 }, sentAt: new Date(), messageText: candidate.messageText },
+          create: { postId: candidate.postId, authorLink: post.authorLink, status: 'error', error: msg, retryCount: 1, messageText: candidate.messageText },
+        })
+        .catch(() => undefined);
+      await logSystemEvent('error', `Manual message send failed for post ${candidate.postId}: ${msg}`).catch(() => undefined);
+      result = { success: false, error: msg };
+    } finally {
+      try { if (context) await saveCookies(context); } catch {}
+      try { if (page) await page.close(); } catch {}
+      try { if (browser) await browser.close(); } catch {}
+    }
+  });
+
+  return result;
+};
+
 export const dispatchMessages = async (): Promise<void> => {
   // Check if messaging is enabled (DB-backed — survives Railway redeploys).
   if (!(await getMessagingEnabledAsync())) {
@@ -248,80 +402,7 @@ export const dispatchMessages = async (): Promise<void> => {
       let sendError: Error | null = null;
 
       try {
-        await withRetries(
-          async (attempt) => {
-            await page.goto(post.authorLink!, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
-            await humanDelay();
-
-            // Open message composer
-            await clickFirstMatchingSelector(page, selectors.messengerButtons);
-            const { handle: textAreaHandle } = await waitForFirstMatchingSelector(
-              page,
-              selectors.messengerTextarea,
-              { timeout: TIMEOUTS.SHORT_WAIT }
-            );
-
-            if (!textAreaHandle) {
-              throw new Error('Messenger text area not found');
-            }
-
-            // Diagnostic: log the first 200 chars of the message text so we
-            // can debug rendering issues (e.g. URL-encoded Hebrew showing up
-            // weirdly in the recipient's chat). Goes to stdout only, NOT
-            // systemLog — these are user-visible message contents.
-            logger.debug(
-              `[Messenger] Sending message for post ${candidate.postId} to ${post.authorLink} (first 200 chars): ${candidate.messageText.slice(0, 200)}`
-            );
-
-            await fillFirstMatchingSelector(page, selectors.messengerTextarea, candidate.messageText);
-            await humanDelay();
-
-            // Send strategy: press Enter first (succeeds ~95% of the time),
-            // then VERIFY by checking whether the textarea was cleared. Only
-            // if it wasn't cleared do we fall back to a Send-button click —
-            // and even then we scope the selector to the same container as
-            // the textarea so we never click an unrelated "Send" on the page
-            // (e.g. a "Send via Messenger" share-sheet behind a modal).
-            await page.keyboard.press('Enter');
-            await humanDelay();
-
-            const enterWorked = await wasTextareaCleared(textAreaHandle).catch(() => false);
-
-            let sentVia: 'enter' | 'send-button' | 'unknown' = enterWorked ? 'enter' : 'unknown';
-
-            if (!enterWorked) {
-              logger.info(`[Messenger] Enter did not clear textarea for post ${candidate.postId}; trying Send button (scoped)`);
-              // Look for a Send button inside the same container as the
-              // textarea. This avoids the page-wide selector that previously
-              // matched unrelated buttons behind FB modal overlays.
-              const sendButton = await findSendButtonNearTextarea(page, textAreaHandle);
-              if (!sendButton) {
-                throw new Error('Enter did not send the message and no Send button was found near the composer');
-              }
-              try {
-                // force: true bypasses any benign overlay (cookie banners,
-                // "save chat?" backdrops). 5s cap means we don't burn 30s
-                // per attempt on a click that's never going to land.
-                await sendButton.click({ force: true, timeout: 5_000 });
-                sentVia = 'send-button';
-              } catch (clickErr) {
-                throw new Error(`Send button click failed: ${(clickErr as Error).message}`);
-              }
-            }
-
-            await humanDelay();
-            logger.info(`[Messenger] Message attempt ${attempt} sent for post ${candidate.postId} (via ${sentVia})`);
-          },
-          {
-            attempts: 3,
-            delayMs: 3000,
-            operationName: `Send message to ${post.authorLink}`,
-            onRetry: (error, attempt) => {
-              logger.warn(`Retrying message for ${candidate.postId} after error on attempt ${attempt}: ${error.message}`);
-            },
-          }
-        );
-
+        await deliverMessageOnPage(page, post.authorLink, candidate.messageText, candidate.postId);
         messageSentSuccessfully = true;
       } catch (error) {
         sendError = error as Error;

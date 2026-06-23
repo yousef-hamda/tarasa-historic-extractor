@@ -29,6 +29,7 @@ router.get('/api/groups', async (_req: Request, res: Response) => {
     const groups = groupInfos.map((info: typeof groupInfos[0]) => ({
       groupId: info.groupId,
       groupName: info.groupName || null,
+      groupPhoto: info.groupPhoto || null,
       groupType: info.groupType || 'unknown',
       accessMethod: info.accessMethod || 'none',
       isAccessible: info.isAccessible ?? true,

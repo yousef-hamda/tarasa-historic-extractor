@@ -24,6 +24,7 @@ import {
 interface GroupInfo {
   groupId: string;
   groupName: string | null;
+  groupPhoto: string | null;
   groupType: 'public' | 'private' | 'unknown';
   accessMethod: 'apify' | 'playwright' | 'none';
   isAccessible: boolean;
@@ -32,6 +33,12 @@ interface GroupInfo {
   lastChecked: string | null;
   errorMessage: string | null;
 }
+
+// "No new posts found in feed" is informational, not an error — the group
+// loaded fine, there just wasn't anything new. Render those in amber (warning)
+// rather than red so the operator isn't alarmed by a healthy state.
+const isInfoMessage = (msg: string | null): boolean =>
+  !!msg && /no new posts/i.test(msg);
 
 // Stat Card Component
 const StatCard: React.FC<{
@@ -141,17 +148,34 @@ const GroupCard: React.FC<{
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 transition-colors hover:border-slate-300">
       <div className="flex items-start gap-4">
-        {/* Group Icon */}
-        <div className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center ${
-          group.isAccessible ? 'bg-slate-100' : 'bg-red-50'
-        }`}>
-          {group.groupType === 'public' ? (
-            <GlobeAltIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
-          ) : group.groupType === 'private' ? (
-            <LockClosedIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
-          ) : (
-            <ExclamationTriangleIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
+        {/* Group avatar — show the scraped group photo when available, like the
+            Posts page shows author photos; otherwise fall back to a type icon. */}
+        <div className="relative flex-shrink-0 w-12 h-12">
+          {group.groupPhoto && (
+            <img
+              src={group.groupPhoto}
+              alt={group.groupName || `Group ${group.groupId}`}
+              className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                // FB CDN URLs expire — hide the broken image so the icon shows.
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                if (fallback) fallback.classList.remove('hidden');
+              }}
+            />
           )}
+          <div className={`${group.groupPhoto ? 'hidden ' : ''}w-12 h-12 rounded-lg flex items-center justify-center ${
+            group.isAccessible ? 'bg-slate-100' : 'bg-red-50'
+          }`}>
+            {group.groupType === 'public' ? (
+              <GlobeAltIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
+            ) : group.groupType === 'private' ? (
+              <LockClosedIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
+            ) : (
+              <ExclamationTriangleIcon className={`h-6 w-6 ${group.isAccessible ? 'text-slate-600' : 'text-red-500'}`} />
+            )}
+          </div>
         </div>
 
         {/* Group Info */}
@@ -186,14 +210,24 @@ const GroupCard: React.FC<{
             )}
           </div>
 
-          {/* Error Message */}
+          {/* Status message — amber for informational states ("no new posts"),
+              red for genuine errors. */}
           {group.errorMessage && (
-            <div className="mt-3 p-2 rounded-lg bg-red-50 border border-red-100">
-              <p className="text-xs text-red-600 flex items-center gap-1.5">
-                <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0" />
-                {group.errorMessage}
-              </p>
-            </div>
+            isInfoMessage(group.errorMessage) ? (
+              <div className="mt-3 p-2 rounded-lg bg-amber-50 border border-amber-100">
+                <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                  <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0" />
+                  {group.errorMessage}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 p-2 rounded-lg bg-red-50 border border-red-100">
+                <p className="text-xs text-red-600 flex items-center gap-1.5">
+                  <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0" />
+                  {group.errorMessage}
+                </p>
+              </div>
+            )
           )}
         </div>
 

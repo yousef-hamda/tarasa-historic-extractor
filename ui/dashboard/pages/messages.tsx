@@ -17,6 +17,9 @@ import {
   UserIcon,
   LinkIcon,
   ChatBubbleLeftRightIcon,
+  PencilSquareIcon,
+  CheckIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { PlayIcon as PlayIconSolid, PauseIcon as PauseIconSolid } from '@heroicons/react/24/solid';
 
@@ -178,6 +181,13 @@ const MessagesPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const [togglingMessaging, setTogglingMessaging] = useState(false);
+  // Per-message edit/send state (admin can review, tweak, and send a single
+  // AI-written message directly from the queue).
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [actionMsg, setActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const fetchMessagingStatus = useCallback(async () => {
     try {
@@ -222,6 +232,56 @@ const MessagesPage: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const startEdit = (id: number, currentText: string) => {
+    setEditingId(id);
+    setEditText(currentText || '');
+    setActionMsg(null);
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditText('');
+  };
+  const saveEdit = async (id: number) => {
+    const text = editText.trim();
+    if (!text) {
+      setActionMsg({ ok: false, text: 'Message cannot be empty.' });
+      return;
+    }
+    setSavingId(id);
+    setActionMsg(null);
+    try {
+      const res = await apiFetch(`/api/messages/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ messageText: text }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+      setActionMsg({ ok: true, text: 'Message updated.' });
+      setEditingId(null);
+      await fetchMessages();
+    } catch (err) {
+      setActionMsg({ ok: false, text: err instanceof Error ? err.message : 'Save failed' });
+    } finally {
+      setSavingId(null);
+    }
+  };
+  const sendOne = async (id: number) => {
+    if (!confirm('Send this message now?')) return;
+    setSendingId(id);
+    setActionMsg(null);
+    try {
+      const res = await apiFetch(`/api/messages/${id}/send`, { method: 'POST', timeout: 120_000 });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.success) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+      setActionMsg({ ok: true, text: 'Message sent.' });
+      await fetchMessages();
+    } catch (err) {
+      setActionMsg({ ok: false, text: err instanceof Error ? err.message : 'Send failed' });
+    } finally {
+      setSendingId(null);
+    }
+  };
 
   useEffect(() => {
     fetchMessages();
@@ -378,6 +438,12 @@ const MessagesPage: React.FC = () => {
           </div>
         </div>
 
+        {actionMsg && (
+          <div className={`text-sm px-3 py-2 rounded-lg ${actionMsg.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {actionMsg.text}
+          </div>
+        )}
+
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -387,12 +453,13 @@ const MessagesPage: React.FC = () => {
                   <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('ui.messageColumn')}</th>
                   <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('ui.postColumn')}</th>
                   <th className="px-6 py-3 text-start text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('ui.created')}</th>
+                  <th className="px-6 py-3 text-end text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!data.queue || data.queue.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-16 text-center">
+                    <td colSpan={5} className="px-6 py-16 text-center">
                       <div className="flex flex-col items-center gap-4">
                         <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">
                           <InboxStackIcon className="w-6 h-6 text-slate-400" />
@@ -411,13 +478,19 @@ const MessagesPage: React.FC = () => {
                         <AuthorCell post={msg.post} fallbackId={msg.postId} />
                       </td>
                       <td className="px-6 py-4">
-                        <p className="text-sm text-slate-600 line-clamp-2 max-w-md" dir="auto">
-                          {msg.messageText
-                            ? msg.messageText.length > 120
-                              ? `${msg.messageText.slice(0, 120)}…`
-                              : msg.messageText
-                            : '—'}
-                        </p>
+                        {editingId === msg.id ? (
+                          <textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            rows={5}
+                            dir="auto"
+                            className="w-full min-w-[18rem] max-w-md border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-600 whitespace-pre-wrap max-w-md" dir="auto">
+                            {msg.messageText || '—'}
+                          </p>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <PostLink postId={msg.postId} post={msg.post} viewLabel={t('ui.viewPost')} />
@@ -426,6 +499,51 @@ const MessagesPage: React.FC = () => {
                         <div className="flex items-center gap-2 text-sm text-slate-500">
                           <ClockIcon className="w-4 h-4 text-slate-400" />
                           {new Date(msg.createdAt).toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {editingId === msg.id ? (
+                            <>
+                              <button
+                                onClick={() => saveEdit(msg.id)}
+                                disabled={savingId === msg.id}
+                                title="Save"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                {savingId === msg.id ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <CheckIcon className="w-4 h-4" />}
+                                Save
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                disabled={savingId === msg.id}
+                                title="Cancel"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              >
+                                <XMarkIcon className="w-4 h-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => startEdit(msg.id, msg.messageText || '')}
+                                title="Edit message"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200"
+                              >
+                                <PencilSquareIcon className="w-4 h-4" />
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => sendOne(msg.id)}
+                                disabled={sendingId === msg.id}
+                                title="Send this message now"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                              >
+                                {sendingId === msg.id ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <PaperAirplaneIcon className="w-4 h-4" />}
+                                Send
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

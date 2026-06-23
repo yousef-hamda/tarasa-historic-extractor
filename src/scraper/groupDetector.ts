@@ -41,6 +41,7 @@ export const updateGroupCache = async (
   data: {
     groupType?: GroupType;
     groupName?: string | null;
+    groupPhoto?: string | null;
     memberCount?: number | null;
     accessMethod?: AccessMethod;
     isAccessible?: boolean;
@@ -59,6 +60,7 @@ export const updateGroupCache = async (
         groupId,
         groupType: data.groupType || 'unknown',
         groupName: data.groupName,
+        groupPhoto: data.groupPhoto,
         memberCount: data.memberCount,
         accessMethod: data.accessMethod || 'none',
         isAccessible: data.isAccessible ?? true,

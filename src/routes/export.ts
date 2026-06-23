@@ -158,9 +158,38 @@ ${tableRows}
 </body></html>`;
 };
 
-router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async (_req: Request, res: Response) => {
+router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async (req: Request, res: Response) => {
   try {
     const [adminEmail, threshold] = await Promise.all([getAdminEmail(), getHistoricThreshold()]);
+
+    // Optional date-range filter on scrapedAt (the date Tarasa first saw the
+    // post). The dashboard asks the operator "from what date to what date";
+    // both are inclusive calendar days (UTC). Either bound may be omitted —
+    // omitting both reproduces the old "all historic posts" behaviour.
+    const body = (req.body || {}) as { fromDate?: string; toDate?: string };
+    const scrapedAt: { gte?: Date; lte?: Date } = {};
+    let rangeLabel = '';
+    if (typeof body.fromDate === 'string' && body.fromDate.trim()) {
+      const d = new Date(`${body.fromDate.trim()}T00:00:00.000Z`);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid fromDate', message: 'fromDate must be a YYYY-MM-DD calendar date.' });
+      }
+      scrapedAt.gte = d;
+    }
+    if (typeof body.toDate === 'string' && body.toDate.trim()) {
+      const d = new Date(`${body.toDate.trim()}T23:59:59.999Z`);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ error: 'Invalid toDate', message: 'toDate must be a YYYY-MM-DD calendar date.' });
+      }
+      scrapedAt.lte = d;
+    }
+    if (scrapedAt.gte && scrapedAt.lte && scrapedAt.gte > scrapedAt.lte) {
+      return res.status(400).json({ error: 'Invalid range', message: 'fromDate must be on or before toDate.' });
+    }
+    const hasRange = Boolean(scrapedAt.gte || scrapedAt.lte);
+    if (hasRange) {
+      rangeLabel = `${body.fromDate?.trim() || '…'} → ${body.toDate?.trim() || '…'}`;
+    }
 
     if (!adminEmail) {
       return res.status(400).json({
@@ -183,6 +212,7 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
           isHistoric: true,
           confidence: { gt: threshold },
         },
+        ...(hasRange ? { scrapedAt } : {}),
       },
       include: { classified: true },
       orderBy: { scrapedAt: 'desc' },
@@ -230,7 +260,7 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
       ]),
     );
 
-    const subject = `Tarasa — ${rows.length} approved post${rows.length === 1 ? '' : 's'} (${formatDate(today)})`;
+    const subject = `Tarasa — ${rows.length} approved post${rows.length === 1 ? '' : 's'}${hasRange ? ` for ${rangeLabel}` : ''} (${formatDate(today)})`;
 
     const result = await sendHtmlEmail({
       to: adminEmail,
@@ -294,6 +324,7 @@ router.post('/api/export/approved-posts', apiKeyAuth, triggerRateLimiter, async 
       postsCount: rows.length,
       threshold,
       capped: rows.length === MAX_POSTS_PER_EXPORT,
+      ...(hasRange ? { range: rangeLabel } : {}),
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
