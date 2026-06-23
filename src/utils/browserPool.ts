@@ -32,7 +32,11 @@ class BrowserPool {
 
   constructor(options: Partial<PoolOptions> = {}) {
     const envMaxInstances = Number(process.env.MAX_BROWSER_INSTANCES) || 2;
-    const envOperationTimeout = Number(process.env.BROWSER_OPERATION_TIMEOUT_MS) || 300000; // 5 min default
+    // Default lowered from 300s → 200s. The scraper now self-bounds each group
+    // with a 150s watchdog that force-closes the browser, so the pool should
+    // never need to wait the full old 5 minutes for a wedged op — a stuck slot
+    // now frees in ~150s, before the next group's 60s acquire window expires.
+    const envOperationTimeout = Number(process.env.BROWSER_OPERATION_TIMEOUT_MS) || 200000;
 
     this.options = {
       maxInstances: options.maxInstances ?? envMaxInstances,

@@ -213,6 +213,26 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
 
     try {
       logger.info(`[Playwright] Browser launch attempt ${attempt}/${MAX_BROWSER_RETRIES}`);
+
+      // Arm the hard watchdog at the very start — BEFORE the browser launch —
+      // so it also bounds a slow/hung createFacebookContext() (chrome can take
+      // tens of seconds to launch, or hang, under memory pressure on Railway).
+      // The closure reads the loop-scoped browser/context bindings, so once they
+      // are assigned it force-closes them; force-closing makes any in-flight
+      // page operation reject and unwind into the catch block. This guarantees
+      // the whole operation stays well under the BrowserPool operation timeout
+      // so one slow group can't hold the single slot and starve the rest.
+      watchdog = setTimeout(() => {
+        logger.error(
+          `[Playwright] Scrape watchdog fired (${SCRAPE_HARD_TIMEOUT_MS}ms) for group ${groupId} — force-closing browser to release the pool slot`
+        );
+        void (async () => {
+          try { if (context) await context.close(); } catch {}
+          try { if (browser) await safeCloseBrowser(browser); } catch {}
+        })();
+      }, SCRAPE_HARD_TIMEOUT_MS);
+      if (typeof watchdog.unref === 'function') watchdog.unref();
+
       // Decide cookie behaviour based on whether we actually have a session.
       // If a valid session exists we MUST use it — without auth cookies
       // Facebook strips the feed content (or shows a login wall) and the
@@ -229,20 +249,6 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       const ctx = await createFacebookContext({ publicGroupMode: !useAuthCookies });
       browser = ctx.browser;
       context = ctx.context;
-
-      // Arm the hard watchdog now that a browser exists. Force-closing the
-      // context/browser makes any in-flight page operation reject, which
-      // unwinds into the catch block where the normal cleanup runs.
-      watchdog = setTimeout(() => {
-        logger.error(
-          `[Playwright] Scrape watchdog fired (${SCRAPE_HARD_TIMEOUT_MS}ms) for group ${groupId} — force-closing browser to release the pool slot`
-        );
-        void (async () => {
-          try { if (context) await context.close(); } catch {}
-          try { if (browser) await safeCloseBrowser(browser); } catch {}
-        })();
-      }, SCRAPE_HARD_TIMEOUT_MS);
-      if (typeof watchdog.unref === 'function') watchdog.unref();
 
       page = await context.newPage();
       // OPTIMIZED: Use shorter default timeout (15s instead of 90s)

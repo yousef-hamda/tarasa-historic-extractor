@@ -58,8 +58,11 @@ const SCRAPER_LAUNCH_ARGS = [
   '--mute-audio',
 ];
 
-const LAUNCH_MAX_ATTEMPTS = 3;
-const LAUNCH_TIMEOUT_MS = 60_000;
+// Keep the total launch budget bounded: a hung chrome launch must not sit
+// holding the single browser-pool slot. 2 attempts × 45s + ~2s backoff ≈ 92s,
+// comfortably under the per-scrape watchdog (150s) and pool timeout.
+const LAUNCH_MAX_ATTEMPTS = 2;
+const LAUNCH_TIMEOUT_MS = 45_000;
 
 const isTransientLaunchError = (message: string): boolean => {
   const m = message.toLowerCase();
