@@ -396,8 +396,8 @@ export const ensureLogin = async (context: BrowserContext): Promise<void> => {
  *                                  When true, uses unauthenticated access which
  *                                  renders post URLs correctly for public groups
  */
-export const createFacebookContext = async (options?: { publicGroupMode?: boolean }): Promise<{ browser: Browser; context: BrowserContext }> => {
-  const { publicGroupMode = false } = options || {};
+export const createFacebookContext = async (options?: { publicGroupMode?: boolean; skipLogin?: boolean }): Promise<{ browser: Browser; context: BrowserContext }> => {
+  const { publicGroupMode = false, skipLogin = false } = options || {};
 
   // NOTE: Persistent browser is disabled for scraping because it causes
   // Facebook to not render post URLs properly. Using fresh browser with cookies instead.
@@ -476,12 +476,27 @@ export const createFacebookContext = async (options?: { publicGroupMode?: boolea
       logger.info(`Loaded ${cookies.length} cookies into fresh browser context`);
     }
 
-    // Verify login for authenticated operations
-    try {
-      await ensureLogin(context);
-    } catch (error) {
-      await browser.close();
-      throw error;
+    // Verify login for authenticated operations.
+    //
+    // The scraper passes skipLogin: true — it has already confirmed a valid
+    // session via getCookieHealth() and loaded the cookies above, so the extra
+    // facebook.com round-trip ensureLogin does is pure overhead AND a hang risk:
+    // it runs BEFORE createFacebookContext returns (so the per-scrape watchdog
+    // has no browser handle yet to abort it) and uses the 90s NAVIGATION
+    // timeout. It was the main cause of heavy groups wedging at the pool
+    // timeout. Skipping it also reduces datacenter-IP anti-bot exposure (fewer
+    // facebook.com home visits / no per-scrape credential re-login). Callers
+    // that genuinely need a verified login (messenger, refresh) leave skipLogin
+    // false and keep ensureLogin.
+    if (!skipLogin) {
+      try {
+        await ensureLogin(context);
+      } catch (error) {
+        await browser.close();
+        throw error;
+      }
+    } else {
+      logger.info('[Session] skipLogin set — using loaded cookies without a facebook.com re-verification round-trip');
     }
   }
 

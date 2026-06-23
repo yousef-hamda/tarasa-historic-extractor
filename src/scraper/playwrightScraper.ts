@@ -83,7 +83,11 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 //     unbounded sub-page allocation in pathological cases)
 // =====================================================================
 
-const PERMALINK_BUDGET_MS = 60_000;
+// Budget trimmed 60s → 30s. This pass upgrades hash_ fallback ids to canonical
+// FB ids; since the content hash is now stable (no duplicate harm from hash_
+// ids), it's far less critical, so we cap it tighter to keep the whole scrape
+// comfortably under the 150s watchdog even for heavy groups. Env-tunable.
+const PERMALINK_BUDGET_MS = Number(process.env.PERMALINK_BUDGET_MS) || 30_000;
 const PERMALINK_PER_PAGE_MS = 8_000;
 const PERMALINK_CONCURRENCY = 3;
 const PERMALINK_MAX_POSTS_PER_PASS = 50;
@@ -246,7 +250,11 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       } else {
         logger.info('[Playwright] No FB session available — scraping in public-only mode');
       }
-      const ctx = await createFacebookContext({ publicGroupMode: !useAuthCookies });
+      // skipLogin: the session was already verified via getCookieHealth() above
+      // and cookies are loaded into the context — the extra facebook.com
+      // round-trip ensureLogin does would run before the watchdog has a browser
+      // handle (unbounded by it) and only adds latency + anti-bot exposure.
+      const ctx = await createFacebookContext({ publicGroupMode: !useAuthCookies, skipLogin: true });
       browser = ctx.browser;
       context = ctx.context;
 
