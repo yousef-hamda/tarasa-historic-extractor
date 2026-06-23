@@ -24,6 +24,15 @@ import {
 // Maximum retries for browser operations
 const MAX_BROWSER_RETRIES = 2;
 
+// Hard ceiling for a single group scrape. If the work hangs (a wedged
+// See-more expansion, a never-resolving waitForSelector, Facebook stalling the
+// response), a watchdog force-closes the browser at this point. It MUST stay
+// comfortably below the BrowserPool operation timeout (default 300s) so the
+// scrape releases the single pool slot itself rather than sitting wedged until
+// the pool kills it — which starves every other group with 60s acquire
+// timeouts and leaves an orphaned browser eating memory.
+const SCRAPE_HARD_TIMEOUT_MS = Number(process.env.SCRAPE_HARD_TIMEOUT_MS) || 150_000;
+
 /**
  * Check if we have a valid Facebook session before attempting to scrape
  */
@@ -200,6 +209,7 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
     let browser: Browser | null = null;
     let context: BrowserContext | null = null;
     let page: Awaited<ReturnType<BrowserContext['newPage']>> | null = null;
+    let watchdog: NodeJS.Timeout | null = null;
 
     try {
       logger.info(`[Playwright] Browser launch attempt ${attempt}/${MAX_BROWSER_RETRIES}`);
@@ -219,6 +229,20 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       const ctx = await createFacebookContext({ publicGroupMode: !useAuthCookies });
       browser = ctx.browser;
       context = ctx.context;
+
+      // Arm the hard watchdog now that a browser exists. Force-closing the
+      // context/browser makes any in-flight page operation reject, which
+      // unwinds into the catch block where the normal cleanup runs.
+      watchdog = setTimeout(() => {
+        logger.error(
+          `[Playwright] Scrape watchdog fired (${SCRAPE_HARD_TIMEOUT_MS}ms) for group ${groupId} — force-closing browser to release the pool slot`
+        );
+        void (async () => {
+          try { if (context) await context.close(); } catch {}
+          try { if (browser) await safeCloseBrowser(browser); } catch {}
+        })();
+      }, SCRAPE_HARD_TIMEOUT_MS);
+      if (typeof watchdog.unref === 'function') watchdog.unref();
 
       page = await context.newPage();
       // OPTIMIZED: Use shorter default timeout (15s instead of 90s)
@@ -620,6 +644,9 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         };
       });
 
+      // Scrape finished within budget — disarm the watchdog before teardown.
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+
       // Save cookies and close browser
       try {
         if (context) {
@@ -639,6 +666,10 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
     } catch (error) {
       lastError = error as Error;
       logger.error(`[Playwright] Attempt ${attempt} failed: ${lastError.message}`);
+
+      // Disarm the watchdog (it may have been what fired and closed the
+      // browser; clearing a finished/cleared timer is harmless).
+      if (watchdog) { clearTimeout(watchdog); watchdog = null; }
 
       // Clear the intercepted cache to prevent memory leaks on error
       clearInterceptedCache();

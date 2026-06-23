@@ -23,6 +23,7 @@ import promptsRouter from './routes/prompts';
 import abTestingRouter from './routes/abTesting';
 import exportRouter from './routes/export';
 import authRouter from './routes/auth';
+import adminRouter from './routes/admin';
 import logger from './utils/logger';
 process.stderr.write('[BOOT] route + logger imports complete\n');
 import './cron';
@@ -108,6 +109,9 @@ app.use(groupsRouter);
 // Debug and Backup Routes
 app.use(debugRouter);
 app.use(backupRouter);
+
+// Admin maintenance routes (API-key gated)
+app.use(adminRouter);
 
 // Search, Prompts, and A/B Testing Routes
 app.use(searchRouter);

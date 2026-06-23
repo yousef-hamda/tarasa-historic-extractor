@@ -139,9 +139,38 @@ const stripTimeAgoSuffix = (text: string): string => {
   return isTimeIndicator ? lines.slice(0, -1).join('\n').trim() : text;
 };
 
-const generateContentHash = (text: string, authorLink?: string): string => {
-  const stableText = stripTimeAgoSuffix(text);
-  const content = `${stableText}|${authorLink || ''}`;
+/**
+ * Normalize post text into a STABLE form for content hashing.
+ *
+ * The raw scraped text drifts between scrapes in ways that don't change the
+ * actual post: a trailing "5h"/"לפני שעה" timestamp, and trivial whitespace
+ * rendering differences (a single "\n" one scrape, "\n\n" the next). Hashing
+ * the raw text therefore forks the id and re-inserts the same post every cycle.
+ * Stripping the time suffix and collapsing all whitespace runs to a single
+ * space makes the hash invariant to those cosmetic differences.
+ */
+const normalizeTextForHash = (text: string): string => {
+  return stripTimeAgoSuffix(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+export const generateContentHash = (text: string, authorLink?: string): string => {
+  // CRITICAL: hash the NORMALIZED author link, not the raw one. Facebook
+  // rotates volatile tracking params (__cft__, __tn__, eav, …) inside profile
+  // links on every render, so the raw link differs each scrape even for the
+  // same author. The stored link is already normalized via normalizeAuthorLink;
+  // hashing the raw link here is what made the same post re-inserted again and
+  // again. Normalize both sides so the hash is stable across re-scrapes.
+  let normalizedLink = '';
+  if (authorLink) {
+    try {
+      normalizedLink = normalizeAuthorLink(authorLink) || authorLink;
+    } catch {
+      normalizedLink = authorLink;
+    }
+  }
+  const content = `${normalizeTextForHash(text)}|${normalizedLink}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 32);
 };
 
