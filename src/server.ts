@@ -270,11 +270,22 @@ process.on('uncaughtException', (error) => {
   gracefulShutdown('uncaughtException');
 });
 
-// Handle unhandled promise rejections
+// Handle unhandled promise rejections.
+//
+// Root-cause fix: previously this called gracefulShutdown(), so ANY stray
+// promise rejection — a flaky DB query, a Playwright/Facebook timeout, an
+// OpenAI hiccup in one of the every-few-minutes crons — tore down the whole
+// HTTP server and forced a Railway restart. That turned isolated background
+// errors into full site outages (and fed the restart crash-loop).
+//
+// An unhandled rejection does NOT corrupt process state the way an uncaught
+// synchronous exception can, so the safe, resilient behavior is to log +
+// report it and keep serving. (uncaughtException above still shuts down,
+// since continuing after one risks corrupt state.)
 process.on('unhandledRejection', (reason, promise) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   captureException(error);
   trackError(error, 'unhandled', { type: 'promise_rejection' });
   logger.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
-  gracefulShutdown('unhandledRejection');
+  logger.error('Keeping the server alive; this rejection did not take down the process.');
 });
