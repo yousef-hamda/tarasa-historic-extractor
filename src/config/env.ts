@@ -42,6 +42,16 @@ const requiredEnvVars = [
 ] as const;
 
 const validateEnv = (): void => {
+  // DATABASE_URL fallback FIRST, before any chance of throwing, so Prisma always
+  // gets its connection string even on a degraded boot.
+  if (!process.env.DATABASE_URL && process.env.POSTGRES_URL) {
+    // Prisma expects DATABASE_URL for directUrl in schema; reuse POSTGRES_URL when absent
+    process.env.DATABASE_URL = process.env.POSTGRES_URL;
+    logger.warn('DATABASE_URL is not set. Falling back to POSTGRES_URL for Prisma compatibility.');
+  } else if (process.env.DATABASE_URL && process.env.POSTGRES_URL && process.env.DATABASE_URL !== process.env.POSTGRES_URL) {
+    logger.warn('DATABASE_URL differs from POSTGRES_URL. Ensure both point to the same database to avoid drift.');
+  }
+
   const missing: string[] = [];
 
   for (const envVar of requiredEnvVars) {
@@ -51,9 +61,14 @@ const validateEnv = (): void => {
   }
 
   if (missing.length > 0) {
-    const message = `Missing required environment variables: ${missing.join(', ')}`;
+    // IMPORTANT: do NOT throw here. validateEnv() runs synchronously before the
+    // HTTP port is bound, so throwing kills the boot and yields a hard 502 — a
+    // dead site is strictly worse than a degraded one for diagnosis, and a
+    // transient env-propagation hiccup on deploy should never take the site
+    // down. Log loudly and let the server bind; affected features degrade.
+    const message = `Missing required environment variables: ${missing.join(', ')}. ` +
+      `Server will start in a DEGRADED state — fix these in the Railway env vars.`;
     logger.error(message);
-    throw new Error(message);
   }
 
   // Warn about optional but recommended variables
@@ -68,14 +83,6 @@ const validateEnv = (): void => {
   // Warn about Apify configuration
   if (!process.env.APIFY_TOKEN) {
     logger.warn('APIFY_TOKEN is not set. Facebook scraping will use Playwright fallback (requires FB_EMAIL/FB_PASSWORD).');
-  }
-
-  if (!process.env.DATABASE_URL && process.env.POSTGRES_URL) {
-    // Prisma expects DATABASE_URL for directUrl in schema; reuse POSTGRES_URL when absent
-    process.env.DATABASE_URL = process.env.POSTGRES_URL;
-    logger.warn('DATABASE_URL is not set. Falling back to POSTGRES_URL for Prisma compatibility.');
-  } else if (process.env.DATABASE_URL && process.env.POSTGRES_URL && process.env.DATABASE_URL !== process.env.POSTGRES_URL) {
-    logger.warn('DATABASE_URL differs from POSTGRES_URL. Ensure both point to the same database to avoid drift.');
   }
 
   logger.info('Environment validation passed');

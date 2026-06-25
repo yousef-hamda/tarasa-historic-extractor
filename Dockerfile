@@ -117,9 +117,13 @@ USER tarasa
 # Expose ports
 EXPOSE 4000 3000
 
-# Health check — uses the runtime $PORT (Railway injects it), falls back to 4000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4000}/api/health" || exit 1
+# Health check — uses the runtime $PORT (Railway injects it), falls back to 4000.
+# IMPORTANT: probe /api/health/live (pure liveness, always 200 while the process
+# is up), NOT /api/health (which returns 503 when the DB is unreachable). Keying
+# the healthcheck on the DB would mark the container unhealthy during an external
+# Postgres blip and could block deploy promotion → a self-inflicted 502.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-4000}/api/health/live" || exit 1
 
 # Start command — runs ./start.sh which migrates then exec-s node.
 # Baked into the image so it cannot be misconfigured via Railway's UI start-command field.

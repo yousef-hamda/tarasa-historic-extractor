@@ -52,9 +52,16 @@ import { resetAllCircuitBreakers, getCircuitBreakerStatus } from './utils/circui
 import { startHealthWatchdog, stopHealthWatchdog } from './utils/healthWatchdog';
 process.stderr.write('[BOOT] all imports complete, about to call validateEnv()\n');
 
-// Validate environment variables before starting
-validateEnv();
-process.stderr.write('[BOOT] validateEnv passed\n');
+// Validate environment variables before starting. This must NEVER abort the
+// boot — a degraded-but-listening server beats a hard 502. validateEnv() itself
+// no longer throws on missing vars, but we guard the call anyway so nothing in
+// env handling can keep the port from binding.
+try {
+  validateEnv();
+  process.stderr.write('[BOOT] validateEnv passed\n');
+} catch (err) {
+  process.stderr.write(`[BOOT] validateEnv threw (continuing, degraded): ${(err as Error).message}\n`);
+}
 
 // Initialize Sentry for error tracking (before anything else)
 initSentry();
