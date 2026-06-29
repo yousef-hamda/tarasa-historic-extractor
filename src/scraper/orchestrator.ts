@@ -573,7 +573,13 @@ export const scrapeAllGroupsOrchestrated = async (): Promise<{
   let failedGroups = 0;
   let totalPosts = 0;
 
-  for (const groupId of groupIds) {
+  // Randomized human-ish gap between groups so activity isn't a robotic
+  // back-to-back burst (a behavioral bot signal). Tunable via env; 0 disables.
+  const minGapMs = Number(process.env.INTER_GROUP_DELAY_MIN_MS) || 15_000;
+  const maxGapMs = Number(process.env.INTER_GROUP_DELAY_MAX_MS) || 45_000;
+
+  for (let i = 0; i < groupIds.length; i++) {
+    const groupId = groupIds[i];
     const result = await scrapeGroup(groupId);
     results.push(result);
 
@@ -582,6 +588,13 @@ export const scrapeAllGroupsOrchestrated = async (): Promise<{
       totalPosts += result.postsSaved;
     } else {
       failedGroups++;
+    }
+
+    // Jittered pause before the next group (skip after the last one).
+    if (i < groupIds.length - 1 && maxGapMs > 0) {
+      const gap = Math.floor(minGapMs + Math.random() * Math.max(0, maxGapMs - minGapMs));
+      logger.info(`[Orchestrator] Waiting ${Math.round(gap / 1000)}s before next group...`);
+      await new Promise((resolve) => setTimeout(resolve, gap));
     }
   }
 

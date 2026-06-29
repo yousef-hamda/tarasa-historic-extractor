@@ -245,9 +245,31 @@ const deliverMessageOnPage = async (
  * success, exactly like the cron path. Serialized under the 'message' lock so
  * it can't run a second browser concurrently with the dispatch cron.
  */
+/**
+ * HARD kill switch for all outbound messaging.
+ *
+ * Automated cold DMs to non-friends are what got the operator's account
+ * disabled (a Community Standards / spam action that cannot be made compliant).
+ * This switch is ON by default — sending requires DELIBERATELY setting
+ * MESSAGING_HARD_DISABLED=false in the environment, so the dashboard toggle
+ * ALONE can never resume cold outreach. Belt-and-suspenders on top of the
+ * existing dashboard messaging toggle.
+ */
+const isMessagingHardDisabled = (): boolean =>
+  (process.env.MESSAGING_HARD_DISABLED ?? 'true').toLowerCase() !== 'false';
+
 export const sendGeneratedMessageNow = async (
   messageId: number,
 ): Promise<{ success: boolean; error?: string }> => {
+  if (isMessagingHardDisabled()) {
+    return {
+      success: false,
+      error:
+        'Messaging is hard-disabled (MESSAGING_HARD_DISABLED). Cold DMs to non-friends violate ' +
+        'Facebook policy and previously got the account disabled. Set MESSAGING_HARD_DISABLED=false ' +
+        'in the environment only if you fully understand the risk.',
+    };
+  }
   if (await isLocked('message')) {
     return { success: false, error: 'A message dispatch is already running. Try again in a moment.' };
   }
@@ -315,6 +337,18 @@ export const sendGeneratedMessageNow = async (
 };
 
 export const dispatchMessages = async (): Promise<void> => {
+  // HARD kill switch first — cannot be overridden from the dashboard.
+  if (isMessagingHardDisabled()) {
+    logger.warn(
+      '[Messenger] Messaging is hard-disabled (MESSAGING_HARD_DISABLED). Nothing will be sent. ' +
+        'Cold DMs to non-friends are what got the account disabled.'
+    );
+    await logSystemEvent(
+      'message',
+      'Messaging hard-disabled (kill switch) — nothing sent.'
+    ).catch(() => undefined);
+    return;
+  }
   // Check if messaging is enabled (DB-backed — survives Railway redeploys).
   if (!(await getMessagingEnabledAsync())) {
     logger.info('Messaging is paused by admin. Messages will be queued.');

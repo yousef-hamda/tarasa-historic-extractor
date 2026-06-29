@@ -126,7 +126,10 @@ export const setHistoricThreshold = async (value: number): Promise<number> => {
 /** Cron-speed preset name (see SPEED_PRESETS below for the actual schedule tuples). */
 export const SPEED_PRESET_KEY = 'system_speed_preset';
 export type SpeedPreset = 'conservative' | 'normal' | 'fast' | 'aggressive';
-export const SPEED_PRESET_DEFAULT: SpeedPreset = 'normal';
+// Default to the safest cadence. A slower, less regular footprint is far less
+// likely to trip Facebook's anti-bot heuristics; the operator can opt into
+// faster presets from the dashboard once the account is healthy on a clean IP.
+export const SPEED_PRESET_DEFAULT: SpeedPreset = 'conservative';
 
 export interface SpeedPresetDefinition {
   preset: SpeedPreset;

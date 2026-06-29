@@ -20,6 +20,7 @@ import {
 } from '../session/sessionManager';
 import { markSessionBlocked } from '../session/sessionHealth';
 import { hardCloseBrowser, launchTracked } from '../utils/browserReaper';
+import { israelContextOptions, launchAntiDetectOverrides } from './identity';
 
 // Helper to replace deprecated page.waitForTimeout
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -94,11 +95,14 @@ const launchChromiumWithRetry = async (
     try {
       // launchTracked records the chrome MAIN pid so hardCloseBrowser can
       // SIGKILL its process group if a graceful close ever wedges.
+      // launchAntiDetectOverrides() suppresses the automation flags (removes the
+      // navigator.webdriver tell) and applies an optional egress proxy.
       return await launchTracked(() =>
         chromium.launch({
           headless,
           args: SCRAPER_LAUNCH_ARGS,
           timeout: LAUNCH_TIMEOUT_MS,
+          ...launchAntiDetectOverrides(),
           ...overrides,
         }),
       );
@@ -467,7 +471,10 @@ export const createFacebookContext = async (options?: { publicGroupMode?: boolea
   // launchChromiumWithRetry adds a launch timeout + backoff retry so the
   // transient SIGTRAP startup crash on Railway no longer fails the whole scrape.
   const browser = await launchChromiumWithRetry();
-  const context = await browser.newContext();
+  // Pin a consistent Israel-resident desktop identity (UA / timezone / locale /
+  // geo / Accept-Language) so the fingerprint matches the account's home region
+  // instead of leaking a default headless/datacenter profile.
+  const context = await browser.newContext(israelContextOptions());
 
   // Cookie loading: Skip for public groups to ensure URLs render correctly
   if (publicGroupMode) {

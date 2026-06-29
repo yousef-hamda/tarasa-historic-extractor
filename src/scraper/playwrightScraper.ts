@@ -429,30 +429,23 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         logger.info(`[Playwright] Post URLs loaded: ${finalCheck.postUrlCount}`);
       }
 
-      // Check if we need to join the group (quick check)
+      // Membership check (read-only). We deliberately DO NOT auto-join groups:
+      // programmatic "Join group" clicks are a classic bot/farming signal that
+      // contributed to the account being flagged. Joining is now a manual,
+      // human action the operator performs once. If we are not a member, log it
+      // and bail for this group — there is nothing for us to scrape.
       const needsToJoin = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('div[role="button"], span[role="button"]'));
         return buttons.some((el) => el.textContent?.includes('Join group'));
       });
 
       if (needsToJoin) {
-        logger.info('[Playwright] Not a member of this group. Attempting to join...');
-        try {
-          await page.click('div[role="button"]:has-text("Join group")', { timeout: 5000 });
-          await sleep(2000);
-          logger.info('[Playwright] Join request submitted');
-          await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
-          await sleep(3000);
-        } catch (joinError) {
-          logger.warn(`[Playwright] Could not auto-join group: ${joinError}`);
-          await saveCookies(context);
-          // hardCloseBrowser closes gracefully then SIGKILLs on wedge — and
-          // killing the browser process disposes its page + context too, so we
-          // never risk hanging on an unbounded page.close()/context.close().
-          if (watchdog) { clearTimeout(watchdog); watchdog = null; }
-          await hardCloseBrowser(browser ?? context);
-          return [];
-        }
+        logger.warn(
+          `[Playwright] Not a member of group ${groupId} — skipping (auto-join is disabled; join this group manually if you want it scraped).`
+        );
+        if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+        await hardCloseBrowser(browser ?? context);
+        return [];
       }
 
       // Extract group name AND group type (public/private) from page

@@ -11,6 +11,7 @@ import path from 'path';
 import logger from '../utils/logger';
 import prisma from '../database/prisma';
 import { hardCloseBrowser, launchTracked } from '../utils/browserReaper';
+import { israelContextOptions, launchAntiDetectOverrides } from '../facebook/identity';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
 import {
@@ -92,13 +93,19 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
   // Clean up any stale lock files that might cause crashes
   await cleanupStaleLocks();
 
-  // Launch browser with persistent context - with improved stability settings
+  // Launch browser with persistent context - with improved stability settings.
+  // Pin the same consistent Israel-resident desktop identity (UA / timezone /
+  // locale / geo / Accept-Language) and anti-detect launch overrides used by the
+  // scraper, instead of a macOS UA that contradicts the Linux engine.
+  const identity = israelContextOptions();
   const browser = await launchTracked(() => chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless: isHeadless,
-    viewport: { width: 1280, height: 720 },
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    locale: 'en-US',
-    timezoneId: 'Asia/Jerusalem',
+    viewport: identity.viewport,
+    userAgent: identity.userAgent,
+    locale: identity.locale,
+    timezoneId: identity.timezoneId,
+    geolocation: identity.geolocation,
+    extraHTTPHeaders: identity.extraHTTPHeaders,
     permissions: ['notifications'],
     args: [
       '--disable-blink-features=AutomationControlled',
@@ -112,6 +119,7 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
     ],
+    ...launchAntiDetectOverrides(),
     timeout: 60000, // 60 second timeout for launch
   }));
 
