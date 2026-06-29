@@ -16,6 +16,7 @@ import { pickGroupAvatar } from './groupAvatar';
 import { createFacebookContext, saveCookies, getCookieHealth } from '../facebook/session';
 import { NormalizedPost } from './apifyScraper';
 import { browserPool } from '../utils/browserPool';
+import { hardCloseBrowser } from '../utils/browserReaper';
 import {
   setupPostInterception,
   expandAllSeeMoreButtons,
@@ -45,19 +46,6 @@ export const hasValidFacebookSession = async (): Promise<boolean> => {
   }
   logger.info(`[Playwright] Valid session found for user: ${health.userId}`);
   return true;
-};
-
-/**
- * Safely close browser with error handling
- */
-const safeCloseBrowser = async (browser: Browser | BrowserContext | null): Promise<void> => {
-  if (!browser) return;
-  try {
-    await browser.close();
-    logger.debug('[Playwright] Browser closed successfully');
-  } catch (closeError) {
-    logger.warn(`[Playwright] Browser close warning: ${(closeError as Error).message}`);
-  }
 };
 
 /**
@@ -229,12 +217,12 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
       // so one slow group can't hold the single slot and starve the rest.
       watchdog = setTimeout(() => {
         logger.error(
-          `[Playwright] Scrape watchdog fired (${SCRAPE_HARD_TIMEOUT_MS}ms) for group ${groupId} — force-closing browser to release the pool slot`
+          `[Playwright] Scrape watchdog fired (${SCRAPE_HARD_TIMEOUT_MS}ms) for group ${groupId} — hard-closing browser (SIGKILL fallback) to release the pool slot`
         );
-        void (async () => {
-          try { if (context) await context.close(); } catch {}
-          try { if (browser) await safeCloseBrowser(browser); } catch {}
-        })();
+        // hardCloseBrowser self-bounds with its own close()-timeout + SIGKILL,
+        // so even fire-and-forget this can NEVER leave a wedged chrome behind.
+        // Killing the browser process tears down its context + pages with it.
+        void hardCloseBrowser(browser ?? context);
       }, SCRAPE_HARD_TIMEOUT_MS);
       if (typeof watchdog.unref === 'function') watchdog.unref();
 
@@ -458,10 +446,11 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         } catch (joinError) {
           logger.warn(`[Playwright] Could not auto-join group: ${joinError}`);
           await saveCookies(context);
-          // Close resources in order: page -> context -> browser
-          try { if (page) await page.close(); } catch {}
-          try { if (context) await context.close(); } catch {}
-          await safeCloseBrowser(browser);
+          // hardCloseBrowser closes gracefully then SIGKILLs on wedge — and
+          // killing the browser process disposes its page + context too, so we
+          // never risk hanging on an unbounded page.close()/context.close().
+          if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+          await hardCloseBrowser(browser ?? context);
           return [];
         }
       }
@@ -721,10 +710,11 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         logger.warn(`[Playwright] Could not save cookies: ${(cookieError as Error).message}`);
       }
 
-      // Close resources in order: page -> context -> browser
-      try { if (page) await page.close(); } catch {}
-      try { if (context) await context.close(); } catch {}
-      await safeCloseBrowser(browser);
+      // Tear down — hardCloseBrowser closes gracefully, then SIGKILLs the chrome
+      // process if close() wedges, so a Chromium can never outlive this scrape.
+      // Killing the browser disposes its page + context, so no unbounded
+      // page.close()/context.close() await can hang the teardown.
+      await hardCloseBrowser(browser ?? context);
 
       return normalizedPosts;
 
@@ -748,10 +738,8 @@ const scrapeGroupInternal = async (groupId: string, groupUrl: string): Promise<N
         // Cookies couldn't be saved, that's okay
       }
 
-      // Clean up resources in order: page -> context -> browser
-      try { if (page) await page.close(); } catch {}
-      try { if (context) await context.close(); } catch {}
-      await safeCloseBrowser(browser);
+      // Clean up — guarantee the chrome process dies even if close() hangs.
+      await hardCloseBrowser(browser ?? context);
 
       // OPTIMIZED: Reduced retry delay from 5s to 3s
       if (attempt < MAX_BROWSER_RETRIES) {

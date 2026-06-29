@@ -14,6 +14,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import logger from '../utils/logger';
+import { hardCloseBrowser, launchTracked } from '../utils/browserReaper';
 
 // Browser data directory
 const BROWSER_DATA_DIR = path.resolve(process.cwd(), 'browser-data');
@@ -167,7 +168,7 @@ export async function createStealthBrowser(options?: {
   }
 
   // Use persistent context for session persistence
-  const context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
+  const context = await launchTracked(() => chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless,
     channel: useRealChrome ? 'chrome' : undefined, // Use real Chrome when available
     viewport,
@@ -194,7 +195,7 @@ export async function createStealthBrowser(options?: {
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"macOS"',
     },
-  });
+  }));
 
   // Load saved cookies if available
   await loadSavedCookies(context);
@@ -345,12 +346,12 @@ export async function safeCloseBrowser(browser: Browser | BrowserContext): Promi
     if ('storageState' in browser) {
       await saveCookies(browser as BrowserContext);
     }
-
-    await browser.close();
-    logger.debug('Browser closed successfully');
   } catch (error) {
-    logger.debug(`Browser close error (ignored): ${(error as Error).message}`);
+    logger.debug(`Cookie save before close failed (ignored): ${(error as Error).message}`);
   }
+  // hardCloseBrowser guarantees the chrome process dies (graceful close, then
+  // SIGKILL on wedge) so a hung close() can never leak a chrome process.
+  await hardCloseBrowser(browser);
 }
 
 // ============================================

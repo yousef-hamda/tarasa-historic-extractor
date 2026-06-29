@@ -6,6 +6,45 @@ import { getScrapingStatus } from '../scraper/orchestrator';
 
 const router = Router();
 
+// Per-check timeout so a slow/hung dependency (DB, fs, an FD-starved process)
+// can NEVER make the health endpoint hang past the dashboard's request timeout.
+// Each check resolves to a safe fallback on timeout OR rejection; the endpoint
+// then reports "degraded/unhealthy" instead of leaving the client to time out.
+const CHECK_TIMEOUT_MS = Number(process.env.HEALTH_CHECK_TIMEOUT_MS) || 4000;
+
+const withTimeout = async <T>(p: Promise<T>, fallback: T, ms = CHECK_TIMEOUT_MS): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(p).catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+// Safe "everything-down" fallbacks for when a check times out or rejects.
+const COOKIE_FALLBACK: Awaited<ReturnType<typeof getCookieHealth>> = {
+  ok: false,
+  total: 0,
+  valid: 0,
+  hasSession: false,
+  userId: null,
+};
+const SESSION_FALLBACK: Awaited<ReturnType<typeof loadSessionHealth>> = {
+  status: 'unknown',
+  lastChecked: new Date().toISOString(),
+  lastValid: null,
+  userId: null,
+  userName: null,
+  errorMessage: null,
+  expiresAt: null,
+  canAccessPrivateGroups: false,
+};
+
 interface HealthStatus {
   status: 'ok' | 'degraded' | 'unhealthy';
   timestamp: string;
@@ -33,19 +72,22 @@ interface HealthStatus {
 
 // Main health check handler
 const healthCheckHandler = async (_req: Request, res: Response) => {
-  const dbConnected = await checkDatabaseConnection();
-  const cookies = await getCookieHealth();
-  const sessionHealth = await loadSessionHealth();
   const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
   const hasApifyToken = Boolean(process.env.APIFY_TOKEN);
 
-  // Get scraping status (groups info)
-  let scrapingStatus;
-  try {
-    scrapingStatus = await getScrapingStatus();
-  } catch {
-    scrapingStatus = { groups: [], sessionValid: false, apifyConfigured: hasApifyToken };
-  }
+  // Run every check in parallel, each bounded by withTimeout so the whole
+  // endpoint returns in <= CHECK_TIMEOUT_MS even if a dependency is wedged.
+  const [dbConnected, cookies, sessionHealth, scrapingStatus] = await Promise.all([
+    withTimeout(checkDatabaseConnection(), false),
+    withTimeout(getCookieHealth(), COOKIE_FALLBACK),
+    withTimeout(loadSessionHealth(), SESSION_FALLBACK),
+    withTimeout(getScrapingStatus(), {
+      groups: [],
+      sessionValid: false,
+      apifyConfigured: hasApifyToken,
+      mbasicAvailable: false,
+    } as Awaited<ReturnType<typeof getScrapingStatus>>),
+  ]);
 
   // Session is valid if either cookies are ok OR session manager says valid
   const hasValidSession = cookies.ok || sessionHealth.status === 'valid';
@@ -106,9 +148,9 @@ router.get('/api/health/live', (_req: Request, res: Response) => {
 // Readiness probe (checks if server is ready to accept traffic)
 router.get('/api/health/ready', async (_req: Request, res: Response) => {
   const [dbConnected, cookies, sessionHealth] = await Promise.all([
-    checkDatabaseConnection(),
-    getCookieHealth(),
-    loadSessionHealth(),
+    withTimeout(checkDatabaseConnection(), false),
+    withTimeout(getCookieHealth(), COOKIE_FALLBACK),
+    withTimeout(loadSessionHealth(), SESSION_FALLBACK),
   ]);
   const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
   const hasApifyToken = Boolean(process.env.APIFY_TOKEN);

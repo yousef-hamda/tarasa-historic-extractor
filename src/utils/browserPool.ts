@@ -12,6 +12,7 @@
  */
 
 import logger from './logger';
+import { reapStrayChromium } from './browserReaper';
 
 interface PoolOptions {
   maxInstances: number;
@@ -31,7 +32,10 @@ class BrowserPool {
   private activeOperations: Map<string, { startTime: number; timer: NodeJS.Timeout }> = new Map();
 
   constructor(options: Partial<PoolOptions> = {}) {
-    const envMaxInstances = Number(process.env.MAX_BROWSER_INSTANCES) || 2;
+    // Default 1: this container scrapes groups sequentially and a single
+    // browser is all the pipeline needs. Keeping it at 1 removes any transient
+    // double-launch and bounds peak chrome memory/FD usage on Railway.
+    const envMaxInstances = Number(process.env.MAX_BROWSER_INSTANCES) || 1;
     // Default lowered from 300s → 200s. The scraper now self-bounds each group
     // with a 150s watchdog that force-closes the browser, so the pool should
     // never need to wait the full old 5 minutes for a wedged op — a stuck slot
@@ -138,7 +142,17 @@ class BrowserPool {
       ]);
       return result;
     } catch (error) {
-      logger.error(`[BrowserPool] Operation ${opId} failed: ${(error as Error).message}`);
+      const msg = (error as Error).message;
+      logger.error(`[BrowserPool] Operation ${opId} failed: ${msg}`);
+      // If WE timed the operation out, its fn() (a scrape) is abandoned but may
+      // still hold a live chrome process. The scrape's own 150s watchdog should
+      // hard-kill it first, but a wedged chrome is exactly what leaked the
+      // container to death before — so as a belt-and-braces backstop, reap any
+      // stray chrome when this was the only active operation (safe: no queued op
+      // has started yet — release() runs after this catch).
+      if (msg.includes('timed out') && this.activeCount <= 1) {
+        void reapStrayChromium();
+      }
       throw error;
     } finally {
       if (operationTimer) clearTimeout(operationTimer);
@@ -218,6 +232,9 @@ class BrowserPool {
 
     if (released > 0) {
       logger.info(`[BrowserPool] Force released ${released} stuck operations`);
+      // Those abandoned ops may have left live chrome processes. If nothing is
+      // legitimately running now, reap any strays so they can't leak.
+      if (this.activeCount === 0) void reapStrayChromium();
     }
 
     return released;

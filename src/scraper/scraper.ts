@@ -3,6 +3,7 @@ import { humanDelay } from '../utils/delays';
 import { extractPosts } from './extractors';
 import prisma from '../database/prisma';
 import { createFacebookContext, saveCookies } from '../facebook/session';
+import { hardCloseBrowser } from '../utils/browserReaper';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS } from '../config/constants';
 import path from 'path';
@@ -173,7 +174,7 @@ export const scrapeGroups = async (): Promise<void> => {
     }
   } finally {
     await saveCookies(context);
-    await browser.close();
+    await hardCloseBrowser(browser);
   }
 };
 
@@ -279,6 +280,6 @@ export const debugScrape = async () => {
     };
   } finally {
     await saveCookies(context);
-    await browser.close();
+    await hardCloseBrowser(browser);
   }
 };

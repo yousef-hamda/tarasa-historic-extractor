@@ -19,6 +19,7 @@ import {
   isSessionValid,
 } from '../session/sessionManager';
 import { markSessionBlocked } from '../session/sessionHealth';
+import { hardCloseBrowser, launchTracked } from '../utils/browserReaper';
 
 // Helper to replace deprecated page.waitForTimeout
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -91,12 +92,16 @@ const launchChromiumWithRetry = async (
 
   for (let attempt = 1; attempt <= LAUNCH_MAX_ATTEMPTS; attempt++) {
     try {
-      return await chromium.launch({
-        headless,
-        args: SCRAPER_LAUNCH_ARGS,
-        timeout: LAUNCH_TIMEOUT_MS,
-        ...overrides,
-      });
+      // launchTracked records the chrome MAIN pid so hardCloseBrowser can
+      // SIGKILL its process group if a graceful close ever wedges.
+      return await launchTracked(() =>
+        chromium.launch({
+          headless,
+          args: SCRAPER_LAUNCH_ARGS,
+          timeout: LAUNCH_TIMEOUT_MS,
+          ...overrides,
+        }),
+      );
     } catch (error) {
       lastError = error as Error;
       const message = lastError.message || String(error);
@@ -492,7 +497,7 @@ export const createFacebookContext = async (options?: { publicGroupMode?: boolea
       try {
         await ensureLogin(context);
       } catch (error) {
-        await browser.close();
+        await hardCloseBrowser(browser);
         throw error;
       }
     } else {
@@ -563,7 +568,7 @@ export const refreshFacebookSession = async (): Promise<{ success: boolean; erro
   } finally {
     if (browser) {
       try {
-        await browser.close();
+        await hardCloseBrowser(browser);
       } catch {
         // Ignore close errors
       }
@@ -635,16 +640,18 @@ export const interactiveSessionRenewal = async (
 
   try {
     // Launch a standalone browser (NOT persistent context) to avoid issues
-    browser = await chromium.launch({
-      channel: 'chrome', // Use REAL Chrome browser
-      headless: false, // VISIBLE browser!
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--start-maximized',
-      ],
-      timeout: 60000,
-    });
+    browser = await launchTracked(() =>
+      chromium.launch({
+        channel: 'chrome', // Use REAL Chrome browser
+        headless: false, // VISIBLE browser!
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox',
+          '--start-maximized',
+        ],
+        timeout: 60000,
+      }),
+    );
 
     const context = await browser.newContext({
       viewport: null,
@@ -681,7 +688,7 @@ export const interactiveSessionRenewal = async (
     if (session.hasSession) {
       logger.info(`[Session] Already logged in as ${session.userId}`);
       await saveSessionFromContext(context, cookiesPath, storagePath, session.userId!);
-      await browser.close();
+      await hardCloseBrowser(browser);
       return { success: true, userId: session.userId! };
     }
 
@@ -708,7 +715,7 @@ export const interactiveSessionRenewal = async (
         await saveSessionFromContext(context, cookiesPath, storagePath, session.userId!);
 
         // Close browser
-        await browser.close();
+        await hardCloseBrowser(browser);
 
         return { success: true, userId: session.userId! };
       }
@@ -727,7 +734,7 @@ export const interactiveSessionRenewal = async (
             logger.info(`[Session] Login detected via page content! User ID: ${userIdMatch[1]}`);
             await logSystemEvent('auth', `Interactive login successful for user ${userIdMatch[1]}`);
             await saveSessionFromContext(context, cookiesPath, storagePath, userIdMatch[1]);
-            await browser.close();
+            await hardCloseBrowser(browser);
             return { success: true, userId: userIdMatch[1] };
           }
         }
@@ -739,7 +746,7 @@ export const interactiveSessionRenewal = async (
     // Timeout
     logger.warn('[Session] Interactive login timed out');
     await logSystemEvent('auth', 'Interactive session renewal timed out - user did not complete login');
-    await browser.close();
+    await hardCloseBrowser(browser);
     return { success: false, error: 'Login timed out. Please try again and complete login within 5 minutes.' };
 
   } catch (error) {
@@ -747,7 +754,7 @@ export const interactiveSessionRenewal = async (
     logger.error(`[Session] Interactive renewal error: ${message}`);
     if (browser) {
       try {
-        await browser.close();
+        await hardCloseBrowser(browser);
       } catch {
         // Ignore close errors
       }

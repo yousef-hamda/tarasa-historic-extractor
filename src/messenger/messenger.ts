@@ -10,6 +10,7 @@ import {
 import { humanDelay } from '../utils/delays';
 import { withRetries } from '../utils/retry';
 import { createFacebookContext, saveCookies } from '../facebook/session';
+import { hardCloseBrowser } from '../utils/browserReaper';
 import { logSystemEvent } from '../utils/systemLog';
 import { TIMEOUTS, QUOTA } from '../config/constants';
 import { getMessagingEnabledAsync } from '../utils/settings';
@@ -306,7 +307,7 @@ export const sendGeneratedMessageNow = async (
     } finally {
       try { if (context) await saveCookies(context); } catch {}
       try { if (page) await page.close(); } catch {}
-      try { if (browser) await browser.close(); } catch {}
+      await hardCloseBrowser(browser);
     }
   });
 
@@ -363,9 +364,7 @@ export const dispatchMessages = async (): Promise<void> => {
     // is fully paused until the operator looks at it.
     await logSystemEvent('error', `Messenger failed to initialize: ${errorMessage}`, { telegram: true });
     // Clean up browser if it was created but page creation failed
-    if (browser) {
-      await browser.close().catch((e: Error) => logger.warn(`Browser cleanup on init error: ${e.message}`));
-    }
+    await hardCloseBrowser(browser);
     return;
   }
 
@@ -472,11 +471,7 @@ export const dispatchMessages = async (): Promise<void> => {
         logger.warn(`Failed to save cookies: ${err.message}`);
       });
     }
-    if (browser) {
-      await browser.close().catch((err) => {
-        logger.warn(`Failed to close browser: ${err.message}`);
-      });
-    }
+    await hardCloseBrowser(browser);
   }
 };
 

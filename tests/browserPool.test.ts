@@ -33,7 +33,7 @@ describe('BrowserPool', () => {
     it('should create pool with default options', () => {
       pool = new BrowserPool();
       const status = pool.getStatus();
-      expect(status.max).toBe(2); // Default
+      expect(status.max).toBe(1); // Default (sequential scraping; bounds chrome usage)
       expect(status.active).toBe(0);
       expect(status.waiting).toBe(0);
     });

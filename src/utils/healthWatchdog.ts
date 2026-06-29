@@ -32,9 +32,17 @@
  * ---------------------------------------------------------------------------
  */
 
+import fs from 'fs';
+import http from 'http';
 import logger from './logger';
 import { checkDatabaseConnection, prisma } from '../database/prisma';
 import { logSystemEvent } from './systemLog';
+import {
+  reapStrayChromium,
+  countStrayChromium,
+  countOpenFds,
+  getOpenFdSoftLimit,
+} from './browserReaper';
 
 const DISABLED = process.env.HEALTH_WATCHDOG_DISABLED === 'true';
 // How often to probe (default 60s).
@@ -61,7 +69,29 @@ const MIN_UPTIME_MS = Number(process.env.HEALTH_WATCHDOG_MIN_UPTIME_MS) || 15 * 
 // Per-probe DB timeout.
 const DB_CHECK_TIMEOUT_MS = Number(process.env.HEALTH_WATCHDOG_DB_TIMEOUT_MS) || 5_000;
 
+// --- Chromium / FD leak guard (the precise fingerprint of the recurring death:
+// leaked chrome processes + file descriptors accumulating until fork()/accept()
+// fail and the port stops answering). These are the signals the OLD watchdog was
+// blind to because it only measured the Node process's RSS. ---
+const MAX_CHROMIUM = Number(process.env.WATCHDOG_MAX_CHROMIUM) || 8;
+const FD_RATIO =
+  process.env.WATCHDOG_FD_RATIO !== undefined ? Number(process.env.WATCHDOG_FD_RATIO) : 0.8;
+// How many consecutive ticks a leak signal must persist (after an attempted
+// reap) before we restart. ~3 ticks ≈ 3 minutes at the default interval.
+const LEAK_RESTART_TICKS = Number(process.env.WATCHDOG_LEAK_RESTART_TICKS) || 3;
+
+// --- Internal self-probe. Railway only acts on its healthcheck at deploy time,
+// so a running container that stops accepting connections (FD-starved / event
+// loop wedged — the exact http_code=000 symptom) is never recycled by the
+// platform. The watchdog probes its OWN /api/health/live; if the server can't
+// serve that for N ticks, a restart is the only cure. ---
+const SELF_PROBE = process.env.WATCHDOG_SELF_PROBE !== 'false';
+const SELF_PROBE_FAILS = Number(process.env.WATCHDOG_SELF_PROBE_FAILS) || 3;
+const SELF_PROBE_TIMEOUT_MS = Number(process.env.WATCHDOG_SELF_PROBE_TIMEOUT_MS) || 5_000;
+
 let consecutiveDbFailures = 0;
+let consecutiveLeakSignals = 0;
+let consecutiveSelfProbeFails = 0;
 let timer: NodeJS.Timeout | null = null;
 let restarting = false;
 let reconnectInFlight = false;
@@ -83,6 +113,100 @@ const getConstrainedMemoryBytes = (): number => {
   }
   return 0;
 };
+
+/**
+ * Read a numeric value from the first readable path (cgroup v2 then v1).
+ */
+const readFirstNumberFile = (paths: string[]): number => {
+  for (const p of paths) {
+    try {
+      const v = Number(fs.readFileSync(p, 'utf-8').trim());
+      if (Number.isFinite(v) && v > 0) return v;
+    } catch {
+      // try next
+    }
+  }
+  return 0;
+};
+
+/**
+ * Reclaimable page-cache bytes from cgroup memory.stat. We subtract this from
+ * memory.current so the watchdog never restarts on page-cache pressure the
+ * kernel would simply evict before OOM.
+ */
+const readReclaimableCacheBytes = (): number => {
+  const candidates: Array<[string, string]> = [
+    ['/sys/fs/cgroup/memory.stat', 'inactive_file'], // v2
+    ['/sys/fs/cgroup/memory/memory.stat', 'total_inactive_file'], // v1
+  ];
+  for (const [path, key] of candidates) {
+    try {
+      const text = fs.readFileSync(path, 'utf-8');
+      const line = text.split('\n').find((l) => l.startsWith(`${key} `));
+      if (line) {
+        const v = Number(line.split(/\s+/)[1]);
+        if (Number.isFinite(v) && v >= 0) return v;
+      }
+    } catch {
+      // try next
+    }
+  }
+  return 0;
+};
+
+/**
+ * TRUE container memory usage (Node + all chrome children), reading the cgroup
+ * and subtracting reclaimable cache. This is what the old RSS-only check could
+ * not see — leaked chrome processes live here, not in process.memoryUsage().
+ * Returns 0 when unavailable (non-Linux / dev).
+ */
+const getContainerMemoryUsageBytes = (): number => {
+  const current = readFirstNumberFile([
+    '/sys/fs/cgroup/memory.current',
+    '/sys/fs/cgroup/memory/memory.usage_in_bytes',
+  ]);
+  if (current <= 0) return 0;
+  const cache = readReclaimableCacheBytes();
+  return Math.max(0, current - cache);
+};
+
+/**
+ * Probe our own HTTP liveness endpoint over localhost. Resolves false on any
+ * non-2xx, timeout, or connection error (including EMFILE when FD-starved —
+ * which is exactly the condition we want to detect). Never throws.
+ */
+const selfProbeLive = (): Promise<boolean> =>
+  new Promise((resolve) => {
+    const port = process.env.PORT || '4000';
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (!settled) {
+        settled = true;
+        resolve(ok);
+      }
+    };
+    try {
+      const req = http.get(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/api/health/live',
+          timeout: SELF_PROBE_TIMEOUT_MS,
+        },
+        (res) => {
+          res.resume(); // drain so the socket frees
+          done(res.statusCode != null && res.statusCode >= 200 && res.statusCode < 300);
+        },
+      );
+      req.on('timeout', () => {
+        req.destroy();
+        done(false);
+      });
+      req.on('error', () => done(false));
+    } catch {
+      done(false);
+    }
+  });
 
 /**
  * Self-heal restart for the ONE failure mode a restart actually fixes: local
@@ -157,18 +281,112 @@ const tick = async (): Promise<void> => {
   if (RSS_LIMIT_PERCENT > 0) {
     const limitBytes = getConstrainedMemoryBytes();
     if (limitBytes > 0) {
-      const usedPct = (rssBytes / limitBytes) * 100;
+      // Primary: TRUE container usage (Node + all chrome children, cache-subtracted).
+      // This is what catches a chrome-process memory leak the old RSS-only check
+      // was blind to. Fall back to Node RSS when the cgroup is unreadable.
+      const containerBytes = getContainerMemoryUsageBytes();
+      const usedBytes = containerBytes > 0 ? containerBytes : rssBytes;
+      const usedPct = (usedBytes / limitBytes) * 100;
       if (usedPct >= RSS_LIMIT_PERCENT) {
         const limitMb = Math.round(limitBytes / (1024 * 1024));
+        const usedMb = Math.round(usedBytes / (1024 * 1024));
+        const src = containerBytes > 0 ? 'container' : 'node-rss';
+        // A reap may clear it without a restart if the bloat is leaked chrome.
+        // reapStrayChromium only kills untracked strays, so it is safe to call
+        // even while a legitimate scrape/messenger browser is running. Try that
+        // first; restart only if it didn't free anything.
+        const killed = await reapStrayChromium();
+        if (killed > 0) {
+          logger.warn(
+            `[Watchdog] Memory ${usedMb}MB/${limitMb}MB (${usedPct.toFixed(0)}%) — reaped ${killed} stray chrome; re-evaluating next tick.`
+          );
+          return;
+        }
         triggerRestart(
-          `RSS ${rssMb}MB is ${usedPct.toFixed(0)}% of container limit ${limitMb}MB (>= ${RSS_LIMIT_PERCENT}%)`
+          `${src} memory ${usedMb}MB is ${usedPct.toFixed(0)}% of container limit ${limitMb}MB (>= ${RSS_LIMIT_PERCENT}%)`
         );
         return;
       }
     }
   }
 
-  // 2) Database reachability — observed and recovered, but NEVER a restart
+  // 2) Chromium / FD leak guard — the precise fingerprint of the recurring
+  //    death. Leaked chrome processes/FDs are SEPARATE from the Node process, so
+  //    they are invisible to process.memoryUsage(); this is the check the old
+  //    watchdog lacked. We count only STRAY chrome (untracked main processes or
+  //    init-reparented orphans) so a healthy browser's many helper processes
+  //    never false-trigger, then reap (always safe) and restart only if the
+  //    signal persists — i.e. the leak is faster than we can reap, or FDs are
+  //    exhausted.
+  try {
+    const strays = await countStrayChromium();
+    const fds = await countOpenFds();
+    const fdSoft = await getOpenFdSoftLimit();
+    const fdRatio = fds > 0 && fdSoft > 0 ? fds / fdSoft : 0;
+
+    // Opportunistically clear any strays — cheap and never touches a live browser.
+    if (strays > 0) {
+      const killed = await reapStrayChromium();
+      if (killed > 0) {
+        logger.warn(`[Watchdog] Reaped ${killed} stray chrome process group(s).`);
+      }
+    }
+
+    const strayOver = MAX_CHROMIUM > 0 && strays >= MAX_CHROMIUM;
+    const fdOver = FD_RATIO > 0 && fdRatio >= FD_RATIO;
+
+    if (strayOver || fdOver) {
+      consecutiveLeakSignals += 1;
+      logger.warn(
+        `[Watchdog] Resource-leak signal #${consecutiveLeakSignals}: ` +
+          `strayChrome=${strays}/${MAX_CHROMIUM}, ` +
+          `fds=${fds}/${fdSoft} (${(fdRatio * 100).toFixed(0)}%).`
+      );
+      // If the signal persists despite reaping (leak outpaces reap, or FD
+      // exhaustion that only a fresh container clears), restart cleanly.
+      if (consecutiveLeakSignals >= LEAK_RESTART_TICKS) {
+        triggerRestart(
+          `resource leak persisted ${consecutiveLeakSignals} ticks ` +
+            `(strayChrome=${strays}, fdRatio=${(fdRatio * 100).toFixed(0)}%)`
+        );
+        return;
+      }
+    } else if (consecutiveLeakSignals > 0) {
+      logger.info('[Watchdog] Resource-leak signal cleared.');
+      consecutiveLeakSignals = 0;
+    }
+  } catch (err) {
+    logger.debug(`[Watchdog] leak-guard check failed: ${(err as Error).message}`);
+  }
+
+  // 3) Internal self-probe — can the server still serve its own liveness over
+  //    localhost? A failure here means the port is not accepting connections
+  //    (FD exhaustion / wedged event loop = the http_code=000 outage). Railway
+  //    won't recycle a running-but-wedged container, so this is the last-resort
+  //    detector that lets us self-restart out of it.
+  if (SELF_PROBE) {
+    const alive = await selfProbeLive();
+    if (alive) {
+      if (consecutiveSelfProbeFails > 0) {
+        logger.info(`[Watchdog] Self-probe recovered after ${consecutiveSelfProbeFails} failure(s).`);
+      }
+      consecutiveSelfProbeFails = 0;
+    } else {
+      consecutiveSelfProbeFails += 1;
+      logger.warn(
+        `[Watchdog] Self-probe of /api/health/live failed ` +
+          `(${consecutiveSelfProbeFails}/${SELF_PROBE_FAILS}) — server not accepting localhost connections.`
+      );
+      if (consecutiveSelfProbeFails >= SELF_PROBE_FAILS) {
+        triggerRestart(
+          `self-probe failed ${consecutiveSelfProbeFails}x — server not accepting connections`
+        );
+        return;
+      }
+    }
+  }
+
+  // 4) Database reachability — observed and recovered, but NEVER a restart
   //    trigger. An external DB outage must degrade the site, not kill it.
   let dbOk = false;
   try {
@@ -218,6 +436,8 @@ export const startHealthWatchdog = (): void => {
 
   logger.info(
     `[Watchdog] Started: interval=${INTERVAL_MS}ms, ${memMode}, ` +
+      `chromeLeakGuard=max${MAX_CHROMIUM}procs/fd${Math.round(FD_RATIO * 100)}% (reap-then-restart x${LEAK_RESTART_TICKS}), ` +
+      `selfProbe=${SELF_PROBE ? `on(x${SELF_PROBE_FAILS})` : 'off'}, ` +
       `minUptimeBeforeRestart=${Math.round(MIN_UPTIME_MS / 1000)}s, ` +
       `dbOutage=stay-up-degraded (never restarts)`
   );

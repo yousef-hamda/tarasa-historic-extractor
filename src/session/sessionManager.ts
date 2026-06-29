@@ -10,6 +10,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import path from 'path';
 import logger from '../utils/logger';
 import prisma from '../database/prisma';
+import { hardCloseBrowser, launchTracked } from '../utils/browserReaper';
 import { sendAlertEmail } from '../utils/alerts';
 import { logSystemEvent } from '../utils/systemLog';
 import {
@@ -92,7 +93,7 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
   await cleanupStaleLocks();
 
   // Launch browser with persistent context - with improved stability settings
-  const browser = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
+  const browser = await launchTracked(() => chromium.launchPersistentContext(BROWSER_DATA_DIR, {
     headless: isHeadless,
     viewport: { width: 1280, height: 720 },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -112,7 +113,7 @@ export const createPersistentBrowser = async (headless?: boolean): Promise<{
       '--disable-renderer-backgrounding',
     ],
     timeout: 60000, // 60 second timeout for launch
-  });
+  }));
 
   // Load saved storage state (cookies) if available
   const storagePath = path.join(BROWSER_DATA_DIR, 'storage-state.json');
@@ -462,12 +463,11 @@ export const checkAndUpdateSession = async (): Promise<SessionHealthData> => {
     await updateSessionStateInDb('expired', message);
     return health;
   } finally {
+    // Persistent context: hardCloseBrowser gives a bounded graceful close (no
+    // infinite hang). It can't SIGKILL a persistent context (no process handle),
+    // so the health watchdog's idle reaper is the kill backstop for any stray.
     if (context) {
-      try {
-        await (context as BrowserContext).close();
-      } catch {
-        // Ignore close errors
-      }
+      await hardCloseBrowser(context as BrowserContext);
     }
   }
 };
